@@ -216,3 +216,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Swift
+.build/
+.swiftpm/
+*.xcodeproj
+xcuserdata/
+DerivedData/
+*.spv
+Package.resolved
