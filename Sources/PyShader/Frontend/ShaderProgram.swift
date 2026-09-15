@@ -183,6 +183,22 @@ final class ShaderProgram {
         case .constant(let c):
             if case .string(let s) = c.value, let t = ShaderType.named(s) { return t }
             throw PyShaderError("unsupported type annotation", line: line)
+        case .subscriptExpr(let sub):
+            // tuple[float, float3] / list[float4]
+            guard case .name(let generic) = sub.value else {
+                throw PyShaderError("unsupported type annotation", line: line)
+            }
+            switch generic.id {
+            case "tuple":
+                let elements: [Expression]
+                if case .tuple(let t) = sub.slice { elements = t.elts } else { elements = [sub.slice] }
+                return .tuple(try elements.map { try resolveType($0, line: line) })
+            case "list":
+                // The length comes from the value; -1 marks "any length" until then.
+                return .array(try resolveType(sub.slice, line: line), -1)
+            default:
+                throw PyShaderError("unknown generic type `\(generic.id)`; use tuple[...] or list[...]", line: line)
+            }
         default:
             throw PyShaderError("unsupported type annotation", line: line)
         }

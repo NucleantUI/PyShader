@@ -1,149 +1,226 @@
 # PyShader
 
-Write fragment shaders in Python syntax, get SPIR-V bytecode. No GLSL, no
-shaderc: the compiler parses Python with
-[PySwiftAST](https://github.com/Py-Swift/PySwiftAST) and emits SPIR-V 1.0
-words directly.
+Shaders in Python syntax, compiled straight to SPIR-V. No GLSL in between.
 
 ```py
+from pyshader import *
+
 def main(uv: float2, time: float) -> float4:
     color = float4(1, 0, 0, 1)
-    color.rgb *= 0.5
-    color.rgb = color.rgb + 0.5
+    color.rgb *= 0.5 + 0.5 * sin(time)
     color.r = color.r / 2
     return color
 ```
 
-```swift
-import PyShader
+`main` runs once per pixel and returns its colour. It takes what it needs by
+parameter name — `uv`, `frag_coord`, `time`, `resolution`, `mouse`, … — and
+the compiler wires those up. `from pyshader import *` is for the editor
+(completion, type errors); the compiler ignores it.
 
-let shader = try PyShader.compile(source)                        // fragment, NucleantVulkan VKShader layout
-let compute = try PyShader.compile(source, target: .nucleantSwiftUI)   // compute, NucleantSwiftUI Shader layout
-shader.spirv        // [UInt32] for vkCreateShaderModule
-shader.entryPoint   // "main"
+## The language
+
+### Types
+
+Metal's spelling: `float`, `half`, `int`, `uint`, `short`, `ushort`, `bool`,
+each as `float2` `float3` `float4` … and matrices `float2x2` … `float4x4`.
+Type names are constructors.
+
+```py
+a = float4(1, 0, 0, 1)      # ints convert
+b = float3(uv, 1.0)         # vector + scalar flatten in order
+c = float2(0.5)             # splat
+d = float3(a)               # truncate
+i = int(uv.x * 10.0)        # explicit conversion; float -> int is never implicit
+h = half3(b)                # 16-bit
+m = float3x3(c0, c1, c2)    # columns; float3x3() is identity, float3x3(2.0) diagonal
 ```
 
-## Targets
+A variable's type is fixed by its first assignment, or by an annotation:
 
-The Python is the same for both; only the generated wrapper around `main` differs.
+```py
+n: float3                   # declared, assigned later
+k: float = 2                # 2 becomes 2.0
+```
 
-| `ShaderTarget` | Stage | Matches | `main` inputs |
+### Swizzles
+
+`.xyzw` and `.rgba`, read or write, 1 to 4 letters.
+
+```py
+p = uv.yx
+color.rgb *= 0.5
+color.a = 1.0
+v[0] = 1.0                  # indexing works too, negative indices wrap
+x, y = uv                   # unpack
+```
+
+### Operators — Python semantics
+
+```py
+7 / 2        # 3.5, always true division
+-7 // 2      # -4, floored
+-7 % 3       # 2, sign of the divisor
+2 ** 3       # 8.0
+v * 2.0      # scalars broadcast against vectors
+m * v        # matrix * vector; v * m; m * m; m @ v is the same
+a @ b        # on two vectors: dot product
+uv > 0.5     # component-wise -> bool2; any() / all() to reduce
+x if c else y
+a < b < c    # chained
+h ^ (h >> 13)  # bit ops on ints
+```
+
+`int + float -> float`, `half + float -> float`, an int literal next to a
+`uint` becomes `uint`. Mixed vector sizes are an error.
+
+### Functions
+
+Global `def`s with annotated parameters. Several results come back as a tuple.
+
+```py
+def palette(t: float) -> float3:
+    return 0.5 + 0.5 * cos(6.28318 * (t + float3(0.0, 0.33, 0.67)))
+
+def box(ro: float3, rd: float3) -> tuple[float, float3]:
+    ...
+    return t, normal
+
+t, n = box(ro, rd)
+```
+
+Lambdas bound at module level are instantiated per argument type:
+
+```py
+sq = lambda x: x * x
+sq(uv.x)    # float
+sq(uv)      # float2
+```
+
+Module-level constants are inlined where used:
+
+```py
+PI = 3.14159265
+RED = float3(1.0, 0.0, 0.0)
+NO_HIT = (False, -1.0, float3(0.0))
+```
+
+No recursion (SPIR-V forbids it), no classes, no imports besides `pyshader`,
+no keyword arguments.
+
+### Control flow
+
+```py
+if d < 0.001:
+    hit = True
+elif d > 20.0:
+    break
+else:
+    t += d
+
+for i in range(64):         # ints; range(start, stop, step) too
+    ...
+while x >= 0.0:             # float-stepped loops
+    x -= 6.67
+```
+
+`break`, `continue`, early `return` anywhere. Every path of a non-`None`
+function must return.
+
+### Lists
+
+Fixed-size arrays from list literals.
+
+```py
+colors = [float4(0.0)] * 3
+w: list[float] = [0.13, 0.07, 0.03]
+colors[i] = float4(w[i])
+colors[i].rgb *= 0.5
+colors[0], colors[1] = colors[1], colors[0]
+len(w)
+```
+
+### Builtins
+
+GLSL 450 names, Metal spellings accepted; ints promote, scalars broadcast:
+
+`sin cos tan asin acos atan atan2 sinh cosh tanh radians degrees` ·
+`pow exp exp2 log log2 sqrt rsqrt` ·
+`abs sign floor ceil round trunc fract mod min max clamp saturate mix lerp step smoothstep fma isnan isinf` ·
+`length distance dot cross normalize reflect refract faceforward` ·
+`transpose determinant inverse` · `any all` ·
+`dfdx dfdy fwidth discard` (fragment stage only) ·
+`layer(uv)` (the view under a `.shader` effect) · `len`
+
+The full table, with what is still to do, is in [shader-api-status.md](shader-api-status.md).
+Types, promotion and operator rules in detail: [vector-types.md](vector-types.md).
+
+### Entry point inputs
+
+| parameter | type | fragment target | compute target (NucleantSwiftUI) |
 |---|---|---|---|
-| `.fragment(FragmentInterface)` — default `.nucleant` | Fragment | NucleantVulkan `NucleantShader` / `VKShader`: `vTexCoord` in, `fragColor` out, push constants `{time, resolution, mouse}` | `uv`, `color`, `frag_coord`, `front_facing`, `time`, `resolution`, `mouse` |
-| `.computeImage(ComputeImageInterface)` — `.nucleantSwiftUI` | GLCompute 8×8 | NucleantVulkan `OGLShaderNode` as NucleantSwiftUI's `Shader` / `.shader(_:)` drive it: storage image @0, `Uniforms` @1, content `sampler2D` @2, argument buffer @3 | `uv`, `frag_coord`, `pixel`, `time`, `time_delta`, `frame`, `resolution`, `mouse`, `mouse_click`, every `ShaderArgument` by name; `layer(uv)` reads the view |
+| `uv` | `float2` | `vTexCoord` | `frag_coord / resolution`, y-up |
+| `frag_coord` | `float2`/`float4` | `gl_FragCoord` | pixel centre, y-up |
+| `time` `resolution` `mouse` | | push constants | `Uniforms` block |
+| `time_delta` `frame` `pixel` `mouse_click` | | — | `Uniforms` / invocation id |
+| `color` | `float4` | vertex colour, forwarded by a bare `return` | — |
+| *ShaderArgument name* | `float`…`float4`, `FloatArray` | — | argument buffer |
 
-Bindings, local size and argument declarations are properties of the interface
-structs, so a variant pipeline adjusts them rather than the compiler.
+## Examples
 
-## In NucleantSwiftUI
+- [Examples/](Examples/) — one file per feature, all validated with `spirv-val` in the tests.
+- [Examples/shadertoy/](Examples/shadertoy/) — four ShaderToy shaders in GLSL
+  and PyShader side by side, plus an app that runs each pair next to each
+  other. [Its README](Examples/shadertoy/README.md) lists what porting needed.
+- [Examples/NucleantSwiftUIExample/](Examples/NucleantSwiftUIExample/) — a
+  gallery of `.py` shaders and `.py` effects in a NucleantSwiftUI window.
 
-NucleantSwiftUI depends on this package; `ShaderFunction(pyshader:)` is the
-Python counterpart of the GLSL initialisers and goes everywhere a
-`ShaderFunction` goes — `Shader(...)`, `.shader(_:)`, `arguments:`:
+## Editor
 
-```swift
-let plasma = ShaderFunction(pyshader: """
-    def main(uv: float2, time: float) -> float4:
-        v = sin(uv.x * 10.0 + time) + sin((uv.y * 10.0 + time) * 0.5)
-        return float4(float3(0.5 + 0.5 * sin(3.14159 * v)), 1.0)
-""")
-
-Shader(plasma)
-someView.shader(ShaderFunction(pyshader: "def main(uv: float2) -> float4:\n    return layer(uv)"))
-```
-
-Source in a Swift multi-line literal is dedented by the compiler, so it can be
-indented with the surrounding code.
-
-[Examples/NucleantSwiftUIExample](Examples/NucleantSwiftUIExample) is a
-runnable app in the shape of NucleantSwiftUI's demo — a "Shaders" gallery of
-`Shader` views and an "Effects" gallery of `.shader(_:)` effects over a card,
-live thumbnails, each opening full screen. Every entry is a `.py` file under
-`Resources/Shaders` or `Resources/Effects` starting with
-`from pyshader import *`, loaded as a string at runtime; its docstring is the
-name and blurb. Separate package, so NucleantSwiftUI's own demo is untouched:
+The repo is the `pyshader` Python package ([src/pyshader/](src/pyshader/)):
+typed stubs for every type and builtin, generated from the same list the
+compiler implements.
 
 ```sh
-cd Examples/NucleantSwiftUIExample && swift run
-PYSHADER_EXAMPLE_START=effects swift run     # open a gallery directly
-```
-
-## Editor support
-
-The repo is also the `pyshader` Python package ([pyproject.toml](pyproject.toml),
-[src/pyshader/](src/pyshader/)): every type and builtin as typed stubs (`...`
-bodies) — the API as the IDE sees it, generated from the same list the
-compiler implements. `from pyshader import *` at the top of a shader file
-gives completion and type errors; the compiler ignores the import.
-
-```sh
-uv pip install -e .            # or: uv add --editable path/to/PyShader
+uv pip install -e .               # or: uv add --editable path/to/PyShader
 uv run scripts/generate_stub.py   # regenerate after changing the API
 ```
 
-## Layout
+## Compiling
 
-```
-Sources/PyShader
-├── PyShader.swift              public API: PyShader.compile(_:interface:)
-├── Interface/ShaderTarget       fragment vs compute-into-image; ComputeImageInterface (NucleantSwiftUI)
-├── Interface/FragmentInterface  the fragment stage's inputs / push constants / output
-├── Frontend/ShaderProgram       validates the module scope, collects defs / constants / lambdas
-├── Codegen/ShaderCompiler       drives emission, entry-point wrapper, lambda instantiation
-├── Codegen/FunctionEmitter      statements, structured control flow, locals, lvalues
-├── Codegen/ExpressionEmitter    expressions, promotion rules, swizzles, constructors
-├── Builtins/BuiltinFunctions    GLSL.std.450 + core ops table
-├── Types/ShaderType             the type model
-└── SPIRV/                       opcodes, instruction encoding, module builder (ids, dedup, layout)
-Sources/pyshaderc                CLI: pyshaderc in.py [-o out.spv] [--target compute --content --arg name:kind]
-Examples/                        feature-coverage shaders, also used by the tests
-Examples/compute/                shaders for the compute target (layer(), FloatArray)
-Examples/NucleantSwiftUIExample  stand-alone app: PyShader inside NucleantSwiftUI
-src/pyshader/                    the `pyshader` Python package (generated stubs)
-scripts/generate_stub.py         regenerates it
+```swift
+import PyShader
+
+let shader = try PyShader.compile(source)                             // fragment, NucleantVulkan VKShader layout
+let compute = try PyShader.compile(source, target: .nucleantSwiftUI)  // compute, NucleantSwiftUI Shader layout
+shader.spirv        // [UInt32] for vkCreateShaderModule
 ```
 
-Docs: [vector-types.md](vector-types.md) (types, constructors, promotion,
-operator semantics) and [shader-api-status.md](shader-api-status.md)
-(builtins implemented vs. to do, entry-point interface).
+Or from the command line:
 
-## Rules of the language
+```sh
+swift run pyshaderc shader.py -o shader.spv [--target compute --content --arg name:float4]
+```
 
-- Only global `def` functions, module-level constants, and lambdas bound to a
-  name. No classes, no imports (except the ignored `pyshader` stub), no
-  `*args` / `**kwargs`, no keyword arguments at call sites.
-- Parameters need type annotations (`x: float3`); locals get their type from
-  the first assignment or an annotation.
-- `main` parameters are looked up by name in the interface; the order is free.
-- Control flow: `if` / `elif` / `else`, `while`, `for ... in range(...)`,
-  `break`, `continue`, `return`. Every path of a non-`None` function must
-  return.
-- Recursion is rejected (SPIR-V forbids it).
-- Errors carry the Python line: `line 3: cannot implicitly convert `float` to `int`; use int(...)`.
+Two targets, same Python: `.fragment(FragmentInterface)` for a fragment stage
+(default: NucleantVulkan's `NucleantShader` layout), `.computeImage(ComputeImageInterface)`
+for a compute stage writing a storage image (NucleantVulkan's `OGLShaderNode`,
+as NucleantSwiftUI drives it). Bindings and argument declarations are
+properties of the interface structs.
+
+In NucleantSwiftUI, `ShaderFunction(pyshader: source)` goes wherever a
+`ShaderFunction` goes — `Shader(...)`, `.shader(_:)`, `arguments:`.
 
 ## Development
 
 ```sh
-swift test                         # 37 tests; runs spirv-val on every example when installed
-./scripts/validate_examples.sh     # compile Examples/*.py and validate each .spv
-swift run pyshaderc Examples/plasma.py -o plasma.spv && spirv-dis plasma.spv
+swift test                          # 42 tests; every example through spirv-val
+./scripts/validate_examples.sh
 ```
 
-`spirv-val`, `spirv-dis` and `spirv-opt` come with SPIRV-Tools / the Vulkan
-SDK. When optimizing offline use `spirv-opt --target-env=vulkan1.0`; with a
-newer env the optimizer folds into SPIR-V 1.4 forms the 1.0 module cannot
-express.
-
-## Codegen notes
-
-- Locals are `OpVariable`s in the entry block with `OpLoad` / `OpStore` at
-  every use; no SSA construction. `spirv-opt -O` reduces the plan example from
-  382 words to 88.
-- Structured control flow: `OpSelectionMerge` for `if`, `OpLoopMerge` with a
-  separate condition block and continue block for loops. Code after
-  `return` / `break` / `continue` lands in an unreachable block that ends in
-  `OpUnreachable` or a branch, so blocks always have one terminator.
-- Types and constants are deduplicated by value; literal conversions
-  (`float4(1, 0, 0, 1)`, `-1.0`, `v + 0.5`) fold into constants.
-- Lambdas are monomorphized: `sq(uv.x)` and `sq(uv)` become two functions.
-- 16-bit types add the `Float16` / `Int16` capabilities on demand.
+Sources: `Frontend/` validates the module and collects definitions,
+`Codegen/` lowers statements and expressions, `Builtins/` is the function
+table, `SPIRV/` encodes words. Locals are `OpVariable`s with load/store at
+every use (no SSA construction); control flow is `OpSelectionMerge` /
+`OpLoopMerge`; literal conversions fold into constants; 16-bit types add the
+`Float16` / `Int16` capabilities on demand. Offline optimisation:
+`spirv-opt --target-env=vulkan1.0 -O`.

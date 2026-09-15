@@ -26,7 +26,9 @@ enum SpirvOp: UInt16 {
     case opTypeInt = 21
     case opTypeFloat = 22
     case opTypeVector = 23
+    case opTypeMatrix = 24
     case opTypeImage = 25
+    case opTypeArray = 28
     case opTypeSampledImage = 27
     case opTypeRuntimeArray = 29
     case opTypeStruct = 30
@@ -57,6 +59,7 @@ enum SpirvOp: UInt16 {
     case opCompositeConstruct = 80
     case opCompositeExtract = 81
     case opCompositeInsert = 82
+    case opTranspose = 84
 
     case opImageSampleExplicitLod = 88
     case opImageWrite = 99
@@ -88,6 +91,11 @@ enum SpirvOp: UInt16 {
     case opFRem = 140
     case opFMod = 141
     case opVectorTimesScalar = 142
+    case opMatrixTimesScalar = 143
+    case opVectorTimesMatrix = 144
+    case opMatrixTimesVector = 145
+    case opMatrixTimesMatrix = 146
+    case opOuterProduct = 147
     case opDot = 148
 
     case opAny = 154
@@ -175,6 +183,8 @@ enum GLSLstd450: UInt32 {
     case log2 = 30
     case sqrt = 31
     case inverseSqrt = 32
+    case determinant = 33
+    case matrixInverse = 34
     case fMin = 37
     case uMin = 38
     case sMin = 39

@@ -116,6 +116,53 @@ def emit_vector_class(out: list[str], scalar: str, n: int) -> None:
     out.append("\n".join(lines) + "\n")
 
 
+def emit_matrix_class(out: list[str], scalar: str, cols: int, rows: int) -> None:
+    name = f"{scalar}{cols}x{rows}"
+    col = vector_name(scalar, rows)
+    row = vector_name(scalar, cols)
+    lines = [f"class {name}:"]
+    lines.append(f'    """{cols} columns of {col}, column-major like Metal/GLSL. `*` and `@` are matrix products."""')
+    lines.append("")
+    lines.append("    @overload")
+    lines.append("    def __init__(self) -> None:")
+    lines.append('        """Identity."""')
+    lines.append("    @overload")
+    lines.append("    def __init__(self, diagonal: Scalar, /) -> None: ...")
+    lines.append("    @overload")
+    lines.append(f"    def __init__(self, *columns: {col}) -> None: ...")
+    lines.append("    @overload")
+    lines.append("    def __init__(self, *components: Scalar) -> None:")
+    lines.append(f'        """{cols * rows} scalars, column-major."""')
+    lines.append("    @overload")
+    lines.append("    def __init__(self, other: AnyMatrix, /) -> None:")
+    lines.append('        """Resize another matrix; new cells come from the identity."""')
+    lines.append("    def __init__(self, *args: Any) -> None: ...")
+    lines.append("")
+    lines.append(f"    def __getitem__(self, column: int) -> {col}: ...")
+    lines.append(f"    def __setitem__(self, column: int, value: {col}) -> None: ...")
+    lines.append("    def __len__(self) -> int: ...")
+    lines.append("")
+    for op in ("mul", "matmul"):
+        lines.append("    @overload")
+        lines.append(f"    def __{op}__(self, other: {row}) -> {col}: ...")
+        lines.append("    @overload")
+        lines.append(f"    def __{op}__(self, other: {name}) -> {name}: ...")
+        if op == "mul":
+            lines.append("    @overload")
+            lines.append(f"    def __mul__(self, other: Scalar) -> {name}: ...")
+        lines.append(f"    def __{op}__(self, other: Any) -> Any: ...")
+        lines.append("    @overload")
+        lines.append(f"    def __r{op}__(self, other: {col}) -> {row}: ...")
+        if op == "mul":
+            lines.append("    @overload")
+            lines.append(f"    def __rmul__(self, other: Scalar) -> {name}: ...")
+        lines.append(f"    def __r{op}__(self, other: Any) -> Any: ...")
+    lines.append(f"    def __add__(self, other: {name}) -> {name}: ...")
+    lines.append(f"    def __sub__(self, other: {name}) -> {name}: ...")
+    lines.append(f"    def __truediv__(self, other: Scalar) -> {name}: ...")
+    out.append("\n".join(lines) + "\n")
+
+
 def emit_functions(out: list[str]) -> None:
     out.append('''
 # ---------------------------------------------------------------------------
@@ -209,6 +256,19 @@ def reflect(i: FV, n: FV) -> FV: ...
 def refract(i: FV, n: FV, eta: float) -> FV: ...
 
 
+# Matrices
+M = TypeVar("M", float2x2, float2x3, float2x4, float3x2, float3x3, float3x4, float4x2, float4x3, float4x4,
+            half2x2, half2x3, half2x4, half3x2, half3x3, half3x4, half4x2, half4x3, half4x4)
+SQ = TypeVar("SQ", float2x2, float3x3, float4x4, half2x2, half3x3, half4x4)
+
+
+def transpose(m: M) -> Any:
+    """Columns become rows (a CxR matrix becomes RxC)."""
+    ...
+def determinant(m: SQ) -> float: ...
+def inverse(m: SQ) -> SQ: ...
+
+
 # Vector relational (on the boolN a vector comparison produces)
 def any(v: B) -> bool: ...  # type: ignore[misc]
 def all(v: B) -> bool: ...  # type: ignore[misc]
@@ -259,6 +319,10 @@ ignores the import.
     def main(uv: float2, time: float) -> float4:
         return float4(uv, 0.5 + 0.5 * sin(time), 1.0)
 
+Functions return several values as tuples (`-> tuple[float, float3]`, then
+`t, n = f(...)`); fixed-size arrays are list literals (`[float4(0.0)] * 3`,
+`xs: list[float] = [...]`); matrices are `float2x2` ... `float4x4`.
+
 `main` takes its inputs by parameter name. Fragment target (NucleantVulkan
 VKShader): uv, color, frag_coord, front_facing, time, resolution, mouse.
 Compute target (NucleantSwiftUI Shader / .shader): uv, frag_coord, pixel,
@@ -276,7 +340,12 @@ __all__ = [
     for scalar in SCALARS:
         for n in (2, 3, 4):
             names.append(vector_name(scalar, n))
+    for scalar in ("float", "half"):
+        for c in (2, 3, 4):
+            for r in (2, 3, 4):
+                names.append(f"{scalar}{c}x{r}")
     functions = [
+        "transpose", "determinant", "inverse",
         "sin", "cos", "tan", "asin", "acos", "atan", "atan2", "sinh", "cosh", "tanh",
         "asinh", "acosh", "atanh", "radians", "degrees", "pow", "exp", "exp2", "log",
         "log2", "sqrt", "inversesqrt", "rsqrt", "abs", "sign", "floor", "ceil", "round",
@@ -302,6 +371,12 @@ AnyVector = Any
         for n in (2, 3, 4):
             emit_vector_class(out, scalar, n)
             out.append("\n")
+    out.append("\nAnyMatrix = Any\n" + chr(34) * 3 + "Placeholder while the matrix classes are being declared." + chr(34) * 3 + "\n\n")
+    for scalar in ("float", "half"):
+        for c in (2, 3, 4):
+            for r in (2, 3, 4):
+                emit_matrix_class(out, scalar, c, r)
+                out.append("\n")
     emit_functions(out)
     target = Path(__file__).resolve().parent.parent / "src" / "pyshader" / "__init__.py"
     target.write_text("".join(out))

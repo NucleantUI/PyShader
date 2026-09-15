@@ -20,6 +20,7 @@ extension FunctionEmitter {
             return try emitName(n)
 
         case .binOp(let b):
+            if let repeated = try repeatedList(b) { return repeated }
             let l = try emitExpression(b.left)
             let r = try emitExpression(b.right)
             return try binary(b.op, l, r, line: b.lineno)
@@ -48,9 +49,9 @@ extension FunctionEmitter {
         case .lambda(let l):
             throw PyShaderError("lambdas must be bound to a module-level name before use", line: l.lineno)
         case .tuple(let t):
-            throw PyShaderError("tuples are only supported for unpacking assignments (`x, y = uv`)", line: t.lineno)
+            return try emitTupleLiteral(t.elts, line: t.lineno)
         case .list(let l):
-            throw PyShaderError("lists are not available in shader code", line: l.lineno)
+            return try emitListLiteral(l.elts, line: l.lineno)
         case .dict(let d):
             throw PyShaderError("dicts are not available in shader code", line: d.lineno)
         case .set(let s):
@@ -108,6 +109,65 @@ extension FunctionEmitter {
             throw PyShaderError("`\(n.id)` is a type; call it to construct a value", line: n.lineno)
         }
         throw PyShaderError("`\(n.id)` is not defined", line: n.lineno)
+    }
+
+    // MARK: Composite literals
+
+    /// `(a, b)` -> a tuple value (a struct); mostly reached through `return a, b`.
+    private func emitTupleLiteral(_ elts: [Expression], line: Int) throws -> Value {
+        guard !elts.isEmpty else { throw PyShaderError("empty tuple", line: line) }
+        let values = try elts.map { try emitExpression($0) }
+        for v in values where !v.type.isStorable {
+            throw PyShaderError("cannot put a `\(v.type)` in a tuple", line: line)
+        }
+        let type = ShaderType.tuple(values.map(\.type))
+        return emit(.opCompositeConstruct, type: type, values.map(\.id))
+    }
+
+    /// `[a, b, c]` -> a fixed-size array; every element converts to the first one's type.
+    private func emitListLiteral(_ elts: [Expression], line: Int) throws -> Value {
+        guard !elts.isEmpty else { throw PyShaderError("a list needs at least one element to fix its type", line: line) }
+        let values = try elts.map { try emitExpression($0) }
+        let elem = values[0].type
+        guard elem.isStorable else { throw PyShaderError("cannot put a `\(elem)` in a list", line: line) }
+        let ids = try values.map { try coerce($0, to: elem, line: line).id }
+        let type = ShaderType.array(elem, ids.count)
+        if ids.allSatisfy(isLiteral) {
+            return Value(id: builder.constantComposite(type: type, elements: ids), type: type)
+        }
+        return emit(.opCompositeConstruct, type: type, ids)
+    }
+
+    /// `[x] * n` / `n * [x]`: Python's repeat idiom for a fixed-size array.
+    private func repeatedList(_ b: BinOp) throws -> Value? {
+        guard b.op == .mult else { return nil }
+        let (listExpr, countExpr): (Expression, Expression)
+        if case .list = b.left { (listExpr, countExpr) = (b.left, b.right) }
+        else if case .list = b.right { (listExpr, countExpr) = (b.right, b.left) }
+        else { return nil }
+        guard let n = constantIndex(countExpr), n > 0 else {
+            throw PyShaderError("list repeat count must be a positive constant", line: b.lineno)
+        }
+        let base = try emitExpression(listExpr)
+        guard case .array(let elem, let m) = base.type else { return nil }
+        var ids: [SpirvId] = []
+        for _ in 0..<n {
+            for i in 0..<m { ids.append(emit(.opCompositeExtract, type: elem, [base.id, UInt32(i)]).id) }
+        }
+        return emit(.opCompositeConstruct, type: .array(elem, n * m), ids)
+    }
+
+    /// Converts an array value to an array type with the same length and a different element type.
+    func coerceArray(_ v: Value, to target: ShaderType, line: Int) throws -> Value {
+        guard case .array(let from, let n) = v.type, case .array(let to, let m) = target, n == m else {
+            throw PyShaderError("cannot convert `\(v.type)` to `\(target)`", line: line)
+        }
+        var ids: [SpirvId] = []
+        for i in 0..<n {
+            let e = emit(.opCompositeExtract, type: from, [v.id, UInt32(i)])
+            ids.append(try coerce(e, to: to, line: line).id)
+        }
+        return emit(.opCompositeConstruct, type: target, ids)
     }
 
     // MARK: Unary / boolean
@@ -210,6 +270,15 @@ extension FunctionEmitter {
     // MARK: Arithmetic
 
     func binary(_ op: Operator, _ l: Value, _ r: Value, line: Int) throws -> Value {
+        if l.type.isMatrix || r.type.isMatrix {
+            return try matrixBinary(op, l, r, line: line)
+        }
+        if op == .matMult {
+            // `a @ b` on vectors is the dot product.
+            let (a, b) = try promote(l, r, line: line, forceFloat: true)
+            guard a.type.isVector else { throw PyShaderError("`@` needs vectors or matrices", line: line) }
+            return emit(.opDot, type: a.type.elementType!, [a.id, b.id])
+        }
         // Bitwise ops on bools are logical ops.
         if l.type.isBool && r.type.isBool {
             switch op {
@@ -285,8 +354,147 @@ extension FunctionEmitter {
             return emit(spirvOp, type: a.type, [a.id, b.id])
 
         case .matMult:
-            throw PyShaderError("matrices are not supported yet", line: line)
+            throw PyShaderError("`@` needs vectors or matrices", line: line)
         }
+    }
+
+    // MARK: Matrices
+
+    /// `*` and `@` with a matrix operand are linear-algebra products, as in Metal and GLSL;
+    /// `+`, `-` and `/ scalar` work column by column.
+    private func matrixBinary(_ op: Operator, _ l: Value, _ r: Value, line: Int) throws -> Value {
+        switch op {
+        case .mult, .matMult:
+            switch (l.type, r.type) {
+            case (.matrix(let k, let lc, let lr), .matrix(_, let rc, let rr)):
+                guard lc == rr else { throw PyShaderError("cannot multiply `\(l.type)` by `\(r.type)`", line: line) }
+                let rm = try coerceMatrix(r, kind: k, line: line)
+                return emit(.opMatrixTimesMatrix, type: .matrix(k, columns: rc, rows: lr), [l.id, rm.id])
+            case (.matrix(let k, let cols, let rows), .vector):
+                let v = try coerce(r, to: .vector(k, cols), line: line)
+                return emit(.opMatrixTimesVector, type: .vector(k, rows), [l.id, v.id])
+            case (.vector, .matrix(let k, let cols, let rows)):
+                let v = try coerce(l, to: .vector(k, rows), line: line)
+                return emit(.opVectorTimesMatrix, type: .vector(k, cols), [v.id, r.id])
+            case (.matrix(let k, _, _), .scalar):
+                let s = try coerce(r, to: .scalar(k), line: line)
+                return emit(.opMatrixTimesScalar, type: l.type, [l.id, s.id])
+            case (.scalar, .matrix(let k, _, _)):
+                let s = try coerce(l, to: .scalar(k), line: line)
+                return emit(.opMatrixTimesScalar, type: r.type, [r.id, s.id])
+            default:
+                throw PyShaderError("cannot multiply `\(l.type)` by `\(r.type)`", line: line)
+            }
+        case .add, .sub:
+            guard case .matrix(let k, let cols, let rows) = l.type, l.type == r.type else {
+                throw PyShaderError("cannot apply `\(symbol(op))` to `\(l.type)` and `\(r.type)`", line: line)
+            }
+            let column = ShaderType.vector(k, rows)
+            var ids: [SpirvId] = []
+            for c in 0..<cols {
+                let a = emit(.opCompositeExtract, type: column, [l.id, UInt32(c)])
+                let b = emit(.opCompositeExtract, type: column, [r.id, UInt32(c)])
+                ids.append(emit(op == .add ? .opFAdd : .opFSub, type: column, [a.id, b.id]).id)
+            }
+            return emit(.opCompositeConstruct, type: l.type, ids)
+        case .div:
+            guard case .matrix(let k, _, _) = l.type, r.type.isScalar, r.type.isNumeric else {
+                throw PyShaderError("a matrix can only be divided by a scalar", line: line)
+            }
+            let s = try coerce(r, to: .scalar(k), line: line)
+            let inverse = emit(.opFDiv, type: .scalar(k), [builder.constant(float: 1, type: .scalar(k)), s.id])
+            return emit(.opMatrixTimesScalar, type: l.type, [l.id, inverse.id])
+        default:
+            throw PyShaderError("cannot apply `\(symbol(op))` to matrices", line: line)
+        }
+    }
+
+    private func coerceMatrix(_ v: Value, kind: ScalarKind, line: Int) throws -> Value {
+        guard case .matrix(let k, _, _) = v.type else { throw PyShaderError("expected a matrix", line: line) }
+        guard k == kind else { throw PyShaderError("cannot mix `\(k.name)` and `\(kind.name)` matrices", line: line) }
+        return v
+    }
+
+    /// `float3x3(c0, c1, c2)` (columns), 9 scalars column-major, `float3x3(s)` (diagonal),
+    /// `float3x3(m)` (resize, identity-filled), `float3x3()` (identity).
+    private func constructMatrix(_ type: ShaderType, _ args: [Value], line: Int) throws -> Value {
+        guard case .matrix(let k, let cols, let rows) = type else { preconditionFailure() }
+        let column = ShaderType.vector(k, rows)
+        let elem = ShaderType.scalar(k)
+        func diagonal(_ s: SpirvId) -> Value {
+            let zero = builder.constant(float: 0, type: elem)
+            var columns: [SpirvId] = []
+            for c in 0..<cols {
+                let comps = (0..<rows).map { $0 == c ? s : zero }
+                columns.append(builder.literalFloat(s) != nil
+                    ? builder.constantComposite(type: column, elements: comps)
+                    : emit(.opCompositeConstruct, type: column, comps).id)
+            }
+            return builder.literalFloat(s) != nil
+                ? Value(id: builder.constantComposite(type: type, elements: columns), type: type)
+                : emit(.opCompositeConstruct, type: type, columns)
+        }
+        if args.isEmpty {
+            return diagonal(builder.constant(float: 1, type: elem))
+        }
+        if args.count == 1, args[0].type.isScalar {
+            return diagonal(try convert(args[0], to: elem, line: line).id)
+        }
+        if args.count == 1, case .matrix(let mk, let mc, let mr) = args[0].type {
+            guard mk == k else { throw PyShaderError("cannot convert `\(args[0].type)` to `\(type)`", line: line) }
+            let identity = diagonal(builder.constant(float: 1, type: elem))
+            var columns: [SpirvId] = []
+            for c in 0..<cols {
+                if c < mc {
+                    let src = emit(.opCompositeExtract, type: .vector(mk, mr), [args[0].id, UInt32(c)])
+                    var comps: [SpirvId] = []
+                    for r in 0..<rows {
+                        if r < mr {
+                            comps.append(emit(.opCompositeExtract, type: elem, [src.id, UInt32(r)]).id)
+                        } else {
+                            comps.append(builder.constant(float: r == c ? 1 : 0, type: elem))
+                        }
+                    }
+                    columns.append(emit(.opCompositeConstruct, type: column, comps).id)
+                } else {
+                    columns.append(emit(.opCompositeExtract, type: column, [identity.id, UInt32(c)]).id)
+                }
+            }
+            return emit(.opCompositeConstruct, type: type, columns)
+        }
+        if args.count == cols, args.allSatisfy({ $0.type.isVector }) {
+            let columns = try args.map { try coerce($0, to: column, line: line).id }
+            if columns.allSatisfy(isLiteral) {
+                return Value(id: builder.constantComposite(type: type, elements: columns), type: type)
+            }
+            return emit(.opCompositeConstruct, type: type, columns)
+        }
+        // Scalars (and vectors) flattened column-major.
+        var components: [SpirvId] = []
+        for a in args {
+            let converted = try convert(a, to: a.type.withKind(k), line: line)
+            if converted.type.isScalar {
+                components.append(converted.id)
+            } else if converted.type.isVector {
+                for i in 0..<converted.type.componentCount { components.append(swizzle(converted, [i]).id) }
+            } else {
+                throw PyShaderError("cannot build `\(type)` from `\(a.type)`", line: line)
+            }
+        }
+        guard components.count == cols * rows else {
+            throw PyShaderError("`\(type)` needs \(cols * rows) components, got \(components.count)", line: line)
+        }
+        var columns: [SpirvId] = []
+        for c in 0..<cols {
+            let comps = Array(components[(c * rows)..<((c + 1) * rows)])
+            columns.append(comps.allSatisfy(isLiteral)
+                ? builder.constantComposite(type: column, elements: comps)
+                : emit(.opCompositeConstruct, type: column, comps).id)
+        }
+        if columns.allSatisfy(isLiteral) {
+            return Value(id: builder.constantComposite(type: type, elements: columns), type: type)
+        }
+        return emit(.opCompositeConstruct, type: type, columns)
     }
 
     /// `(vector, scalar)` when the product can use OpVectorTimesScalar without changing the vector's type.
@@ -377,6 +585,17 @@ extension FunctionEmitter {
     /// Not allowed: float -> int, bool <-> number, vector -> scalar, vectorN -> vectorM.
     func coerce(_ v: Value, to target: ShaderType, line: Int) throws -> Value {
         if v.type == target { return v }
+        if case .tuple(let from) = v.type, case .tuple(let to) = target, from.count == to.count {
+            var ids: [SpirvId] = []
+            for (i, (f, t)) in zip(from, to).enumerated() {
+                let member = emit(.opCompositeExtract, type: f, [v.id, UInt32(i)])
+                ids.append(try coerce(member, to: t, line: line).id)
+            }
+            return emit(.opCompositeConstruct, type: target, ids)
+        }
+        if case .array = v.type, case .array = target {
+            return try coerceArray(v, to: target, line: line)
+        }
         guard let fromKind = v.type.scalarKind, let toKind = target.scalarKind else {
             throw PyShaderError("cannot convert `\(v.type)` to `\(target)`", line: line)
         }
@@ -506,6 +725,10 @@ extension FunctionEmitter {
     }
 
     private func emitSubscript(_ s: Subscript) throws -> Value {
+        // Rooted in a variable: read through a pointer so dynamic indices work on arrays and matrices.
+        if !isFloatArrayHandle(s.value), let p = try pointer(for: .subscriptExpr(s), line: s.lineno) {
+            return load(p.ptr, type: p.type)
+        }
         let base = try emitExpression(s.value)
         if case .floatArray(let argument) = base.type {
             let index = try emitExpression(s.slice)
@@ -514,29 +737,34 @@ extension FunctionEmitter {
             }
             return try compiler.loadArgumentArrayElement(argument, index: index, from: self, line: s.lineno)
         }
-        guard base.type.isVector else {
-            throw PyShaderError("`\(base.type)` cannot be indexed", line: s.lineno)
-        }
-        if let k = constantIndex(s.slice) {
-            let i = k < 0 ? k + base.type.componentCount : k
-            guard (0..<base.type.componentCount).contains(i) else {
+        switch base.type {
+        case .vector:
+            if let k = constantIndex(s.slice) {
+                let i = k < 0 ? k + base.type.componentCount : k
+                guard (0..<base.type.componentCount).contains(i) else {
+                    throw PyShaderError("index \(k) is out of range for `\(base.type)`", line: s.lineno)
+                }
+                return swizzle(base, [i])
+            }
+            let index = try emitIndex(s.slice, count: base.type.componentCount, line: s.lineno)
+            return emit(.opVectorExtractDynamic, type: base.type.elementType!, [base.id, index])
+        case .matrix, .array, .tuple:
+            guard let k = constantIndex(s.slice) else {
+                throw PyShaderError("dynamic indexing needs the `\(base.type)` in a variable", line: s.lineno)
+            }
+            let i = k < 0 ? k + base.type.count : k
+            guard (0..<base.type.count).contains(i), let elem = base.type.elementType(at: i) else {
                 throw PyShaderError("index \(k) is out of range for `\(base.type)`", line: s.lineno)
             }
-            return swizzle(base, [i])
+            return emit(.opCompositeExtract, type: elem, [base.id, UInt32(i)])
+        default:
+            throw PyShaderError("`\(base.type)` cannot be indexed", line: s.lineno)
         }
-        let index = try emitIndex(s.slice, count: base.type.componentCount, line: s.lineno)
-        return emit(.opVectorExtractDynamic, type: base.type.elementType!, [base.id, index])
     }
 
-    private func constantIndex(_ e: Expression) -> Int? {
-        switch e {
-        case .constant(let c):
-            if case .int(let v) = c.value { return v }
-        case .unaryOp(let u):
-            if u.op == .uSub, let v = constantIndex(u.operand) { return -v }
-        default: break
-        }
-        return nil
+    private func isFloatArrayHandle(_ e: Expression) -> Bool {
+        if case .name(let n) = e, lookupHandle(n.id) != nil { return true }
+        return false
     }
 
     /// Emits an integer index value (constant or dynamic) for component access.
@@ -641,6 +869,7 @@ extension FunctionEmitter {
 
     /// Vector / scalar constructors: `float4(1, 0, 0, 1)`, `float3(v2, z)`, `float4(0.5)`, `int(x)`.
     func construct(_ type: ShaderType, _ args: [Value], line: Int) throws -> Value {
+        if type.isMatrix { return try constructMatrix(type, args, line: line) }
         let n = type.componentCount
         let elem = type.elementType!
         if args.isEmpty {

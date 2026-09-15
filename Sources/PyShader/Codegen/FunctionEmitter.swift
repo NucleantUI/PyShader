@@ -84,7 +84,7 @@ final class FunctionEmitter {
     func emitLambda(id: SpirvId, params: [(name: String, type: ShaderType)], body expr: Expression, line: Int) throws -> ShaderType {
         let paramIds = beginFunction(params)
         let v = try emitExpression(expr)
-        guard v.type.isNumeric || v.type.isBool else {
+        guard v.type.isStorable else {
             throw PyShaderError("lambda must produce a value, got `\(v.type)`", line: line)
         }
         terminate(.init(.opReturnValue, [v.id]))
@@ -249,6 +249,43 @@ final class FunctionEmitter {
         }
     }
 
+    /// A pointer to a local variable or into one (`a[i]`, `m[i][j]`, `a[i].x`), for
+    /// expressions that can be read and written in place. Nil when the expression is
+    /// not rooted in a variable.
+    func pointer(for expr: Expression, line: Int) throws -> (ptr: SpirvId, type: ShaderType)? {
+        switch expr {
+        case .name(let n):
+            guard let local = locals[n.id] else { return nil }
+            return (local.ptr, local.type)
+        case .subscriptExpr(let sub):
+            guard let base = try pointer(for: sub.value, line: line) else { return nil }
+            guard let elem = base.type.elementType(at: nil), !base.type.isFloatArray else {
+                if case .tuple = base.type {
+                    guard let k = constantIndex(sub.slice), let member = base.type.elementType(at: k) else {
+                        throw PyShaderError("tuple index must be a constant", line: line)
+                    }
+                    let chain = emit(.opAccessChain, type: .pointer(.function, member), [base.ptr, builder.constant(int: k)])
+                    return (chain.id, member)
+                }
+                return nil
+            }
+            let index = try emitIndex(sub.slice, count: base.type.count, line: line)
+            let chain = emit(.opAccessChain, type: .pointer(.function, elem), [base.ptr, index])
+            return (chain.id, elem)
+        case .attribute(let a):
+            guard let indices = Swizzle.indices(for: a.attr), indices.count == 1,
+                  let base = try pointer(for: a.value, line: line), base.type.isVector else { return nil }
+            guard indices[0] < base.type.componentCount else {
+                throw PyShaderError("component \(indices[0]) is out of range for `\(base.type)`", line: line)
+            }
+            let elem = base.type.elementType!
+            let chain = emit(.opAccessChain, type: .pointer(.function, elem), [base.ptr, builder.constant(int: indices[0])])
+            return (chain.id, elem)
+        default:
+            return nil
+        }
+    }
+
     /// Resolves an assignment target into an LValue.
     func lvalue(for target: Expression, line: Int) throws -> LValue {
         switch target {
@@ -258,37 +295,38 @@ final class FunctionEmitter {
             }
             return .variable(ptr: local.ptr, type: local.type)
         case .attribute(let a):
-            guard case .name(let base) = a.value else {
-                throw PyShaderError("can only assign to swizzles of a variable (e.g. `color.rgb = ...`)", line: line)
+            guard let base = try pointer(for: a.value, line: line) else {
+                throw PyShaderError("can only assign to components of a variable (e.g. `color.rgb = ...`)", line: line)
             }
-            guard let local = locals[base.id] else {
-                throw PyShaderError("`\(base.id)` is not defined", line: line)
-            }
-            guard local.type.isVector else {
-                throw PyShaderError("`\(base.id)` is a `\(local.type)`, it has no component `\(a.attr)`", line: line)
+            guard base.type.isVector else {
+                throw PyShaderError("`\(base.type)` has no component `\(a.attr)`", line: line)
             }
             guard let indices = Swizzle.indices(for: a.attr) else {
                 throw PyShaderError("`\(a.attr)` is not a vector component", line: line)
             }
-            if let bad = indices.first(where: { $0 >= local.type.componentCount }) {
-                throw PyShaderError("component \(bad) is out of range for `\(local.type)`", line: line)
+            if let bad = indices.first(where: { $0 >= base.type.componentCount }) {
+                throw PyShaderError("component \(bad) is out of range for `\(base.type)`", line: line)
             }
-            return .swizzle(ptr: local.ptr, vectorType: local.type, indices: indices)
-        case .subscriptExpr(let s):
-            guard case .name(let base) = s.value else {
-                throw PyShaderError("can only index a variable", line: line)
+            return .swizzle(ptr: base.ptr, vectorType: base.type, indices: indices)
+        case .subscriptExpr:
+            guard let p = try pointer(for: target, line: line) else {
+                throw PyShaderError("can only index into a variable", line: line)
             }
-            guard let local = locals[base.id] else {
-                throw PyShaderError("`\(base.id)` is not defined", line: line)
-            }
-            guard local.type.isVector else {
-                throw PyShaderError("`\(base.id)` is a `\(local.type)`, it cannot be indexed", line: line)
-            }
-            let index = try emitIndex(s.slice, count: local.type.componentCount, line: line)
-            return .component(ptr: local.ptr, index: index, vectorType: local.type)
+            return .variable(ptr: p.ptr, type: p.type)
         default:
             throw PyShaderError("unsupported assignment target", line: line)
         }
+    }
+
+    func constantIndex(_ e: Expression) -> Int? {
+        switch e {
+        case .constant(let c):
+            if case .int(let v) = c.value { return v }
+        case .unaryOp(let u):
+            if u.op == .uSub, let v = constantIndex(u.operand) { return -v }
+        default: break
+        }
+        return nil
     }
 
     // MARK: Statements
@@ -400,10 +438,16 @@ final class FunctionEmitter {
             values = try l.elts.map { try emitExpression($0) }
         default:
             let v = try emitExpression(value)
-            guard v.type.isVector, v.type.componentCount == targets.count else {
+            switch v.type {
+            case .vector(_, let n) where n == targets.count:
+                values = (0..<n).map { swizzle(v, [$0]) }
+            case .tuple(let members) where members.count == targets.count:
+                values = members.enumerated().map { i, t in emit(.opCompositeExtract, type: t, [v.id, UInt32(i)]) }
+            case .array(let elem, let n) where n == targets.count:
+                values = (0..<n).map { emit(.opCompositeExtract, type: elem, [v.id, UInt32($0)]) }
+            default:
                 throw PyShaderError("cannot unpack `\(v.type)` into \(targets.count) targets", line: line)
             }
-            values = (0..<targets.count).map { swizzle(v, [$0]) }
         }
         for (target, v) in zip(targets, values) {
             try assign(target, v, line: line)
@@ -416,7 +460,7 @@ final class FunctionEmitter {
             if let local = locals[n.id] {
                 try store(.variable(ptr: local.ptr, type: local.type), value, line: line)
             } else {
-                guard value.type.isNumeric || value.type.isBool else {
+                guard value.type.isStorable else {
                     throw PyShaderError("cannot store a `\(value.type)` in a variable", line: line)
                 }
                 let local = declareLocal(n.id, type: value.type)
@@ -432,7 +476,25 @@ final class FunctionEmitter {
         guard case .name(let n) = a.target else {
             throw PyShaderError("only plain variables can be annotated", line: a.lineno)
         }
-        let type = try ShaderProgram.resolveType(a.annotation, line: a.lineno)
+        var type = try ShaderProgram.resolveType(a.annotation, line: a.lineno)
+        if case .array(let elem, -1) = type {
+            // `xs: list[float4] = [...]` — the length is the value's.
+            guard let valueExpr = a.value else {
+                throw PyShaderError("`\(n.id)`: a list needs a value to fix its length", line: a.lineno)
+            }
+            let value = try emitExpression(valueExpr)
+            guard case .array(let got, let length) = value.type else {
+                throw PyShaderError("`\(n.id)` is a list, got `\(value.type)`", line: a.lineno)
+            }
+            type = .array(elem, length)
+            let local = locals[n.id] ?? declareLocal(n.id, type: type)
+            guard local.type == type else {
+                throw PyShaderError("`\(n.id)` is already a `\(local.type)`", line: a.lineno)
+            }
+            let converted = got == elem ? value : try coerceArray(value, to: type, line: a.lineno)
+            store(local.ptr, converted.id)
+            return
+        }
         let local: LocalVariable
         if let existing = locals[n.id] {
             guard existing.type == type else {
@@ -462,8 +524,20 @@ final class FunctionEmitter {
         }
         let value: Value
         if let expr = r.value, !isNoneLiteral(expr) {
-            let raw = try emitExpression(expr)
-            value = try coerce(raw, to: returnType, line: r.lineno)
+            if case .tuple(let members) = returnType, case .tuple(let literal) = expr {
+                // `return a, b` against `-> tuple[...]`: convert each element to its slot.
+                guard literal.elts.count == members.count else {
+                    throw PyShaderError("`\(functionName)` returns \(members.count) values, got \(literal.elts.count)", line: r.lineno)
+                }
+                var ids: [SpirvId] = []
+                for (e, t) in zip(literal.elts, members) {
+                    ids.append(try coerce(try emitExpression(e), to: t, line: r.lineno).id)
+                }
+                value = emit(.opCompositeConstruct, type: returnType, ids)
+            } else {
+                let raw = try emitExpression(expr)
+                value = try coerce(raw, to: returnType, line: r.lineno)
+            }
         } else if let implicitReturn {
             value = try implicitReturn(self)
         } else {

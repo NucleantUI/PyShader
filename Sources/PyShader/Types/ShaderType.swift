@@ -61,6 +61,12 @@ public indirect enum ShaderType: Hashable, Sendable, CustomStringConvertible {
     case void
     case scalar(ScalarKind)
     case vector(ScalarKind, Int)
+    /// Column-major float matrix, `columns` column vectors of `rows` components (Metal's `floatCxR`).
+    case matrix(ScalarKind, columns: Int, rows: Int)
+    /// Fixed-size array, as a Python list literal of one element type produces.
+    case array(ShaderType, Int)
+    /// Several values returned together (`-> tuple[float, float3]`); a struct in SPIR-V.
+    case tuple([ShaderType])
     /// A (Block-decorated) struct, used for push-constant / uniform / storage blocks.
     case structure(name: String, members: [(String, ShaderType)])
     case pointer(SpirvStorageClass, ShaderType)
@@ -122,6 +128,43 @@ public indirect enum ShaderType: Hashable, Sendable, CustomStringConvertible {
         return !k.isBool
     }
 
+    /// Can live in a variable, be passed and returned.
+    public var isStorable: Bool {
+        switch self {
+        case .scalar, .vector, .matrix, .tuple: return true
+        case .array(let t, let n): return n >= 0 && t.isStorable
+        default: return false
+        }
+    }
+
+    public var isMatrix: Bool {
+        if case .matrix = self { return true }
+        return false
+    }
+
+    /// Column count of a matrix, element count of an array, member count of a tuple.
+    public var count: Int {
+        switch self {
+        case .matrix(_, let c, _): return c
+        case .array(_, let n): return n
+        case .tuple(let ts): return ts.count
+        default: return componentCount
+        }
+    }
+
+    /// The type `self[i]` yields: vector -> scalar, matrix -> column, array -> element.
+    public func elementType(at index: Int? = nil) -> ShaderType? {
+        switch self {
+        case .scalar, .vector: return elementType
+        case .matrix(let k, _, let rows): return .vector(k, rows)
+        case .array(let t, _): return t
+        case .tuple(let ts):
+            guard let index, ts.indices.contains(index) else { return nil }
+            return ts[index]
+        default: return nil
+        }
+    }
+
     public var isFloatArray: Bool {
         if case .floatArray = self { return true }
         return false
@@ -147,6 +190,9 @@ public indirect enum ShaderType: Hashable, Sendable, CustomStringConvertible {
         case .void: return "None"
         case .scalar(let k): return k.name
         case .vector(let k, let n): return "\(k.name)\(n)"
+        case .matrix(let k, let c, let r): return "\(k.name)\(c)x\(r)"
+        case .array(let t, let n): return "list[\(t)] (\(n))"
+        case .tuple(let ts): return "tuple[\(ts.map(\.description).joined(separator: ", "))]"
         case .structure(let name, _): return name
         case .pointer(_, let t): return "ptr<\(t)>"
         case .function(let r, let p): return "(\(p.map(\.description).joined(separator: ", "))) -> \(r)"
@@ -161,6 +207,13 @@ public indirect enum ShaderType: Hashable, Sendable, CustomStringConvertible {
     /// Looks up a Python-facing type name such as `float3` or `int`.
     public static func named(_ name: String) -> ShaderType? {
         if let t = scalarNames[name] { return t }
+        // float3x3 / half2x4: columns x rows
+        let parts = name.split(separator: "x")
+        if parts.count == 2, let rows = Int(parts[1]), (2...4).contains(rows),
+           let last = parts[0].last, let cols = Int(String(last)), (2...4).contains(cols),
+           let base = scalarNames[String(parts[0].dropLast())], let k = base.scalarKind, k.isFloat {
+            return .matrix(k, columns: cols, rows: rows)
+        }
         guard let last = name.last, let n = Int(String(last)), (2...4).contains(n) else { return nil }
         let base = String(name.dropLast())
         guard let s = scalarNames[base], let k = s.scalarKind else { return nil }
@@ -184,6 +237,9 @@ public indirect enum ShaderType: Hashable, Sendable, CustomStringConvertible {
         case (.void, .void): return true
         case (.scalar(let a), .scalar(let b)): return a == b
         case (.vector(let a, let n), .vector(let b, let m)): return a == b && n == m
+        case (.matrix(let a, let ac, let ar), .matrix(let b, let bc, let br)): return a == b && ac == bc && ar == br
+        case (.array(let a, let n), .array(let b, let m)): return a == b && n == m
+        case (.tuple(let a), .tuple(let b)): return a == b
         case (.structure(let an, let am), .structure(let bn, let bm)):
             return an == bn && am.count == bm.count && zip(am, bm).allSatisfy { $0.0 == $1.0 && $0.1 == $1.1 }
         case (.pointer(let a, let at), .pointer(let b, let bt)): return a == b && at == bt
@@ -201,6 +257,9 @@ public indirect enum ShaderType: Hashable, Sendable, CustomStringConvertible {
         case .void: hasher.combine(0)
         case .scalar(let k): hasher.combine(1); hasher.combine(k)
         case .vector(let k, let n): hasher.combine(2); hasher.combine(k); hasher.combine(n)
+        case .matrix(let k, let c, let r): hasher.combine(10); hasher.combine(k); hasher.combine(c); hasher.combine(r)
+        case .array(let t, let n): hasher.combine(11); hasher.combine(t); hasher.combine(n)
+        case .tuple(let ts): hasher.combine(12); hasher.combine(ts)
         case .structure(let name, let members):
             hasher.combine(3); hasher.combine(name)
             for (n, t) in members { hasher.combine(n); hasher.combine(t) }

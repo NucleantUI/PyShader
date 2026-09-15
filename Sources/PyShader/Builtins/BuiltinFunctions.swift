@@ -125,6 +125,26 @@ extension FunctionEmitter {
             let eta = try coerce(args[2], to: i.type.elementType!, line: line)
             return emitExt(.refract, type: i.type, [i.id, n.id, eta.id])
 
+        // MARK: Matrices
+        case "transpose":
+            try arity(name, args, 1, line)
+            guard case .matrix(let k, let c, let r) = args[0].type else {
+                throw PyShaderError("transpose() needs a matrix, got `\(args[0].type)`", line: line)
+            }
+            return emit(.opTranspose, type: .matrix(k, columns: r, rows: c), [args[0].id])
+        case "determinant":
+            try arity(name, args, 1, line)
+            guard case .matrix(let k, let c, let r) = args[0].type, c == r else {
+                throw PyShaderError("determinant() needs a square matrix, got `\(args[0].type)`", line: line)
+            }
+            return emitExt(.determinant, type: .scalar(k), [args[0].id])
+        case "inverse":
+            try arity(name, args, 1, line)
+            guard case .matrix(_, let c, let r) = args[0].type, c == r else {
+                throw PyShaderError("inverse() needs a square matrix, got `\(args[0].type)`", line: line)
+            }
+            return emitExt(.matrixInverse, type: args[0].type, [args[0].id])
+
         // MARK: Vector relational
         case "any":
             try arity(name, args, 1, line)
@@ -137,20 +157,24 @@ extension FunctionEmitter {
 
         // MARK: Derivatives
         case "dfdx", "dFdx":
+            try requireFragment(name, line)
             try arity(name, args, 1, line)
             let x = try asFloat(args[0], name, line)
             return emit(.opDPdx, type: x.type, [x.id])
         case "dfdy", "dFdy":
+            try requireFragment(name, line)
             try arity(name, args, 1, line)
             let x = try asFloat(args[0], name, line)
             return emit(.opDPdy, type: x.type, [x.id])
         case "fwidth":
+            try requireFragment(name, line)
             try arity(name, args, 1, line)
             let x = try asFloat(args[0], name, line)
             return emit(.opFwidth, type: x.type, [x.id])
 
         // MARK: Fragment control
         case "discard":
+            try requireFragment(name, line)
             try arity(name, args, 0, line)
             return try emitDiscard(line: line)
 
@@ -161,10 +185,14 @@ extension FunctionEmitter {
             return try compiler.sampleContent(at: p, from: self, line: line)
         case "len":
             try arity(name, args, 1, line)
-            guard case .floatArray(let argument) = args[0].type else {
-                throw PyShaderError("len() only works on FloatArray arguments, got `\(args[0].type)`", line: line)
+            switch args[0].type {
+            case .floatArray(let argument):
+                return try compiler.argumentArrayCount(argument, from: self, line: line)
+            case .array, .tuple, .matrix, .vector:
+                return Value(id: builder.constant(int: args[0].type.count), type: .int)
+            default:
+                throw PyShaderError("len() needs a list, tuple, vector or matrix, got `\(args[0].type)`", line: line)
             }
-            return try compiler.argumentArrayCount(argument, from: self, line: line)
 
         default:
             return nil
@@ -172,6 +200,12 @@ extension FunctionEmitter {
     }
 
     // MARK: Helpers
+
+    /// Screen-space derivatives and `discard` exist only in a fragment stage.
+    private func requireFragment(_ name: String, _ line: Int) throws {
+        if case .fragment = program.target { return }
+        throw PyShaderError("\(name)() is only available in the fragment target (a compute shader has no derivatives); return the value without it", line: line)
+    }
 
     private func arity(_ name: String, _ args: [Value], _ n: Int, _ line: Int) throws {
         guard args.count == n else {

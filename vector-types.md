@@ -13,10 +13,57 @@ are also constructors.
 | `ushort` | `OpTypeInt 16 0`    | `ushort2` `ushort3` `ushort4` | |
 | `bool`   | `OpTypeBool`        | `bool2` `bool3` `bool4`       | vector comparisons produce these |
 
-`FloatArray` is the one array type: a `.floatArray` `ShaderArgument` handed to
-`main` on the compute target — `a[i]` and `len(a)` only, not storable or
-passable. There are no matrices, general arrays, structs or textures yet (see
-`shader-api-status.md`).
+## Matrices
+
+`float2x2` … `float4x4` (and `half…`): C columns of R-component vectors,
+column-major like Metal and GLSL.
+
+```py
+m = float3x3(c0, c1, c2)           # column vectors
+m = float3x3(a, b, c, d, e, f, g, h, i)   # 9 scalars, column-major
+m = float3x3()                     # identity
+m = float3x3(2.0)                  # diagonal
+m = float4x4(m3)                   # resize, identity-filled
+m[1]                               # a column; m[1][2] a component
+m * v      # OpMatrixTimesVector      v * m    # OpVectorTimesMatrix
+m * n      # OpMatrixTimesMatrix      m * 2.0  # OpMatrixTimesScalar
+m @ v      # same as *; on two vectors `@` is the dot product
+m + n, m - n, m / 2.0              # column by column
+transpose(m), determinant(m), inverse(m)
+```
+
+## Lists (fixed-size arrays)
+
+```py
+xs = [float4(0.0)] * 3             # Python's repeat idiom
+w: list[float] = [0.13, 0.07, 0.03]
+xs[i] = v                          # dynamic index, read or write
+xs[i].rgb *= 0.5
+xs[0], xs[1] = xs[1], xs[0]        # swap
+len(xs)                            # a constant
+```
+
+Element type comes from the first element; the length from the value. Lists
+cannot be parameters yet and cannot nest.
+
+## Tuples (several return values)
+
+```py
+def box(ro: float3, rd: float3) -> tuple[float, float3]:
+    ...
+    return t, normal
+
+t, n = box(ro, rd)
+hit = box(ro, rd); hit[1]
+```
+
+A tuple is a struct in SPIR-V; `return a, b` converts each element to its
+declared slot. Module constants may be tuples (`MISS = (False, -1.0, float3(0.0))`).
+
+`FloatArray` is the host-provided array: a `.floatArray` `ShaderArgument`
+handed to `main` on the compute target — `a[i]` and `len(a)` only, not
+storable or passable. There are no structs or textures beyond `layer()` yet
+(see `shader-api-status.md`).
 
 ## Declaring variables
 

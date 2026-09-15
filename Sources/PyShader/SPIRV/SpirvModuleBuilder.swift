@@ -98,6 +98,20 @@ final class SpirvModuleBuilder {
             let elem = type(.scalar(kind))
             id = allocate()
             declarations.append(.init(.opTypeVector, [id, elem, UInt32(n)]))
+        case .matrix(let kind, let cols, let rows):
+            let column = type(.vector(kind, rows))
+            id = allocate()
+            declarations.append(.init(.opTypeMatrix, [id, column, UInt32(cols)]))
+        case .array(let elem, let n):
+            let elemId = type(elem)
+            let length = constant(int: n)
+            id = allocate()
+            declarations.append(.init(.opTypeArray, [id, elemId, length]))
+        case .tuple(let members):
+            let memberIds = members.map { type($0) }
+            id = allocate()
+            declarations.append(.init(.opTypeStruct, [id] + memberIds))
+            self.name(id, "tuple")
         case .structure(let name, let members):
             let memberIds = members.map { type($0.1) }
             id = allocate()
@@ -203,6 +217,14 @@ final class SpirvModuleBuilder {
         case .vector(let k, let n):
             let z = zero(of: .scalar(k))
             return constantComposite(type: t, elements: Array(repeating: z, count: n))
+        case .matrix(let k, let cols, let rows):
+            let z = zero(of: .vector(k, rows))
+            return constantComposite(type: t, elements: Array(repeating: z, count: cols))
+        case .array(let elem, let n):
+            let z = zero(of: elem)
+            return constantComposite(type: t, elements: Array(repeating: z, count: n))
+        case .tuple(let members):
+            return constantComposite(type: t, elements: members.map { zero(of: $0) })
         default: preconditionFailure("zero(of:) on non-numeric type \(t)")
         }
     }

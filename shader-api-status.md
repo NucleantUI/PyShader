@@ -23,13 +23,18 @@ Scalars broadcast against vectors where GLSL allows it (`min(v, 0.5)`,
 ### Geometric
 `length` `distance` `dot` `cross` `normalize` `faceforward` `reflect` `refract`
 
+### Matrices
+`transpose` `determinant` `inverse`; `*` / `@` products, `m[i]`, `m[i][j]`
+(see `vector-types.md`)
+
 ### Vector relational
 `any` `all` (on `boolN` from vector comparisons)
 
-### Derivatives
-`dfdx` / `dFdx` `dfdy` / `dFdy` `fwidth`
+### Derivatives (fragment target only)
+`dfdx` / `dFdx` `dfdy` / `dFdy` `fwidth` — an error in the compute target,
+as in GLSL compute.
 
-### Fragment control
+### Fragment control (fragment target only)
 `discard()` -> `OpKill`
 
 ### Host resources (compute target)
@@ -50,7 +55,10 @@ Every type name (`float`, `int`, `uint`, `half`, `short`, `ushort`, `bool`,
   once per distinct argument-type signature; immediately-invoked lambdas
 - `if` / `elif` / `else`, `while`, `for i in range(stop | start, stop | start, stop, step)`,
   `break`, `continue`, `return`, `pass`
-- tuple unpacking (`x, y = uv`, `a, b = 1, 2`), chained assignment
+- tuple unpacking (`x, y = uv`, `a, b = 1, 2`), chained assignment, swaps
+- tuple returns (`-> tuple[float, float3]`), list literals / `[x] * n` as
+  fixed-size arrays with dynamic indexing, `len()` on any composite
+- matrices `float2x2` … `float4x4` with Metal/GLSL product semantics
 - `from pyshader import *` / `import pyshader` are accepted and ignored so
   editors can be pointed at a stub; `pyshader.sin(x)` works
 - docstrings
@@ -93,8 +101,9 @@ Output is `fragColor` at `location 0`. Returning nothing from `main` forwards
 | Feature | Notes |
 |---------|-------|
 | textures / samplers beyond `layer()` | a general `sample(texture, uv)` with declared bindings |
-| matrices (`float2x2` ... `float4x4`, `@`) | `OpTypeMatrix`, `OpMatrixTimesVector`, `determinant`, `inverse`, `transpose` |
-| arrays | `OpTypeArray`; would enable `for x in (a, b, c)` |
+| list parameters, nested lists, `for x in xs` | a list's length is only known from its value today |
+| matrix kind conversion (`half3x3(float3x3)`) | column-wise `OpFConvert` |
+| `\` line continuation | PySwiftAST rejects it; wrap in parentheses |
 | classes -> structs | needs a pyclass -> `OpTypeStruct` design |
 | uniform buffers | only push constants today |
 | vertex / compute stages | only `Fragment` execution model |
