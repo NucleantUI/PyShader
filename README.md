@@ -173,6 +173,8 @@ Types, promotion and operator rules in detail: [vector-types.md](vector-types.md
   other. [Its README](Examples/shadertoy/README.md) lists what porting needed.
 - [Examples/NucleantSwiftUIExample/](Examples/NucleantSwiftUIExample/) — a
   gallery of `.py` shaders and `.py` effects in a NucleantSwiftUI window.
+- [Examples/liquid_glass/](Examples/liquid_glass/) — a home screen whose
+  app icons are liquid glass, each its own `.shader` effect.
 
 ## Editor
 
@@ -213,7 +215,7 @@ In NucleantSwiftUI, `ShaderFunction(pyshader: source)` goes wherever a
 ## Development
 
 ```sh
-swift test                          # 42 tests; every example through spirv-val
+swift test                          # 43 tests; every example through spirv-val
 ./scripts/validate_examples.sh
 ```
 

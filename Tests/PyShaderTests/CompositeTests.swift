@@ -89,6 +89,17 @@ struct CompositeTests {
     func shadertoy(_ port: (name: String, source: String)) throws {
         try compileValid(port.source, target: .nucleantSwiftUI)
     }
+
+    @Test("the liquid glass effects compile with their arguments and the backdrop")
+    func liquidGlass() throws {
+        let dir = examplesDirectory.appendingPathComponent("liquid_glass")
+        let optical = try String(contentsOf: dir.appendingPathComponent("liquid-glass.py"), encoding: .utf8)
+        try compileValid(optical, target: .computeImage(.nucleantSwiftUI(
+            samplesContent: true, arguments: [("radius", .float), ("thickness", .float), ("inset", .float)])))
+        let squircle = try String(contentsOf: dir.appendingPathComponent("liquid-glass-squircle.py"), encoding: .utf8)
+        try compileValid(squircle, target: .computeImage(.nucleantSwiftUI(
+            samplesContent: true, arguments: [("power", .float), ("blur", .float), ("noise", .float)])))
+    }
 }
 
 func shadertoyPorts() throws -> [(name: String, source: String)] {
