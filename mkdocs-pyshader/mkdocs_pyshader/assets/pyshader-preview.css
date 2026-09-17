@@ -115,8 +115,13 @@
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 
+/* Stacked: the block is --pyshader-height tall; the preview gets the top
+   half (its width from the aspect ratio, centred) and the editor the rest. */
 .pyshader-layout-vertical {
   grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr);
+  align-items: stretch;
+  height: var(--pyshader-height);
 }
 
 .pyshader-toolbar {
@@ -125,13 +130,43 @@
 
 .pyshader-layout-vertical .pyshader-frame {
   order: -1;
+  height: 100%;
+  width: 100%;
+  min-height: 0;
+  justify-self: center;
+}
+
+.pyshader-layout-vertical.pyshader-has-aspect .pyshader-frame {
+  width: auto;
+  max-width: 100%;
+  aspect-ratio: var(--pyshader-aspect);
+}
+
+.pyshader-layout-vertical .pyshader-editor {
+  height: auto;
+  min-height: 0;
 }
 
 @media (max-width: 76em) {
   .pyshader-layout-auto {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr);
+    align-items: stretch;
+    height: var(--pyshader-height);
   }
   .pyshader-layout-auto .pyshader-frame {
     order: -1;
+    height: 100%;
+    min-height: 0;
+    justify-self: center;
+  }
+  .pyshader-layout-auto.pyshader-has-aspect .pyshader-frame {
+    width: auto;
+    max-width: 100%;
+    aspect-ratio: var(--pyshader-aspect);
+  }
+  .pyshader-layout-auto .pyshader-editor {
+    height: auto;
+    min-height: 0;
   }
 }
