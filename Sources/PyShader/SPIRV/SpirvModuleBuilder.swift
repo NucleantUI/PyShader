@@ -8,6 +8,8 @@
 //  the order the spec requires.
 //
 
+import SpirvCore
+
 final class SpirvModuleBuilder {
     private(set) var nextId: SpirvId = 1
 
@@ -269,31 +271,4 @@ final class SpirvModuleBuilder {
         for i in functions { words += i.words }
         return words
     }
-}
-
-/// IEEE 754 binary16 encoding of a float (round-to-nearest-even). `Float16` is unavailable on x86_64 macOS.
-func halfBits(_ f: Float) -> UInt16 {
-    let bits = f.bitPattern
-    let sign = UInt16((bits >> 16) & 0x8000)
-    let exp = Int((bits >> 23) & 0xFF) - 127 + 15
-    var mant = bits & 0x7F_FFFF
-    if (bits & 0x7F80_0000) == 0x7F80_0000 {
-        // inf / nan
-        return sign | 0x7C00 | (mant != 0 ? 0x200 : 0)
-    }
-    if exp >= 0x1F { return sign | 0x7C00 }
-    if exp <= 0 {
-        if exp < -10 { return sign }
-        mant |= 0x80_0000
-        let shift = UInt32(14 - exp)
-        var half = UInt16(mant >> shift)
-        let rem = mant & ((1 << shift) - 1)
-        let halfway: UInt32 = 1 << (shift - 1)
-        if rem > halfway || (rem == halfway && (half & 1) == 1) { half += 1 }
-        return sign | half
-    }
-    var half = UInt16(exp << 10) | UInt16(mant >> 13)
-    let rem = mant & 0x1FFF
-    if rem > 0x1000 || (rem == 0x1000 && (half & 1) == 1) { half += 1 }
-    return sign | half
 }

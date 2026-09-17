@@ -90,7 +90,9 @@ nav:
       - Instanced glow (graphics): examples/graphics.md
       - Builtins & forwarding: examples/fragment-only.md
   - Playground: playground.md
+  - GLSL to PyShader: convert.md
   - Compiler:
       - Swift API & CLI: compiler/api.md
       - How it works: compiler/internals.md
+      - Decompiling SPIR-V: compiler/decompiler.md
   - Docs plugin: plugin.md

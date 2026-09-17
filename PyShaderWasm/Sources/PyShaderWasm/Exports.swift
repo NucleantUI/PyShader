@@ -16,13 +16,22 @@
 //  names are readable through pyshader_entry_point / pyshader_vertex_entry_point.
 //  On failure it is the error text.
 //
+//  pyshader_decompile goes the other way: SPIR-V bytes in, PyShader source
+//  out (see the docs' GLSL converter). Its options:
+//    rename=spirvName:pyName            (repeatable)
+//    entry=name                         (the entry point, when the module has several)
+//    header=0                           (no "# Decompiled from …" line)
+//  The warnings of the last decompile are readable through pyshader_decompile_warnings.
+//
 
 import PyShader
+import Spirv2PyShader
 
 private nonisolated(unsafe) var resultBuffer: UnsafeMutableRawPointer?
 private nonisolated(unsafe) var resultCount: Int32 = 0
 private nonisolated(unsafe) var entryPointBytes: [UInt8] = []
 private nonisolated(unsafe) var vertexEntryPointBytes: [UInt8] = []
+private nonisolated(unsafe) var decompileWarningBytes: [UInt8] = []
 
 private func storeResult(_ bytes: [UInt8]) {
     freeResult()
@@ -151,6 +160,64 @@ public func pyshader_entry_point(_ pointer: UnsafeMutableRawPointer?, _ capacity
 @_cdecl("pyshader_vertex_entry_point")
 public func pyshader_vertex_entry_point(_ pointer: UnsafeMutableRawPointer?, _ capacity: Int32) -> Int32 {
     copyOut(vertexEntryPointBytes, to: pointer, capacity: capacity)
+}
+
+private func decompileOptions(from options: String) throws -> DecompileOptions {
+    var result = DecompileOptions()
+    for pair in options.split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" }) {
+        let parts = pair.split(separator: "=", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { throw Spirv2PyShaderError("bad option `\(pair)`") }
+        switch parts[0] {
+        case "rename":
+            let names = parts[1].split(separator: ":", maxSplits: 1).map(String.init)
+            guard names.count == 2 else { throw Spirv2PyShaderError("bad rename `\(parts[1])`, want spirvName:pyName") }
+            result.renames[names[0]] = names[1]
+        case "entry":
+            result.entryPoint = parts[1]
+        case "header":
+            result.header = parts[1] == "1" || parts[1] == "true"
+        default:
+            throw Spirv2PyShaderError("unknown option `\(parts[0])`")
+        }
+    }
+    return result
+}
+
+/// Returns 0 on success (result = PyShader source), 1 on failure (result = error text).
+@_expose(wasm, "pyshader_decompile")
+@_cdecl("pyshader_decompile")
+public func pyshader_decompile(
+    _ spirvPointer: UnsafeRawPointer?,
+    _ spirvLength: Int32,
+    _ optionsPointer: UnsafeRawPointer?,
+    _ optionsLength: Int32
+) -> Int32 {
+    do {
+        guard let spirvPointer, spirvLength > 0, spirvLength % 4 == 0 else {
+            throw Spirv2PyShaderError("the SPIR-V module is empty or not a whole number of words")
+        }
+        let words = [UInt32](unsafeUninitializedCapacity: Int(spirvLength) / 4) { buffer, count in
+            UnsafeMutableRawBufferPointer(buffer).copyMemory(from: UnsafeRawBufferPointer(start: spirvPointer, count: Int(spirvLength)))
+            count = Int(spirvLength) / 4
+        }
+        let options = try decompileOptions(from: string(from: optionsPointer, length: optionsLength))
+        let shader = try Spirv2PyShader.decompile(words, options: options)
+        decompileWarningBytes = Array(shader.warnings.joined(separator: "\n").utf8)
+        storeResult(Array(shader.source.utf8))
+        return 0
+    } catch {
+        decompileWarningBytes = []
+        storeResult(Array("\(error)".utf8))
+        return 1
+    }
+}
+
+/// Copies the warnings of the last successful decompile, one per line, into
+/// `pointer` (at most `capacity` bytes) and returns their length.
+@_expose(wasm, "pyshader_decompile_warnings")
+@_cdecl("pyshader_decompile_warnings")
+public func pyshader_decompile_warnings(_ pointer: UnsafeMutableRawPointer?, _ capacity: Int32) -> Int32 {
+    copyOut(decompileWarningBytes, to: pointer, capacity: capacity)
 }
 
 private func copyOut(_ bytes: [UInt8], to pointer: UnsafeMutableRawPointer?, capacity: Int32) -> Int32 {

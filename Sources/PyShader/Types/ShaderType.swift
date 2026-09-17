@@ -4,6 +4,8 @@
 //
 
 /// Scalar element kinds available to shader code.
+import SpirvCore
+
 public enum ScalarKind: Hashable, Sendable {
     case bool
     case float(bits: Int)

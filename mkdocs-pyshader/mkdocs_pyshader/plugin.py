@@ -20,6 +20,7 @@ FENCES = (
     ("pyshader", fences.code_and_preview),
     ("pyshader-preview", fences.preview_only),
     ("pyshader-edit", fences.editor),
+    ("pyshader-convert", fences.converter),
 )
 
 
@@ -29,6 +30,8 @@ class PyShaderPlugin(BasePlugin):
         ("assets_dir", config_options.Type(str, default="assets/pyshader")),
         # Monaco's `vs` folder for the editor fence.
         ("monaco_url", config_options.Type(str, default="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs")),
+        # glslang built to wasm (the @webgpu/glslang package), for the `pyshader-convert` fence.
+        ("glslang_url", config_options.Type(str, default="https://cdn.jsdelivr.net/npm/@webgpu/glslang@0.0.15/dist/web-devel/glslang.js")),
     )
 
     def on_config(self, config):
@@ -50,12 +53,13 @@ class PyShaderPlugin(BasePlugin):
         return config
 
     def on_post_page(self, output, page, config):
-        """Tells the runtime where the wasm modules, the site root and Monaco are."""
+        """Tells the runtime where the wasm modules, the site root, Monaco and glslang are."""
         site = "../" * page.url.count("/") if page.url else ""
         settings = {
             "assets": f"{site}{self.config['assets_dir'].strip('/')}/",
             "siteRoot": site or "./",
             "monaco": self.config["monaco_url"],
+            "glslang": self.config["glslang_url"],
         }
         tag = f"<script>window.PyShaderConfig={json.dumps(settings)};</script>"
         return output.replace("</head>", tag + "</head>", 1) if "</head>" in output else output

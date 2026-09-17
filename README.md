@@ -248,6 +248,39 @@ In NucleantSwiftUI, `ShaderFunction(pyshader: source)` goes wherever a
 `ShaderFunction` goes — `Shader(...)`, `.shader(_:)`, `arguments:` — and
 `VertexShaderFunction(pyshader: source)` into a `VertexShader(...)`.
 
+## Decompiling
+
+`Spirv2PyShader` goes the other way: a SPIR-V fragment stage back to
+PyShader source. It is how a GLSL shader becomes a PyShader one without
+porting it by hand — compile the GLSL with `glslangValidator` against the
+same interface, decompile, tidy up. For ShaderToy code the docs do it in
+the browser: [GLSL to PyShader](https://nucleantui.github.io/PyShader/convert/).
+
+```sh
+swift run spirv2py shader.spv -o shader.py [--rename iTime=time]...
+```
+
+```swift
+import Spirv2PyShader
+
+let py = try Spirv2PyShader.decompile(words)          // or a .spv file's Data
+py.source                                             // PyShader
+py.warnings                                           // constructs with no exact PyShader spelling
+```
+
+Interface variables are named through the `FragmentInterface` (default
+`.nucleant`, like the compiler): `gl_FragCoord` is `frag_coord`, the push
+constant at offset 0 is `time`, and so on; anything the interface does not
+describe keeps its SPIR-V name, with a warning, or takes the `--rename` one.
+GLSL `out` parameters become tuple returns, uniforms read inside helpers are
+threaded in as parameters, `for (int i = 0; i < n; ++i)` comes back as
+`for i in range(n)`, `a && b` as `a and b` — the shape the hand ports in
+[Examples/shadertoy/pyshader/](Examples/shadertoy/pyshader/) have. The tests
+send every ShaderToy example through glslang, the decompiler and the compiler.
+
+Only fragment stages are handled; textures and module-level (`Private`)
+variables are reported rather than translated.
+
 ## Documentation
 
 The docs site (MkDocs + Material) lives in [docs/](docs/) and runs every
@@ -266,13 +299,18 @@ uv run mkdocs serve
 ## Development
 
 ```sh
-swift test                          # 43 tests; every example through spirv-val
+swift test                          # every example through spirv-val; ShaderToy GLSL through glslang and back
 ./scripts/validate_examples.sh
 ```
 
-Sources: `Frontend/` validates the module and collects definitions,
+Targets: `SpirvCore` is the SPIR-V opcode and enum tables, the instruction
+encoding and a word-stream reader, shared by both directions; `PyShader` is
+the compiler; `Spirv2PyShader` the decompiler; `pyshaderc` and `spirv2py`
+their command lines.
+
+Compiler sources: `Frontend/` validates the module and collects definitions,
 `Codegen/` lowers statements and expressions, `Builtins/` is the function
-table, `SPIRV/` encodes words. Locals are `OpVariable`s with load/store at
+table, `SPIRV/` assembles the module. Locals are `OpVariable`s with load/store at
 every use (no SSA construction); control flow is `OpSelectionMerge` /
 `OpLoopMerge`; literal conversions fold into constants; 16-bit types add the
 `Float16` / `Int16` capabilities on demand. Offline optimisation:

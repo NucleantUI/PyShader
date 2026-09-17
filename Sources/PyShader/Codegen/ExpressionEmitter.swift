@@ -7,6 +7,7 @@
 //  floors, `%` takes the sign of the divisor, ints promote to floats.
 //
 
+import SpirvCore
 import PySwiftAST
 
 extension FunctionEmitter {

@@ -7,6 +7,8 @@
 //  never spells locations or push-constant offsets.
 //
 
+import SpirvCore
+
 public struct FragmentInterface: Sendable {
     public enum InputBinding: Sendable, Hashable {
         case location(Int)
@@ -18,7 +20,7 @@ public struct FragmentInterface: Sendable {
         case pointCoord
         case frontFacing
 
-        var spirv: SpirvBuiltIn {
+        public var spirv: SpirvBuiltIn {
             switch self {
             case .fragCoord: return .fragCoord
             case .pointCoord: return .pointCoord

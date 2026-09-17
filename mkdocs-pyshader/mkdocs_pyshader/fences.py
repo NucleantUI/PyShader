@@ -1,8 +1,9 @@
-"""The three PyShader fences for pymdownx.superfences.
+"""The PyShader fences for pymdownx.superfences.
 
 Each renders a `<div class="pyshader">` whose data attributes carry the
 source and options; `pyshader-preview.js` turns them into live WebGPU
-previews in the browser.
+previews in the browser. `pyshader-convert` is the odd one out: a GLSL
+editor whose contents come back as PyShader source.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from pathlib import Path
 # Fence options the validator accepts, with how the value is parsed.
 _OPTIONS = {
     "file": str,
+    "examples": str,
     "args": str,
     "content": str,
     "target": str,
@@ -130,3 +132,25 @@ def preview_only(src, language, css_class, options, md, **kwargs):
 
 def editor(src, language, css_class, options, md, **kwargs):
     return _preview_div(_source(src, options), options, "edit")
+
+
+def converter(src, language, css_class, options, md, **kwargs):
+    """GLSL in, PyShader out. `examples="dir"` offers every .glsl file in it in a picker;
+    the fence body (or `file=`) is the initial source, else the first example."""
+    examples = []
+    if "examples" in options:
+        folder = base_path / options["examples"]
+        for path in sorted(folder.glob("*.glsl")):
+            examples.append({"name": path.stem, "source": path.read_text(encoding="utf-8")})
+    source = _source(src, options).strip("\n")
+    if not source and examples:
+        source = examples[0]["source"]
+    data = {"source": source, "examples": examples}
+    height = options.get("height", "")
+    if height.isdigit():
+        height += "px"
+    style = f' style="--pyshader-height:{height}"' if height else ""
+    return (
+        f'<div class="pyshader-convert"{style} data-pyshader-convert="{html.escape(json.dumps(data), quote=True)}">'
+        '<div class="pyshader-status pyshader-status-busy">Loading the converter…</div></div>'
+    )

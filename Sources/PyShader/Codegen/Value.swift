@@ -4,6 +4,8 @@
 //
 
 /// An SSA result id together with its shader type.
+import SpirvCore
+
 struct Value {
     let id: SpirvId
     let type: ShaderType

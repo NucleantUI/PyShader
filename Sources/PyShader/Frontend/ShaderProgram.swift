@@ -7,6 +7,7 @@
 //  code generation can resolve forward references.
 //
 
+import SpirvCore
 import PySwiftAST
 
 struct ShaderFunctionSignature {

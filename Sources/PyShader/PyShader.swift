@@ -6,6 +6,7 @@
 //
 
 import Foundation
+@_exported import SpirvCore
 import PySwiftAST
 
 /// A compiled shader ready for `vkCreateShaderModule`.

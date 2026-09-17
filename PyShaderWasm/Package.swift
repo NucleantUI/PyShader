@@ -23,6 +23,7 @@ let package = Package(
             name: "PyShaderWasm",
             dependencies: [
                 .product(name: "PyShader", package: "PyShader"),
+                .product(name: "Spirv2PyShader", package: "PyShader"),
                 "ICUDataStub",
             ]
         ),

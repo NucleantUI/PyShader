@@ -7,6 +7,7 @@
 //  resources (inputs, uniforms, images, argument buffer) to the Python `main`.
 //
 
+import SpirvCore
 import PySwiftAST
 
 final class ShaderCompiler {

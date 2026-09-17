@@ -8,6 +8,7 @@
 //  nodes). Drivers fold the loads/stores away.
 //
 
+import SpirvCore
 import PySwiftAST
 
 final class FunctionEmitter {

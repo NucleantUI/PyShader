@@ -7,6 +7,8 @@
 //  Naming follows GLSL 450 with the Metal spellings accepted as aliases.
 //
 
+import SpirvCore
+
 extension FunctionEmitter {
 
     /// Returns nil when `name` is not a builtin so the caller can report an unknown function.

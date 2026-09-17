@@ -1,19 +1,25 @@
 //
 //  SpirvOpcodes.swift
-//  PyShader
+//  SpirvCore
 //
-//  The subset of the SPIR-V 1.0 instruction set and enums PyShader emits.
-//  Values are taken straight from the Khronos spirv.core.grammar.
+//  The subset of the SPIR-V 1.0 instruction set and enums PyShader emits and
+//  Spirv2PyShader reads. Values are taken straight from the Khronos
+//  spirv.core.grammar.
 //
 
-typealias SpirvId = UInt32
+public typealias SpirvId = UInt32
 
-enum SpirvOp: UInt16 {
+public enum SpirvOp: UInt16, Sendable {
     case opNop = 0
     case opUndef = 1
+    case opSourceContinued = 2
     case opSource = 3
+    case opSourceExtension = 4
     case opName = 5
     case opMemberName = 6
+    case opString = 7
+    case opLine = 8
+    case opExtension = 10
     case opExtInstImport = 11
     case opExtInst = 12
     case opMemoryModel = 14
@@ -28,17 +34,26 @@ enum SpirvOp: UInt16 {
     case opTypeVector = 23
     case opTypeMatrix = 24
     case opTypeImage = 25
-    case opTypeArray = 28
+    case opTypeSampler = 26
     case opTypeSampledImage = 27
+    case opTypeArray = 28
     case opTypeRuntimeArray = 29
     case opTypeStruct = 30
+    case opTypeOpaque = 31
     case opTypePointer = 32
     case opTypeFunction = 33
+    case opTypeForwardPointer = 39
 
     case opConstantTrue = 41
     case opConstantFalse = 42
     case opConstant = 43
     case opConstantComposite = 44
+    case opConstantNull = 46
+    case opSpecConstantTrue = 48
+    case opSpecConstantFalse = 49
+    case opSpecConstant = 50
+    case opSpecConstantComposite = 51
+    case opSpecConstantOp = 52
 
     case opFunction = 54
     case opFunctionParameter = 55
@@ -46,12 +61,19 @@ enum SpirvOp: UInt16 {
     case opFunctionCall = 57
 
     case opVariable = 59
+    case opImageTexelPointer = 60
     case opLoad = 61
     case opStore = 62
+    case opCopyMemory = 63
     case opAccessChain = 65
+    case opInBoundsAccessChain = 66
+    case opArrayLength = 68
 
     case opDecorate = 71
     case opMemberDecorate = 72
+    case opDecorationGroup = 73
+    case opGroupDecorate = 74
+    case opGroupMemberDecorate = 75
 
     case opVectorExtractDynamic = 77
     case opVectorInsertDynamic = 78
@@ -59,11 +81,23 @@ enum SpirvOp: UInt16 {
     case opCompositeConstruct = 80
     case opCompositeExtract = 81
     case opCompositeInsert = 82
+    case opCopyObject = 83
     case opTranspose = 84
 
+    case opSampledImage = 86
+    case opImageSampleImplicitLod = 87
     case opImageSampleExplicitLod = 88
+    case opImageSampleDrefImplicitLod = 89
+    case opImageSampleDrefExplicitLod = 90
+    case opImageFetch = 95
+    case opImageGather = 96
+    case opImageRead = 98
     case opImageWrite = 99
+    case opImage = 100
+    case opImageQuerySizeLod = 103
     case opImageQuerySize = 104
+    case opImageQueryLod = 105
+    case opImageQueryLevels = 106
 
     case opConvertFToU = 109
     case opConvertFToS = 110
@@ -72,6 +106,7 @@ enum SpirvOp: UInt16 {
     case opUConvert = 113
     case opSConvert = 114
     case opFConvert = 115
+    case opQuantizeToF16 = 116
     case opBitcast = 124
 
     case opSNegate = 126
@@ -102,6 +137,8 @@ enum SpirvOp: UInt16 {
     case opAll = 155
     case opIsNan = 156
     case opIsInf = 157
+    case opIsFinite = 158
+    case opIsNormal = 159
 
     case opLogicalEqual = 164
     case opLogicalNotEqual = 165
@@ -120,11 +157,17 @@ enum SpirvOp: UInt16 {
     case opULessThanEqual = 178
     case opSLessThanEqual = 179
     case opFOrdEqual = 180
+    case opFUnordEqual = 181
+    case opFOrdNotEqual = 182
     case opFUnordNotEqual = 183
     case opFOrdLessThan = 184
+    case opFUnordLessThan = 185
     case opFOrdGreaterThan = 186
+    case opFUnordGreaterThan = 187
     case opFOrdLessThanEqual = 188
+    case opFUnordLessThanEqual = 189
     case opFOrdGreaterThanEqual = 190
+    case opFUnordGreaterThanEqual = 191
 
     case opShiftRightLogical = 194
     case opShiftRightArithmetic = 195
@@ -137,20 +180,33 @@ enum SpirvOp: UInt16 {
     case opDPdx = 207
     case opDPdy = 208
     case opFwidth = 209
+    case opDPdxFine = 210
+    case opDPdyFine = 211
+    case opFwidthFine = 212
+    case opDPdxCoarse = 213
+    case opDPdyCoarse = 214
+    case opFwidthCoarse = 215
 
+    case opPhi = 245
     case opLoopMerge = 246
     case opSelectionMerge = 247
     case opLabel = 248
     case opBranch = 249
     case opBranchConditional = 250
+    case opSwitch = 251
     case opKill = 252
     case opReturn = 253
     case opReturnValue = 254
     case opUnreachable = 255
+
+    case opNoLine = 317
+    case opModuleProcessed = 330
+    case opExecutionModeId = 331
+    case opDecorateId = 332
 }
 
 /// GLSL.std.450 extended instruction numbers.
-enum GLSLstd450: UInt32 {
+public enum GLSLstd450: UInt32, Sendable {
     case round = 1
     case roundEven = 2
     case trunc = 3
@@ -185,6 +241,8 @@ enum GLSLstd450: UInt32 {
     case inverseSqrt = 32
     case determinant = 33
     case matrixInverse = 34
+    case modf = 35
+    case modfStruct = 36
     case fMin = 37
     case uMin = 38
     case sMin = 39
@@ -195,9 +253,25 @@ enum GLSLstd450: UInt32 {
     case uClamp = 44
     case sClamp = 45
     case fMix = 46
+    case iMix = 47
     case step = 48
     case smoothStep = 49
     case fma = 50
+    case frexp = 51
+    case frexpStruct = 52
+    case ldexp = 53
+    case packSnorm4x8 = 54
+    case packUnorm4x8 = 55
+    case packSnorm2x16 = 56
+    case packUnorm2x16 = 57
+    case packHalf2x16 = 58
+    case packDouble2x32 = 59
+    case unpackSnorm2x16 = 60
+    case unpackUnorm2x16 = 61
+    case unpackHalf2x16 = 62
+    case unpackSnorm4x8 = 63
+    case unpackUnorm4x8 = 64
+    case unpackDouble2x32 = 65
     case length = 66
     case distance = 67
     case cross = 68
@@ -205,12 +279,18 @@ enum GLSLstd450: UInt32 {
     case faceForward = 70
     case reflect = 71
     case refract = 72
+    case findILsb = 73
+    case findSMsb = 74
+    case findUMsb = 75
+    case interpolateAtCentroid = 76
+    case interpolateAtSample = 77
+    case interpolateAtOffset = 78
     case nMin = 79
     case nMax = 80
     case nClamp = 81
 }
 
-enum SpirvCapability: UInt32 {
+public enum SpirvCapability: UInt32, Sendable {
     case shader = 1
     case float16 = 9
     case int16 = 22
@@ -218,21 +298,21 @@ enum SpirvCapability: UInt32 {
     case derivativeControl = 51
 }
 
-enum SpirvAddressingModel: UInt32 {
+public enum SpirvAddressingModel: UInt32, Sendable {
     case logical = 0
 }
 
-enum SpirvMemoryModel: UInt32 {
+public enum SpirvMemoryModel: UInt32, Sendable {
     case glsl450 = 1
 }
 
-enum SpirvExecutionModel: UInt32 {
+public enum SpirvExecutionModel: UInt32, Sendable {
     case vertex = 0
     case fragment = 4
     case glCompute = 5
 }
 
-enum SpirvExecutionMode: UInt32 {
+public enum SpirvExecutionMode: UInt32, Sendable {
     case originUpperLeft = 7
     case localSize = 17
 }
@@ -242,62 +322,84 @@ public enum SpirvStorageClass: UInt32, Sendable {
     case input = 1
     case uniform = 2
     case output = 3
+    case workgroup = 4
+    case crossWorkgroup = 5
+    case `private` = 6
     case function = 7
+    case generic = 8
     case pushConstant = 9
+    case atomicCounter = 10
+    case image = 11
+    case storageBuffer = 12
 }
 
-enum SpirvDecoration: UInt32 {
+public enum SpirvDecoration: UInt32, Sendable {
+    case relaxedPrecision = 0
     case block = 2
     case bufferBlock = 3
+    case rowMajor = 4
+    case colMajor = 5
     case arrayStride = 6
+    case matrixStride = 7
     case builtIn = 11
+    case noPerspective = 13
     case flat = 14
+    case centroid = 16
     case nonWritable = 24
     case nonReadable = 25
     case location = 30
+    case component = 31
+    case index = 32
     case binding = 33
     case descriptorSet = 34
     case offset = 35
 }
 
-enum SpirvBuiltIn: UInt32 {
+public enum SpirvBuiltIn: UInt32, Sendable {
     case position = 0
+    case pointSize = 1
     case fragCoord = 15
     case pointCoord = 16
     case frontFacing = 17
     case sampleId = 18
     case sampleMask = 20
+    case fragDepth = 22
     case globalInvocationId = 28
     case vertexIndex = 42
     case instanceIndex = 43
 }
 
-enum SpirvDim: UInt32 {
+public enum SpirvDim: UInt32, Sendable {
+    case dim1D = 0
     case dim2D = 1
+    case dim3D = 2
+    case cube = 3
 }
 
-enum SpirvImageFormat: UInt32 {
+public enum SpirvImageFormat: UInt32, Sendable {
     case unknown = 0
     case rgba8 = 4
 }
 
-enum SpirvImageOperands: UInt32 {
+public enum SpirvImageOperands: UInt32, Sendable {
     case lod = 0x2
 }
 
-enum SpirvFunctionControl: UInt32 {
+public enum SpirvFunctionControl: UInt32, Sendable {
     case none = 0
     case inline = 1
 }
 
-enum SpirvSelectionControl: UInt32 {
+public enum SpirvSelectionControl: UInt32, Sendable {
     case none = 0
 }
 
-enum SpirvLoopControl: UInt32 {
+public enum SpirvLoopControl: UInt32, Sendable {
     case none = 0
 }
 
-enum SpirvSourceLanguage: UInt32 {
+public enum SpirvSourceLanguage: UInt32, Sendable {
     case unknown = 0
+    case essl = 1
+    case glsl = 2
 }

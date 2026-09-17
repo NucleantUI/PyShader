@@ -29,8 +29,8 @@ function compile(source, options) {
   return { wgsl: text };
 }
 
-// ```pyshader[-preview|-edit] key="value" ...\n...\n```
-const fence = /^```(pyshader(?:-preview|-edit)?)([^\n]*)\n([\s\S]*?)^```/gm;
+// ```pyshader[-preview|-edit] key="value" ...\n...\n``` (pyshader-convert holds GLSL; not checked here)
+const fence = /^```(pyshader(?:-preview|-edit)?)(?![\w-])([^\n]*)\n([\s\S]*?)^```/gm;
 const optionRe = /([a-zA-Z_]+)=(?:"([^"]*)"|'([^']*)')/g;
 
 let failures = 0, count = 0;

@@ -170,3 +170,81 @@
     min-height: 0;
   }
 }
+
+/* GLSL -> PyShader converter: two editors side by side (stacked on narrow
+   screens), the toolbar above, diagnostics below. */
+.pyshader-convert {
+  --pyshader-height: 480px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin: 1em 0;
+}
+
+.pyshader-convert .pyshader-toolbar {
+  order: 0;
+}
+
+.pyshader-convert .pyshader-toolbar select {
+  padding: 0.15rem 0.4rem;
+  border: 1px solid var(--md-default-fg-color--lightest, #ddd);
+  border-radius: 0.2rem;
+  background: var(--md-default-bg-color);
+  color: inherit;
+  font: inherit;
+}
+
+.pyshader-convert .pyshader-toolbar-group:empty {
+  flex: 1;
+}
+
+.pyshader-convert-panes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.6rem;
+  height: var(--pyshader-height);
+}
+
+.pyshader-convert-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.pyshader-convert-title {
+  padding: 0.2rem 0.6rem;
+  font-size: 0.65rem;
+  color: var(--md-default-fg-color--light);
+  border: 1px solid var(--md-default-fg-color--lightest, #ddd);
+  border-bottom: 0;
+  border-radius: 0.2rem 0.2rem 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pyshader-convert-pane .pyshader-editor {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+  border-radius: 0 0 0.2rem 0.2rem;
+}
+
+.pyshader-convert .pyshader-status {
+  position: static;
+  border-radius: 0.2rem;
+  max-height: 8em;
+  overflow: auto;
+}
+
+.pyshader-convert .pyshader-status-warning {
+  background: rgba(150, 100, 0, 0.85);
+}
+
+@media (max-width: 60em) {
+  .pyshader-convert-panes {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}

@@ -9,6 +9,10 @@
  *
  * `pyshader-edit` blocks put a Monaco editor next to the canvas and recompile
  * on every change.
+ *
+ * `pyshader-convert` blocks go the other way: GLSL (ShaderToy's `mainImage`
+ * or a whole fragment shader) through glslang (wasm) to SPIR-V, then through
+ * PyShader's decompiler to Python, shown in a second editor.
  */
 (() => {
   "use strict";
@@ -22,6 +26,7 @@
       assets: new URL(".", scriptUrl).href,
       siteRoot: new URL("../../", scriptUrl).href,
       monaco: "https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs",
+      glslang: "https://cdn.jsdelivr.net/npm/@webgpu/glslang@0.0.15/dist/web-devel/glslang.js",
     },
     window.PyShaderConfig || {}
   );
@@ -160,6 +165,29 @@
     if (nagaStatus !== 0) throw new CompileError(`WebGPU cannot run this shader: ${wgsl}`);
 
     return { wgsl, entryPoint, vertexEntryPoint, spirv: result };
+  }
+
+  /** SPIR-V bytes -> { source, warnings }; throws with the decompiler's message. */
+  async function decompile(spirv, options) {
+    const { swift } = await loadModules();
+    const opt = encoder.encode(options || "");
+    const spvPtr = putBytes(swift, "pyshader_alloc", spirv), optPtr = putBytes(swift, "pyshader_alloc", opt);
+    const status = swift.pyshader_decompile(spvPtr, spirv.length, optPtr, opt.length);
+    swift.pyshader_dealloc(spvPtr, spirv.length);
+    swift.pyshader_dealloc(optPtr, opt.length);
+    const result = decoder.decode(new Uint8Array(swift.memory.buffer, swift.pyshader_result_ptr(), swift.pyshader_result_len()));
+    swift.pyshader_result_free();
+    if (status !== 0) throw new Error(result);
+
+    const size = swift.pyshader_decompile_warnings(0, 0);
+    let warnings = [];
+    if (size > 0) {
+      const buf = swift.pyshader_alloc(size);
+      swift.pyshader_decompile_warnings(buf, size);
+      warnings = decoder.decode(new Uint8Array(swift.memory.buffer, buf, size)).split("\n");
+      swift.pyshader_dealloc(buf, size);
+    }
+    return { source: result, warnings };
   }
 
   class CompileError extends Error {
@@ -673,9 +701,277 @@
   }
 
   // ---------------------------------------------------------------------------
+  // GLSL -> PyShader for `pyshader-convert` blocks
+
+  let glslangPromise = null;
+
+  /**
+   * glslang built to wasm. glslang.js only exports a factory that hides the
+   * Emscripten module and its print hooks, so the script's text is taken
+   * instead and instantiated with hooks that collect the compiler's messages.
+   */
+  function loadGlslang() {
+    if (glslangPromise) return glslangPromise;
+    glslangPromise = (async () => {
+      const url = new URL(config.glslang, document.baseURI);
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`glslang failed to load (${response.status})`);
+      const text = await response.text();
+      const cut = text.lastIndexOf("export default");
+      const blob = new Blob([cut < 0 ? text : text.slice(0, cut), "\nexport { Module };\n"], { type: "text/javascript" });
+      const blobUrl = URL.createObjectURL(blob);
+      let factory;
+      try {
+        factory = (await import(blobUrl)).Module;
+      } finally {
+        URL.revokeObjectURL(blobUrl);
+      }
+      const messages = [];
+      // Emscripten turns the settings object into the module itself and gives
+      // it a `then`, which a Promise would adopt without end: hand back only
+      // the compile function.
+      const module = await new Promise((resolve, reject) => {
+        const settings = {
+          locateFile: (file) => new URL(file, url).href,
+          print: (line) => messages.push(line),
+          printErr: (line) => messages.push(line),
+          onRuntimeInitialized: () => resolve({ compileGLSL: settings.compileGLSL }),
+          onAbort: (why) => reject(new Error(`glslang failed to start: ${why}`)),
+        };
+        factory(settings);
+      });
+      return { module, messages };
+    })();
+    glslangPromise.catch(() => { glslangPromise = null; });
+    return glslangPromise;
+  }
+
+  /** GLSL fragment source -> { spirv (bytes), messages }; throws with glslang's diagnostics. */
+  async function compileGLSL(source) {
+    const { module, messages } = await loadGlslang();
+    messages.length = 0;
+    // glslang's summary lines add nothing to the diagnostics themselves.
+    const noise = /^(Parse failed|ERROR: \d+ compilation errors?\.|ERROR: \d+:\d+: '' : compilation terminated)/;
+    const diagnostics = () => messages.filter((m) => m.trim() && !noise.test(m)).map((m) => m.trim());
+    let words;
+    try {
+      words = module.compileGLSL(source, "fragment", true, "1.0");
+    } catch (error) {
+      throw new GLSLError(diagnostics().join("\n") || error.message);
+    }
+    return { spirv: new Uint8Array(words.buffer, words.byteOffset, words.byteLength), messages: diagnostics() };
+  }
+
+  class GLSLError extends Error {
+    constructor(message) {
+      super(message);
+      // "ERROR: 0:12: 'foo' : undeclared identifier"
+      this.markers = [...message.matchAll(/^(ERROR|WARNING): \d+:(\d+): (.*)$/gm)].map((m) => ({ line: Number(m[2]), message: m[3].trim(), error: m[1] === "ERROR" }));
+    }
+  }
+
+  /**
+   * NucleantVulkan's fragment layout with ShaderToy's names on top, for a
+   * pasted `mainImage`. `#line 1` keeps glslang's line numbers those of the
+   * pasted text. A source with its own `#version` is taken as it is.
+   */
+  const SHADERTOY_PRELUDE = `#version 450
+layout(location = 0) in vec2 uv;
+layout(location = 0) out vec4 fragColor;
+layout(push_constant) uniform PushConstants { float time; vec2 resolution; vec2 mouse; } pc;
+#define iTime pc.time
+#define iResolution pc.resolution
+#define iMouse vec4(pc.mouse, 0.0, 0.0)
+#define iFrame 0
+#define iTimeDelta 0.016
+#line 1
+`;
+
+  function wrapGLSL(source) {
+    if (/^\s*#\s*version\b/m.test(source)) return source;
+    return SHADERTOY_PRELUDE + source + "\nvoid main() { mainImage(fragColor, gl_FragCoord.xy); }\n";
+  }
+
+  /** GLSL -> PyShader source; throws GLSLError or Error. */
+  async function convertGLSL(source, options) {
+    const { spirv, messages } = await compileGLSL(wrapGLSL(source));
+    const result = await decompile(spirv, options);
+    return { source: result.source, warnings: [...messages, ...result.warnings] };
+  }
+
+  let glslRegistered = false;
+
+  /** A small GLSL highlighter; Monaco has none of its own. */
+  function registerGLSL(monaco) {
+    if (glslRegistered) return;
+    glslRegistered = true;
+    monaco.languages.register({ id: "glsl" });
+    monaco.languages.setLanguageConfiguration("glsl", {
+      comments: { lineComment: "//", blockComment: ["/*", "*/"] },
+      brackets: [["{", "}"], ["[", "]"], ["(", ")"]],
+      autoClosingPairs: [{ open: "{", close: "}" }, { open: "[", close: "]" }, { open: "(", close: ")" }],
+    });
+    monaco.languages.setMonarchTokensProvider("glsl", {
+      keywords: ["break", "case", "const", "continue", "default", "discard", "do", "else", "for", "if", "in", "inout", "out",
+        "return", "struct", "switch", "uniform", "while", "layout", "precision", "highp", "mediump", "lowp", "true", "false",
+        "push_constant", "location", "binding", "set"],
+      types: ["void", "bool", "int", "uint", "float", "double", "vec2", "vec3", "vec4", "ivec2", "ivec3", "ivec4", "uvec2",
+        "uvec3", "uvec4", "bvec2", "bvec3", "bvec4", "mat2", "mat3", "mat4", "mat2x2", "mat3x3", "mat4x4", "sampler2D",
+        "samplerCube", "sampler3D"],
+      builtins: ["abs", "acos", "all", "any", "asin", "atan", "ceil", "clamp", "cos", "cross", "degrees", "dFdx", "dFdy",
+        "distance", "dot", "exp", "exp2", "faceforward", "floor", "fract", "fwidth", "inversesqrt", "length", "log", "log2",
+        "max", "min", "mix", "mod", "normalize", "pow", "radians", "reflect", "refract", "round", "sign", "sin", "smoothstep",
+        "sqrt", "step", "tan", "texture", "transpose", "inverse", "determinant", "trunc", "isnan", "isinf", "sinh", "cosh",
+        "tanh", "asinh", "acosh", "atanh", "mainImage", "iTime", "iResolution", "iMouse", "iFrame", "iTimeDelta",
+        "gl_FragCoord", "gl_FragColor", "iChannel0", "iChannel1", "iChannel2", "iChannel3"],
+      tokenizer: {
+        root: [
+          [/^\s*#\s*\w+/, "keyword.directive"],
+          [/[a-zA-Z_]\w*/, { cases: { "@keywords": "keyword", "@types": "type", "@builtins": "predefined", "@default": "identifier" } }],
+          [/\/\/.*$/, "comment"],
+          [/\/\*/, "comment", "@comment"],
+          [/\d*\.\d+([eE][-+]?\d+)?[fF]?/, "number.float"],
+          [/\d+([eE][-+]?\d+)?[fFuU]?/, "number"],
+          [/[{}()[\]]/, "@brackets"],
+          [/[<>=!+\-*/%&|^~?:,;.]/, "operator"],
+        ],
+        comment: [[/[^/*]+/, "comment"], [/\*\//, "comment", "@pop"], [/[/*]/, "comment"]],
+      },
+    });
+  }
+
+  /** One `pyshader-convert` block: a GLSL editor on the left, the PyShader it becomes on the right. */
+  class Converter {
+    constructor(element, data) {
+      this.element = element;
+      this.data = data;
+      this.source = data.source;
+      this.statusEl = element.querySelector(".pyshader-status");
+      this.convertId = 0;
+    }
+
+    status(text, kind) {
+      this.statusEl.textContent = text || "";
+      this.statusEl.className = "pyshader-status" + (kind ? ` pyshader-status-${kind}` : "");
+      this.statusEl.hidden = !text;
+    }
+
+    async mount() {
+      const monaco = await loadMonaco();
+      registerGLSL(monaco);
+      const el = this.element;
+
+      const bar = document.createElement("div");
+      bar.className = "pyshader-toolbar";
+      if (this.data.examples?.length) {
+        const wrap = document.createElement("label");
+        wrap.className = "pyshader-toolbar-group";
+        wrap.append(Object.assign(document.createElement("span"), { className: "pyshader-toolbar-label", textContent: "Example" }));
+        const select = document.createElement("select");
+        select.append(new Option("paste your own…", ""));
+        for (const ex of this.data.examples) select.append(new Option(ex.name, ex.name));
+        const initial = this.data.examples.find((ex) => ex.source === this.source);
+        select.value = initial ? initial.name : "";
+        select.addEventListener("change", () => {
+          const ex = this.data.examples.find((e) => e.name === select.value);
+          if (ex) this.glsl.setValue(ex.source);
+        });
+        wrap.append(select);
+        bar.append(wrap);
+        this.select = select;
+      }
+      const copy = Object.assign(document.createElement("button"), { type: "button", textContent: "Copy PyShader" });
+      copy.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(this.py.getValue());
+          copy.textContent = "Copied";
+          setTimeout(() => { copy.textContent = "Copy PyShader"; }, 1500);
+        } catch (error) {
+          this.status(`Copy failed: ${error.message}`, "error");
+        }
+      });
+      bar.append(Object.assign(document.createElement("span"), { className: "pyshader-toolbar-group" }), copy);
+      el.insertBefore(bar, this.statusEl);
+
+      const panes = document.createElement("div");
+      panes.className = "pyshader-convert-panes";
+      const pane = (title) => {
+        const box = document.createElement("div");
+        box.className = "pyshader-convert-pane";
+        box.append(Object.assign(document.createElement("div"), { className: "pyshader-convert-title", textContent: title }));
+        const host = document.createElement("div");
+        host.className = "pyshader-editor";
+        box.append(host);
+        panes.append(box);
+        return host;
+      };
+      const glslHost = pane("GLSL — ShaderToy mainImage or a #version 450 fragment shader");
+      const pyHost = pane("PyShader");
+      el.insertBefore(panes, this.statusEl);
+
+      const dark = document.documentElement.dataset.mdColorScheme === "slate" || matchMedia("(prefers-color-scheme: dark)").matches;
+      const common = { theme: dark ? "vs-dark" : "vs", minimap: { enabled: false }, fontSize: 13, lineNumbersMinChars: 3, scrollBeyondLastLine: false, automaticLayout: true, tabSize: 4, wordWrap: "off" };
+      this.glsl = monaco.editor.create(glslHost, { ...common, value: this.source, language: "glsl" });
+      this.py = monaco.editor.create(pyHost, { ...common, value: "", language: "python", readOnly: true });
+      this.monaco = monaco;
+      this.themeObserver = new MutationObserver(() => {
+        const scheme = document.documentElement.dataset.mdColorScheme;
+        if (scheme) monaco.editor.setTheme(scheme === "slate" ? "vs-dark" : "vs");
+      });
+      this.themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+      const debounce = Number(this.data.debounce) > 0 ? Number(this.data.debounce) : 700;
+      let timer = null;
+      this.glsl.onDidChangeModelContent(() => {
+        if (this.select && !this.data.examples.some((ex) => ex.source === this.glsl.getValue())) this.select.value = "";
+        clearTimeout(timer);
+        timer = setTimeout(() => this.convert(), debounce);
+      });
+      await this.convert();
+    }
+
+    async convert() {
+      const source = this.glsl.getValue();
+      const id = ++this.convertId;
+      this.status("converting…", "busy");
+      let result;
+      try {
+        result = await convertGLSL(source, "");
+      } catch (error) {
+        if (id !== this.convertId) return;
+        this.status(error.message, "error");
+        this.markers(error.markers || []);
+        console.error(error);
+        return;
+      }
+      if (id !== this.convertId) return;
+      this.markers([]);
+      this.py.setValue(result.source);
+      this.status(result.warnings.length ? result.warnings.map((w) => `warning: ${w}`).join("\n") : "", "warning");
+    }
+
+    markers(list) {
+      const model = this.glsl.getModel();
+      const { MarkerSeverity } = this.monaco;
+      this.monaco.editor.setModelMarkers(model, "glsl", list.filter((m) => m.line >= 1 && m.line <= model.getLineCount()).map((m) => ({
+        severity: m.error ? MarkerSeverity.Error : MarkerSeverity.Warning,
+        message: m.message,
+        startLineNumber: m.line, startColumn: 1, endLineNumber: m.line, endColumn: model.getLineMaxColumn(m.line),
+      })));
+    }
+
+    dispose() {
+      this.themeObserver?.disconnect();
+      this.glsl?.dispose();
+      this.py?.dispose();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Wiring
 
   const previews = new Map();
+  const converters = new Map();
 
   const visibility = new IntersectionObserver((entries) => {
     for (const entry of entries) {
@@ -702,6 +998,12 @@
       if (data.mode === "edit") attachEditor(preview).catch((e) => preview.status(e.message, "error"));
       visibility.observe(element);
     }
+    for (const element of root.querySelectorAll(".pyshader-convert[data-pyshader-convert]")) {
+      if (converters.has(element)) continue;
+      const converter = new Converter(element, JSON.parse(element.dataset.pyshaderConvert));
+      converters.set(element, converter);
+      converter.mount().catch((e) => { converter.status(e.message, "error"); console.error(e); });
+    }
   }
 
   function unmountAll() {
@@ -711,6 +1013,8 @@
       preview.editor?.dispose();
     }
     previews.clear();
+    for (const converter of converters.values()) converter.dispose();
+    converters.clear();
   }
 
   // Material's instant navigation swaps the page without a reload.
@@ -722,5 +1026,5 @@
     mount(document);
   }
 
-  window.PyShaderPreview = { compile, mount, previews };
+  window.PyShaderPreview = { compile, decompile, convertGLSL, mount, previews, converters };
 })();
