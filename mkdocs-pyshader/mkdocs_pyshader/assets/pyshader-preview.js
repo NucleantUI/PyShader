@@ -105,13 +105,18 @@
     if (modulesPromise) return modulesPromise;
     modulesPromise = (async () => {
       let swiftExports = null;
-      const [swift, naga] = await Promise.all([
-        WebAssembly.instantiateStreaming(fetch(new URL("pyshader.wasm", config.assets)), {
-          wasi_snapshot_preview1: wasiImports(() => swiftExports.memory),
-        }),
+      const [swiftModule, naga] = await Promise.all([
+        WebAssembly.compileStreaming(fetch(new URL("pyshader.wasm", config.assets))),
         WebAssembly.instantiateStreaming(fetch(new URL("naga.wasm", config.assets)), {}),
       ]);
-      swiftExports = swift.instance.exports;
+      // Which WASI calls the module imports depends on the toolchain that
+      // built it; anything the shim does not implement gets an ENOSYS stub.
+      const wasi = wasiImports(() => swiftExports.memory);
+      for (const { module, name } of WebAssembly.Module.imports(swiftModule)) {
+        if (module === "wasi_snapshot_preview1" && !(name in wasi)) wasi[name] = () => 52;
+      }
+      const swift = await WebAssembly.instantiate(swiftModule, { wasi_snapshot_preview1: wasi });
+      swiftExports = swift.exports;
       swiftExports._initialize();
       return { swift: swiftExports, naga: naga.instance.exports };
     })();
