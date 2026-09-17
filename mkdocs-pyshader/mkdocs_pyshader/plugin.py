@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import shutil
@@ -22,6 +23,12 @@ FENCES = (
     ("pyshader-edit", fences.editor),
     ("pyshader-convert", fences.converter),
 )
+
+
+def _version(name: str) -> str:
+    """A content hash for cache busting: browsers keep an old runtime past a deploy otherwise."""
+    path = ASSETS / name
+    return hashlib.sha1(path.read_bytes()).hexdigest()[:10] if path.exists() else ""
 
 
 class PyShaderPlugin(BasePlugin):
@@ -48,8 +55,8 @@ class PyShaderPlugin(BasePlugin):
                 custom.append({"name": name, "class": name, "validator": fences.validator, "format": formatter})
 
         assets = self.config["assets_dir"].strip("/")
-        config["extra_css"].append(f"{assets}/pyshader-preview.css")
-        config["extra_javascript"].append(f"{assets}/pyshader-preview.js")
+        config["extra_css"].append(f"{assets}/pyshader-preview.css?v={_version('pyshader-preview.css')}")
+        config["extra_javascript"].append(f"{assets}/pyshader-preview.js?v={_version('pyshader-preview.js')}")
         return config
 
     def on_post_page(self, output, page, config):
@@ -60,6 +67,7 @@ class PyShaderPlugin(BasePlugin):
             "siteRoot": site or "./",
             "monaco": self.config["monaco_url"],
             "glslang": self.config["glslang_url"],
+            "versions": {name: _version(name) for name in WASM},
         }
         tag = f"<script>window.PyShaderConfig={json.dumps(settings)};</script>"
         return output.replace("</head>", tag + "</head>", 1) if "</head>" in output else output

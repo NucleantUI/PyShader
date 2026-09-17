@@ -179,6 +179,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
+  height: var(--pyshader-height);
   margin: 1em 0;
 }
 
@@ -199,11 +200,24 @@
   flex: 1;
 }
 
+.pyshader-convert-help {
+  padding: 0.2rem 0.8rem;
+  font-size: 0.7rem;
+  line-height: 1.5;
+  border: 1px solid var(--md-default-fg-color--lightest, #ddd);
+  border-radius: 0.2rem;
+}
+
+.pyshader-convert-help p {
+  margin: 0.3em 0;
+}
+
 .pyshader-convert-panes {
+  flex: 1;
+  min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 0.6rem;
-  height: var(--pyshader-height);
 }
 
 .pyshader-convert-pane {

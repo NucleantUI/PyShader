@@ -33,6 +33,13 @@
   config.assets = new URL(config.assets, document.baseURI).href;
   config.siteRoot = new URL(config.siteRoot, document.baseURI).href;
 
+  /** A wasm module's URL with the plugin's content hash, so a deploy is not served from the cache. */
+  function assetUrl(name) {
+    const url = new URL(name, config.assets);
+    if (config.versions && config.versions[name]) url.searchParams.set("v", config.versions[name]);
+    return url;
+  }
+
   // ---------------------------------------------------------------------------
   // Wasm modules
 
@@ -111,8 +118,8 @@
     modulesPromise = (async () => {
       let swiftExports = null;
       const [swiftModule, naga] = await Promise.all([
-        WebAssembly.compileStreaming(fetch(new URL("pyshader.wasm", config.assets))),
-        WebAssembly.instantiateStreaming(fetch(new URL("naga.wasm", config.assets)), {}),
+        WebAssembly.compileStreaming(fetch(assetUrl("pyshader.wasm"))),
+        WebAssembly.instantiateStreaming(fetch(assetUrl("naga.wasm")), {}),
       ]);
       // Which WASI calls the module imports depends on the toolchain that
       // built it; anything the shim does not implement gets an ENOSYS stub.
@@ -840,6 +847,14 @@ layout(push_constant) uniform PushConstants { float time; vec2 resolution; vec2 
     });
   }
 
+  const CONVERT_HELP = [
+    "Paste a ShaderToy shader (its mainImage) on the left; the PyShader for it appears on the right.",
+    "iTime → time, iResolution → resolution, iMouse.xy → mouse, fragCoord → frag_coord.xy; iFrame is 0 and iTimeDelta 0.016.",
+    "A source with its own #version line is compiled as it is (NucleantVulkan's fragment layout: uv at location 0, push constants time / resolution / mouse).",
+    "Not translated: iChannel textures, iDate, iSampleRate, the keyboard.",
+    "The result is a fragment-target shader: main takes frag_coord, time, resolution and mouse by name.",
+  ];
+
   /** One `pyshader-convert` block: a GLSL editor on the left, the PyShader it becomes on the right. */
   class Converter {
     constructor(element, data) {
@@ -890,8 +905,18 @@ layout(push_constant) uniform PushConstants { float time; vec2 resolution; vec2 
           this.status(`Copy failed: ${error.message}`, "error");
         }
       });
-      bar.append(Object.assign(document.createElement("span"), { className: "pyshader-toolbar-group" }), copy);
+      const help = Object.assign(document.createElement("button"), { type: "button", textContent: "?", title: "What this does" });
+      const panel = document.createElement("div");
+      panel.className = "pyshader-convert-help";
+      panel.hidden = true;
+      for (const line of CONVERT_HELP) panel.append(Object.assign(document.createElement("p"), { textContent: line }));
+      help.addEventListener("click", () => {
+        panel.hidden = !panel.hidden;
+        help.classList.toggle("pyshader-active", !panel.hidden);
+      });
+      bar.append(Object.assign(document.createElement("span"), { className: "pyshader-toolbar-group" }), help, copy);
       el.insertBefore(bar, this.statusEl);
+      el.insertBefore(panel, this.statusEl);
 
       const panes = document.createElement("div");
       panes.className = "pyshader-convert-panes";
@@ -905,7 +930,7 @@ layout(push_constant) uniform PushConstants { float time; vec2 resolution; vec2 
         panes.append(box);
         return host;
       };
-      const glslHost = pane("GLSL — ShaderToy mainImage or a #version 450 fragment shader");
+      const glslHost = pane("GLSL");
       const pyHost = pane("PyShader");
       el.insertBefore(panes, this.statusEl);
 

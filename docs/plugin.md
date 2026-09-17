@@ -54,8 +54,10 @@ uv run mkdocs serve
 ```
 
 The plugin adds `pymdownx.superfences` if missing, copies its assets to
-`assets/pyshader/` in the site and injects a `window.PyShaderConfig` with the
-paths; `assets_dir`, `monaco_url` and `glslang_url` are its settings.
+`assets/pyshader/` in the site (with a content hash on their URLs, so a
+deploy is not served from a browser's cache) and injects a
+`window.PyShaderConfig` with the paths; `assets_dir`, `monaco_url` and
+`glslang_url` are its settings.
 
 ## How a preview runs
 
