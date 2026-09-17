@@ -21,7 +21,7 @@ def main(uv: float2) -> float4:
 | ```` ```pyshader ```` | the highlighted code, then the live preview under it |
 | ```` ```pyshader-preview ```` | the preview only |
 | ```` ```pyshader-edit ```` | a Monaco editor beside the preview, recompiling as you type |
-| ```` ```pyshader-convert ```` | a GLSL editor beside the PyShader it decompiles to, as on [GLSL to PyShader](convert.md); the body is GLSL |
+| ```` ```pyshader-convert ```` | a GLSL editor beside the PyShader it decompiles to, as on [GLSL to PyShader](convert.md); the body is GLSL. Its toolbar pastes the clipboard into the GLSL editor and copies the PyShader out; `pyshader-edit` blocks have the same pair for their editor, so a conversion can be carried to the [Playground](playground.md) in two clicks |
 
 Options go on the fence line as `key="value"`:
 

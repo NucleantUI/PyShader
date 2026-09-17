@@ -27,6 +27,14 @@ struct ErrorTests {
         compileError("def main(uv: float2) -> float4:\n    c = float3(1.0)\n    c.xx = float2(1.0)\n    return float4(c, 1.0)\n", contains: "repeated components", line: 3)
     }
 
+    @Test func assignModuleVariableWithoutGlobal() {
+        compileError("c = 1.0\ndef f():\n    global c\n    c = 2.0\ndef main(uv: float2) -> float4:\n    c += 1.0\n    return float4(c)\n", contains: "declare `global c`", line: 6)
+    }
+
+    @Test func globalOfUnknownName() {
+        compileError("def main(uv: float2) -> float4:\n    global zz\n    return float4(1.0)\n", contains: "not assigned at module level", line: 2)
+    }
+
     @Test func recursion() {
         compileError("""
         def f(a: float) -> float:

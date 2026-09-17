@@ -67,6 +67,36 @@ NO_HIT = (False, -1.0, float3(0.0))
 QUAD = [float2(-1.0, -1.0), float2(1.0, -1.0), float2(-1.0, 1.0)]
 ```
 
+## Module variables
+
+Python's rule applies: a function that assigns a module-level name makes a
+local, unless it declares the name `global`. A global some function declares
+is a variable instead of a constant — one per invocation, set from its
+initializer before the entry point runs, then read and written by any
+function (a `Private` variable in SPIR-V, on every target).
+
+```py
+steps = 0
+cam = float3(0.0, 0.0, -3.0)
+
+def march(p: float3) -> float:
+    global steps
+    steps += 1
+    return length(p - cam) - 1.0
+
+def main(uv: float2, time: float) -> float4:
+    global cam
+    cam.x = sin(time)
+    d = march(float3(uv, 0.0))
+    return float4(d, float(steps), 0.0, 1.0)
+```
+
+Reading a variable, or assigning one of its components (`cam.x = …`), needs
+no declaration; assigning the whole name without one is an error rather than
+a silent local. Initializers run in order and may call helpers, but not read
+a variable declared later. A variable cannot size a list — that stays a
+constant's job.
+
 ## Imports and docstrings
 
 `from pyshader import *` and `import pyshader` are accepted and ignored so an

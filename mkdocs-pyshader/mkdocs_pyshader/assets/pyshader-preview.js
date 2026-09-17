@@ -628,6 +628,31 @@
     try { localStorage.setItem(`pyshader.${key}`, value); } catch {}
   }
 
+  /** A toolbar button that runs `action` and shows `done` for a moment, or reports the error. */
+  function actionButton(label, done, action, onError) {
+    const b = Object.assign(document.createElement("button"), { type: "button", textContent: label });
+    b.addEventListener("click", async () => {
+      try {
+        await action();
+        b.textContent = done;
+        setTimeout(() => { b.textContent = label; }, 1500);
+      } catch (error) {
+        onError(`${label} failed: ${error.message}`);
+      }
+    });
+    return b;
+  }
+
+  /** "Copy" / "Paste" for a Monaco editor: the whole text to and from the clipboard. */
+  function clipboardButtons(editor, what, onError) {
+    const copy = actionButton(`Copy ${what}`, "Copied", () => navigator.clipboard.writeText(editor.getValue()), onError);
+    const paste = actionButton(`Paste ${what}`, "Pasted", async () => {
+      if (!navigator.clipboard?.readText) throw new Error("this browser does not let pages read the clipboard");
+      editor.setValue(await navigator.clipboard.readText());
+    }, onError);
+    return [paste, copy];
+  }
+
   /** Layout and aspect pickers above an edit block; the fence options are the defaults. */
   function attachToolbar(preview) {
     const el = preview.element;
@@ -705,6 +730,11 @@
       if (scheme) monaco.editor.setTheme(scheme === "slate" ? "vs-dark" : "vs");
     }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
     preview.editor = editor;
+    const bar = preview.element.querySelector(".pyshader-toolbar");
+    const group = document.createElement("span");
+    group.className = "pyshader-toolbar-group pyshader-toolbar-clipboard";
+    group.append(...clipboardButtons(editor, "code", (message) => preview.status(message, "error")));
+    bar.append(group);
   }
 
   // ---------------------------------------------------------------------------
@@ -899,16 +929,6 @@
         bar.append(wrap);
         this.select = select;
       }
-      const copy = Object.assign(document.createElement("button"), { type: "button", textContent: "Copy PyShader" });
-      copy.addEventListener("click", async () => {
-        try {
-          await navigator.clipboard.writeText(this.py.getValue());
-          copy.textContent = "Copied";
-          setTimeout(() => { copy.textContent = "Copy PyShader"; }, 1500);
-        } catch (error) {
-          this.status(`Copy failed: ${error.message}`, "error");
-        }
-      });
       const help = Object.assign(document.createElement("button"), { type: "button", textContent: "?", title: "What this does" });
       const panel = document.createElement("div");
       panel.className = "pyshader-convert-help";
@@ -918,7 +938,7 @@
         panel.hidden = !panel.hidden;
         help.classList.toggle("pyshader-active", !panel.hidden);
       });
-      bar.append(Object.assign(document.createElement("span"), { className: "pyshader-toolbar-group" }), help, copy);
+      bar.append(Object.assign(document.createElement("span"), { className: "pyshader-toolbar-group" }), help);
       el.insertBefore(bar, this.statusEl);
       el.insertBefore(panel, this.statusEl);
 
@@ -943,6 +963,10 @@
       this.glsl = monaco.editor.create(glslHost, { ...common, value: this.source, language: "glsl" });
       this.py = monaco.editor.create(pyHost, { ...common, value: "", language: "python", readOnly: true });
       this.monaco = monaco;
+      const onError = (message) => this.status(message, "error");
+      const [pasteGlsl] = clipboardButtons(this.glsl, "GLSL", onError);
+      const [, copyPy] = clipboardButtons(this.py, "PyShader", onError);
+      bar.append(pasteGlsl, copyPy);
       this.themeObserver = new MutationObserver(() => {
         const scheme = document.documentElement.dataset.mdColorScheme;
         if (scheme) monaco.editor.setTheme(scheme === "slate" ? "vs-dark" : "vs");

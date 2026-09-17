@@ -23,7 +23,9 @@ into a CPython-shaped AST. The compiler is four folders of Swift:
   continue blocks; `break` / `continue` / early `return` branch out.
 - Functions become `OpFunction`s; tuples are `OpTypeStruct`s; lists are
   `OpTypeArray`s; classes are structs. Lambdas are instantiated per
-  argument-type signature at the call site. Module constants are inlined.
+  argument-type signature at the call site. Module constants are inlined;
+  module variables (declared `global` somewhere) are `Private` variables
+  set by `py_globals`, which every entry wrapper calls first.
 - Types are created on demand: `half` adds the `Float16` capability, `short`
   / `ushort` add `Int16`, `layer()` adds `ImageQuery` for `imageSize`.
 - The wrapper is the only target-specific code: it declares the inputs

@@ -15,7 +15,8 @@ through `ShaderFunction(pyshader:)`. A port is right when the two halves match.
 | `out` parameters | tuple returns: `-> tuple[bool, float, float3]`, `return hit, t, n`, `hit, t, n = f(...)` |
 | `vec4[3]` locals, dynamic index, a `swap` macro | list literals: `[float4(0.0)] * 3`, `xs[i]`, `xs[i].rgb *= …`, `xs[0], xs[1] = xs[1], xs[0]`, `len(xs)` |
 | `#define` constants, `const` | module-level constants |
-| helpers reading `iTime` / `iResolution` | take `time` / `resolution` as a parameter — there are no globals inside functions |
+| helpers reading `iTime` / `iResolution` | take `time` / `resolution` as a parameter — the inputs are `main`'s, not globals |
+| file-scope variables set in `mainImage`, read in helpers | [module variables](../language/functions.md#module-variables): assign at module level, `global name` where written |
 | `for (float x = 3000.0; x >= 0.0; x -= 6.67)` | `while` (`range` is ints) |
 | `#if` / `#ifdef` | the chosen branch is what gets ported |
 | `iMouse.z > 0.0`, `iMouse.xy` | `mouse_click.x > 0.0`, `mouse` (y-up, as the wrapper flips it) |

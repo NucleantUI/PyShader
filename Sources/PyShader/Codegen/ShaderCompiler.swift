@@ -22,6 +22,11 @@ final class ShaderCompiler {
     private var contentImage: SpirvId?
     private var argumentBuffer: SpirvId?
 
+    /// The module variables as `Private` globals, and the function that
+    /// initializes them, which every entry-point wrapper calls first.
+    private(set) var variables: [String: LocalVariable] = [:]
+    private(set) var globalsInit: SpirvId?
+
     init(program: ShaderProgram) {
         self.program = program
     }
@@ -33,6 +38,8 @@ final class ShaderCompiler {
             program.assignFunctionId(name, id)
             builder.name(id, program.isEntry(name) ? "py_\(name)" : name)
         }
+
+        try emitGlobalsInit()
 
         for name in program.functionOrder {
             let fn = program.functions[name]!
@@ -53,6 +60,38 @@ final class ShaderCompiler {
         case .graphics(let interface): try emitGraphicsEntryPoints(interface)
         }
         return builder.build()
+    }
+
+    // MARK: - Module variables
+
+    func variable(_ name: String) -> LocalVariable? { variables[name] }
+
+    /// `py_globals`: evaluates each module variable's initializer, in order,
+    /// into a fresh `Private` variable. Emitted before the user functions so
+    /// they know the variables' types; a helper an initializer calls may not
+    /// read the variable being initialized, or a later one.
+    private func emitGlobalsInit() throws {
+        guard !program.variableOrder.isEmpty else { return }
+        let id = builder.allocate()
+        builder.name(id, "py_globals")
+        let emitter = FunctionEmitter(compiler: self, name: "py_globals", returnType: .void)
+        try emitter.emitWrapper(id: id) { e in
+            for name in self.program.variableOrder {
+                let g = self.program.variables[name]!
+                var value = try e.emitExpression(g.expr)
+                if let annotation = g.annotation {
+                    let type = try self.program.resolveType(annotation, line: g.line)
+                    value = try e.coerce(value, to: type, line: g.line)
+                }
+                guard value.type.isStorable else {
+                    throw PyShaderError("cannot store a `\(value.type)` in the module variable `\(name)`", line: g.line)
+                }
+                let ptr = self.builder.globalVariable(type: value.type, storage: .private, name: name)
+                e.store(ptr, value.id)
+                self.variables[name] = LocalVariable(ptr: ptr, type: value.type)
+            }
+        }
+        globalsInit = id
     }
 
     // MARK: - Shared resources

@@ -26,6 +26,31 @@ struct RoundTripTests {
         #expect(out.source.components(separatedBy: "def ").count == 2)
     }
 
+    @Test("module variables come back at module level with `global` where they are assigned")
+    func moduleVariables() throws {
+        let words = try PyShader.compile("""
+        cam = float3(0.0, 1.0, -3.0)
+        hits = 0
+        tint = float3(0.5) * 2.0
+
+        def map(p: float3) -> float:
+            global hits
+            hits += 1
+            return length(p - cam) - 1.0
+
+        def main(uv: float2, time: float) -> float4:
+            global tint
+            tint.y = map(float3(uv, 0.0))
+            return float4(tint, float(hits))
+        """).spirv
+        let s = try decompileAndRecompile(words).source
+        // `cam` is never assigned, so it was inlined as a constant.
+        #expect(s.contains("\nhits = 0\ntint = float3(0.5) * 2.0\n"))
+        #expect(s.contains("def map(p: float3) -> float:\n    global hits\n    hits += 1\n    return length(p - float3(0.0, 1.0, -3.0)) - 1.0"))
+        #expect(s.contains("def main(uv: float2, time: float) -> float4:\n    global tint\n    tint.y = map(float3(uv, 0.0))\n    return float4(tint, float(hits))"))
+        #expect(!s.contains("py_globals") && !s.contains("globals()"))
+    }
+
     @Test("helpers, loops, swizzle stores and augmented assignment come back as written")
     func statements() throws {
         let source = """

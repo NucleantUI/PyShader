@@ -98,6 +98,9 @@ extension FunctionEmitter {
         if let handle = lookupHandle(n.id) {
             return Value(id: 0, type: handle)
         }
+        if let v = try lookupVariable(n.id, line: n.lineno) {
+            return load(v.ptr, type: v.type)
+        }
         if let global = program.globals[n.id] {
             return try compiler.withGlobalInlining(n.id, line: n.lineno) {
                 try emitExpression(global.expr)
@@ -852,8 +855,8 @@ extension FunctionEmitter {
         if let v = try callBuiltin(name, args, line: c.lineno) {
             return v
         }
-        if program.globals[name] != nil {
-            throw PyShaderError("`\(name)` is a constant, not a function", line: c.lineno)
+        if program.globals[name] != nil || program.variables[name] != nil {
+            throw PyShaderError("`\(name)` is a \(program.globals[name] != nil ? "constant" : "variable"), not a function", line: c.lineno)
         }
         throw PyShaderError("unknown function `\(name)`", line: c.lineno)
     }

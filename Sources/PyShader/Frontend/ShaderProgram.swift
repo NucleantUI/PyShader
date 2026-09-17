@@ -34,6 +34,12 @@ final class ShaderProgram {
     private(set) var functionOrder: [String] = []
     /// Module-level constant expressions, inlined at each use site.
     private(set) var globals: [String: (expr: Expression, line: Int)] = [:]
+    /// Module-level variables: globals some function declares `global` and
+    /// assigns. Each is a `Private` variable, set from its initializer before
+    /// the entry point runs. In declaration order, as they are initialized.
+    private(set) var variables: [String: (expr: Expression, annotation: Expression?, line: Int)] = [:]
+    private(set) var variableOrder: [String] = []
+    private var annotations: [String: Expression] = [:]
     private(set) var lambdas: [String: LambdaTemplate] = [:]
     /// `class` declarations: plain structs of annotated fields.
     private(set) var structs: [String: ShaderType] = [:]
@@ -59,6 +65,7 @@ final class ShaderProgram {
         for def in defs where functions[def.name] == nil {
             try declare(def)
         }
+        try promoteVariables(defs)
         for entry in entries.values.sorted(by: { $0.entryPoint < $1.entryPoint }) where functions[entry.entryPoint] == nil {
             let returns = entry.outputType.map { "\($0)" } ?? "Varyings"
             throw PyShaderError("shader needs a global `def \(entry.entryPoint)(...) -> \(returns):` entry point")
@@ -117,6 +124,7 @@ final class ShaderProgram {
                 throw PyShaderError("module-level declaration `\(target.id)` needs a value", line: a.lineno)
             }
             try bindGlobal(name: target.id, value: value, line: a.lineno)
+            annotations[target.id] = a.annotation
         case .pass, .blank:
             break
         case .expr(let e):
@@ -155,6 +163,36 @@ final class ShaderProgram {
         } else {
             globals[name] = (value, line)
         }
+    }
+
+    /// A global a function declares `global` is assigned somewhere, so it is a
+    /// variable rather than an inlined constant. Python's rule: without the
+    /// declaration an assignment makes a local.
+    private func promoteVariables(_ defs: [FunctionDef]) throws {
+        func walk(_ statements: [Statement]) throws {
+            for stmt in statements {
+                switch stmt {
+                case .global(let g):
+                    for name in g.names {
+                        if variables[name] != nil { continue }
+                        guard let (expr, line) = globals[name] else {
+                            if functions[name] != nil || lambdas[name] != nil {
+                                throw PyShaderError("`\(name)` is a function, not a variable", line: g.lineno)
+                            }
+                            throw PyShaderError("`\(name)` is not assigned at module level", line: g.lineno)
+                        }
+                        globals[name] = nil
+                        variables[name] = (expr, annotations[name], line)
+                    }
+                case .ifStmt(let i): try walk(i.body); try walk(i.orElse)
+                case .whileStmt(let w): try walk(w.body); try walk(w.orElse)
+                case .forStmt(let f): try walk(f.body); try walk(f.orElse)
+                default: break
+                }
+            }
+        }
+        for def in defs { try walk(def.body) }
+        variableOrder = variables.keys.sorted { variables[$0]!.line < variables[$1]!.line }
     }
 
     /// `class Name:` with one annotated field per line — a struct. No

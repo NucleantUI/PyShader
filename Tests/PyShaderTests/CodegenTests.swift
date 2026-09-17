@@ -158,6 +158,39 @@ struct CodegenTests {
         #expect(words.has(.opVectorTimesScalar))
     }
 
+    @Test("module variables: `global` makes a Private variable set before the entry point")
+    func moduleVariables() throws {
+        let source = """
+        cam = float3(0.0, 1.0, -3.0)
+        hits: int = 0
+        K = 2.0
+        tint = float3(0.5) * K
+
+        def map(p: float3) -> float:
+            global hits
+            hits += 1
+            return length(p - cam) - 1.0
+
+        def setup(t: float):
+            global cam
+            cam.x = sin(t)
+            cam = cam + float3(0.0, 0.0, tint.z)
+
+        def main(uv: float2, time: float) -> float4:
+            global tint
+            setup(time)
+            d = map(float3(uv, 0.0))
+            tint.y = d
+            return float4(tint, float(hits))
+        """
+        let words = try compileValid(source)
+        let privates = words.instructions.filter { $0.opcode == SpirvOp.opVariable.rawValue && $0.operands[2] == SpirvStorageClass.private.rawValue }
+        #expect(privates.count == 3)
+        // `K` stays an inlined constant; `py_globals` initializes the rest and each wrapper calls it first.
+        #expect(words.has(.opFunctionCall))
+        _ = try compileValid(source, target: .computeImage(.nucleantSwiftUI(samplesContent: false)))
+    }
+
     @Test("custom interface")
     func customInterface() throws {
         let interface = FragmentInterface(

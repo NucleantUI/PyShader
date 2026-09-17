@@ -27,11 +27,14 @@ struct PyFunction {
     var body: [PyStmt]
     let isEntry: Bool
     let localTypes: [String: ShaderType]
+    /// Module variables the body assigns: the `global` declaration.
+    var globals: [String] = []
 
     var rendered: String {
         let sig = params.map { "\($0.name): \($0.type)" }.joined(separator: ", ")
         let ret = returnType.map { " -> \($0)" } ?? ""
-        return "def \(name)(\(sig))\(ret):\n" + PyStmt.render(body)
+        let declaration = globals.isEmpty ? "" : "    global \(globals.joined(separator: ", "))\n"
+        return "def \(name)(\(sig))\(ret):\n" + declaration + PyStmt.render(body)
     }
 }
 
@@ -101,6 +104,7 @@ final class FunctionDecompiler {
         if isEntry { reserved.insert(ctx.analysis.interface.outputName) }
         reserved.formUnion(ctx.analysis.functionNames.values)
         reserved.formUnion(ctx.analysis.structNames.values)
+        reserved.formUnion(ctx.analysis.interface.privateGlobals.values)
         names = NameAllocator(reserved: reserved)
     }
 
@@ -347,7 +351,7 @@ final class FunctionDecompiler {
             throw error("`\(name)` is a sampler or image; PyShader's fragment target has no textures")
         }
         if let name = map.privateGlobals[g.id] {
-            throw error("`\(name)` is a module-level variable; PyShader has only constants outside functions")
+            return Place(expr: .name(name), type: g.type, root: name, reads: [name])
         }
         throw error("global `\(g.name ?? "%\(g.id)")` (\(g.storage)) is not supported")
     }
@@ -819,11 +823,21 @@ final class FunctionDecompiler {
         let resultId = inst.operands[1]
         let resultType = module.types[inst.operands[0]] ?? .void
 
+        // The callee writes module variables: pending reads of them come first, and the
+        // call lands here rather than wherever its result is used.
+        let written = analysis.writtenGlobals[calleeId] ?? []
+        for name in written.sorted() { invalidate(name) }
+
         if outPlaces.isEmpty {
             if resultType == .void {
                 emit(.expr(expr))
-            } else {
+            } else if written.isEmpty {
                 define(resultId, expr, type: resultType, reads: reads)
+            } else {
+                let name = temp()
+                localTypes[name] = resultType
+                emit(.assign(.name(name), expr))
+                values[resultId] = ValueEntry(expr: .name(name), type: resultType, reads: [name], depth: stack.count - 1, pinned: true, remaining: max(useCount(resultId), 1))
             }
             return
         }

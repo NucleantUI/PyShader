@@ -12,19 +12,22 @@
 import PyShader
 
 enum Peepholes {
-    static func run(_ body: [PyStmt], locals: [String: ShaderType], params: Set<String>, typeName: (ShaderType) -> String) -> [PyStmt] {
+    /// `globals` are the module variables: assigned before the function runs,
+    /// read by other functions, so never dead and never folded into a use.
+    static func run(_ body: [PyStmt], locals: [String: ShaderType], params: Set<String>, globals: [String: ShaderType] = [:], typeName: (ShaderType) -> String) -> [PyStmt] {
         var stmts = body
+        let keep = Set(globals.keys)
         stmts = liftLoopConditions(stmts)
-        stmts = mergeComponentStores(stmts, locals: locals)
+        stmts = mergeComponentStores(stmts, locals: locals.merging(globals) { l, _ in l })
         stmts = mergePhiSelections(stmts)
         stmts = renameUnpacks(stmts, root: stmts)
-        while propagateCopies(&stmts, root: stmts) {}
-        stmts = dropDead(stmts, root: stmts)
-        while propagateCopies(&stmts, root: stmts) {}
+        while propagateCopies(&stmts, root: stmts, keep: keep) {}
+        stmts = dropDead(stmts, root: stmts, keep: keep)
+        while propagateCopies(&stmts, root: stmts, keep: keep) {}
         stmts = augmentAssignments(stmts)
         stmts = forRanges(stmts, root: stmts)
-        stmts = dropDead(stmts, root: stmts)
-        stmts = declare(stmts, locals: locals, assigned: params, typeName: typeName)
+        stmts = dropDead(stmts, root: stmts, keep: keep)
+        stmts = declare(stmts, locals: locals, assigned: params.union(keep), typeName: typeName)
         return stmts
     }
 
@@ -110,11 +113,13 @@ enum Peepholes {
     // MARK: - Copies
 
     /// `x = E; S(x)` -> `S(E)` when that is x's only read and only write.
-    private static func propagateCopies(_ stmts: inout [PyStmt], root: [PyStmt]) -> Bool {
+    private static func propagateCopies(_ stmts: inout [PyStmt], root: [PyStmt], keep: Set<String>) -> Bool {
         var i = 0
         while i < stmts.count {
-            if case .assign(.name(let x), let e) = stmts[i], i + 1 < stmts.count,
+            if case .assign(.name(let x), let e) = stmts[i], i + 1 < stmts.count, !keep.contains(x),
                root.reads(of: x) == 1, root.writes(of: x) == 1,
+               // A call may write a module variable the next statement reads before the call's result.
+               !(e.hasCall && keep.contains { readsBeforeValue(stmts[i + 1], $0) }),
                let replaced = substitute(x, with: e, in: stmts[i + 1]) {
                 stmts.remove(at: i)
                 stmts[i] = replaced
@@ -123,13 +128,20 @@ enum Peepholes {
             var changed = false
             stmts[i] = stmts[i].withNested { block in
                 var b = block
-                if !changed, propagateCopies(&b, root: root) { changed = true }
+                if !changed, propagateCopies(&b, root: root, keep: keep) { changed = true }
                 return b
             }
             if changed { return true }
             i += 1
         }
         return false
+    }
+
+    /// Whether `name` is read by the statement before an assigned value would be: an
+    /// assignment target is evaluated after its value, everything else before or alongside.
+    private static func readsBeforeValue(_ s: PyStmt, _ name: String) -> Bool {
+        if case .assign(_, let v) = s { return v.reads(name) > 0 }
+        return s.expressions.contains { $0.reads(name) > 0 }
     }
 
     /// The statement with its one read of `x` replaced, if `x` is read in an expression evaluated once, first.
@@ -238,10 +250,10 @@ enum Peepholes {
 
     // MARK: - Dead assignments
 
-    private static func dropDead(_ stmts: [PyStmt], root: [PyStmt]) -> [PyStmt] {
+    private static func dropDead(_ stmts: [PyStmt], root: [PyStmt], keep: Set<String>) -> [PyStmt] {
         stmts.compactMap { s in
-            let s = s.withNested { dropDead($0, root: root) }
-            guard case .assign(.name(let x), let v) = s, root.reads(of: x) == 0 else { return s }
+            let s = s.withNested { dropDead($0, root: root, keep: keep) }
+            guard case .assign(.name(let x), let v) = s, !keep.contains(x), root.reads(of: x) == 0 else { return s }
             return v.hasCall ? .expr(v) : nil
         }
     }
@@ -341,7 +353,7 @@ enum Peepholes {
             params[k] = (name, inner.params[k].type)
         }
         var out = functions
-        out[calleeIndex] = PyFunction(name: entry.name, params: params, returnType: inner.returnType, body: body, isEntry: true, localTypes: inner.localTypes)
+        out[calleeIndex] = PyFunction(name: entry.name, params: params, returnType: inner.returnType, body: body, isEntry: true, localTypes: inner.localTypes, globals: inner.globals)
         out.remove(at: entryIndex)
         // Entry last.
         let main = out.remove(at: out.firstIndex(where: \.isEntry)!)

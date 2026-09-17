@@ -97,6 +97,10 @@
   cursor: pointer;
 }
 
+.pyshader-toolbar-clipboard {
+  margin-left: auto;
+}
+
 .pyshader-toolbar button.pyshader-active {
   background: var(--md-primary-fg-color);
   border-color: var(--md-primary-fg-color);

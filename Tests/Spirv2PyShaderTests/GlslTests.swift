@@ -93,6 +93,48 @@ struct GlslTests {
         #expect(s.contains("saturate(float3(p, acc) if p.x > p.y else float3(acc))"))
     }
 
+    @Test("file-scope variables become module variables; constant initializers stay at module level")
+    func globals() throws {
+        let glsl = wrapShaderToy("""
+        vec3 camPos;
+        float gTime = 0.0;
+        vec3 lightDir = normalize(vec3(1.0, 2.0, 3.0));
+        int steps;
+
+        float map(vec3 p) {
+            steps++;
+            return length(p - camPos) - 1.0 + 0.1 * sin(gTime);
+        }
+
+        vec3 shade(vec3 p) {
+            float d = map(p);
+            return vec3(d) * max(dot(lightDir, normalize(p)), 0.0);
+        }
+
+        void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+            gTime = iTime;
+            camPos = vec3(0.0, 0.0, -3.0 + sin(gTime));
+            steps = 0;
+            float before = float(steps);
+            vec3 c = shade(vec3(fragCoord / iResolution.xy, 0.0));
+            fragColor = vec4(c, float(steps) - before);
+        }
+        """)
+        guard let words = try Tools.compileGLSL(glsl) else { return }
+        let s = try decompileAndRecompile(words, interface: .shaderToy).source
+        #expect(s.contains("\ngTime = 0.0\n"))
+        #expect(s.contains("\nlightDir = float3(0.26726124, 0.5345225, 0.80178374)\n"))
+        #expect(s.contains("\nsteps = 0\n"))
+        #expect(s.contains("\ncamPos = float3(0.0)\n"))
+        #expect(s.contains("def map(p: float3) -> float:\n    global steps\n    steps += 1\n"))
+        #expect(s.contains("def shade(p: float3) -> float3:\n    d = map(p)\n"))
+        #expect(s.contains("    global gTime, steps, camPos\n    gTime = time\n"))
+        // The read of `steps` before the call stays before it.
+        #expect(s.contains("before = float(steps)\n    c = shade("))
+        #expect(s.contains("def main(frag_coord: float2, time: float, resolution: float2) -> float4:\n    return mainImage("))
+        #expect(throws: Never.self) { try PyShader.compile(s, target: .computeImage(.nucleantSwiftUI(samplesContent: false))) }
+    }
+
     @Test("unsigned constants above Int32.max and integer hashing")
     func unsignedConstants() throws {
         let glsl = wrapShaderToy("""

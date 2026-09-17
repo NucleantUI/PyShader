@@ -35,8 +35,9 @@ final class InterfaceMap {
     private(set) var reservedNames: Set<String> = []
     /// Opaque resources (samplers, images) by variable, for the warning at their use.
     private(set) var opaque: [SpirvId: String] = [:]
-    /// `Private` globals: PyShader has no module-level variables.
+    /// `Private` globals, as PyShader module variables, in module order.
     private(set) var privateGlobals: [SpirvId: String] = [:]
+    private(set) var privateOrder: [SpirvId] = []
 
     private var warnings: [String] = []
     private var unmappedOrder = 0
@@ -64,8 +65,6 @@ final class InterfaceMap {
                 map(block: g, module: module, byOffset: [], options: options)
             case .uniformConstant:
                 opaque[id] = g.name ?? "%\(id)"
-            case .private, .workgroup:
-                privateGlobals[id] = g.name ?? "%\(id)"
             default:
                 break
             }
@@ -74,6 +73,14 @@ final class InterfaceMap {
             warnings.append("no colour output; main returns nothing")
         }
         reservedNames.insert(outputName)
+        // After the interface, so a global called `time` yields the name.
+        for id in module.globalOrder where module.globals[id]!.storage == .private {
+            var name = PyNames.sanitize(module.globals[id]!.name ?? "g\(id)", fallback: "g")
+            while reservedNames.contains(name) || PyNames.isReserved(name) { name += "_" }
+            privateGlobals[id] = name
+            privateOrder.append(id)
+            reservedNames.insert(name)
+        }
     }
 
     func takeWarnings() -> [String] {

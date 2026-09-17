@@ -65,9 +65,12 @@ interface's parameter names, and helpers, tuple returns, lists and lambdas
 ## Limits
 
 - Fragment stages only; a compute or vertex module is refused.
-- Textures (`OpImageSample*`) and module-level (`Private`) variables have
-  no PyShader equivalent and are reported. `switch` becomes an `if`/`elif`
-  chain.
+- Textures (`OpImageSample*`) have no PyShader equivalent and are reported.
+  `switch` becomes an `if`/`elif` chain.
+- `Private` globals are module variables: `name = <initializer>` at module
+  level and `global name` in every function that assigns them. glslang
+  stores a non-constant initializer at the top of `main`; one that reads
+  nothing is moved back to module level.
 - `OpSDiv` is written as `//` and `OpSRem` as `%`; they differ from Python's
   floored semantics for negative operands (glslang's `%` is `OpSMod`, which
   matches).

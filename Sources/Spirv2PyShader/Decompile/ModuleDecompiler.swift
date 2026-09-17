@@ -31,11 +31,18 @@ final class ModuleDecompiler {
 
     func decompile() throws -> DecompiledShader {
         var functions: [PyFunction] = []
+        let globalNames = analysis.interface.privateOrder.map { analysis.interface.privateGlobals[$0]! }
+        let globalTypes = Dictionary(uniqueKeysWithValues: analysis.interface.privateOrder.map { (analysis.interface.privateGlobals[$0]!, module.globals[$0]!.type) })
         for id in analysis.order {
             guard let fn = module.function(id) else { continue }
             var py = try FunctionDecompiler(ctx: self, function: fn).decompile()
-            py.body = Peepholes.run(py.body, locals: py.localTypes, params: Set(py.params.map(\.name)), typeName: analysis.typeName)
+            py.body = Peepholes.run(py.body, locals: py.localTypes, params: Set(py.params.map(\.name)), globals: globalTypes, typeName: analysis.typeName)
             functions.append(py)
+        }
+        var initializers = try foldGlobalsInit(&functions, globals: Set(globalNames))
+        for i in functions.indices {
+            let written = functions[i].body.writtenNames
+            functions[i].globals = globalNames.filter { written.contains($0) }
         }
         functions = Peepholes.collapseWrapper(functions)
 
@@ -50,11 +57,66 @@ final class ModuleDecompiler {
                 text += "    \(name): \(analysis.typeName(type))\n"
             }
         }
+        if !globalNames.isEmpty { text += "\n" }
+        for id in analysis.interface.privateOrder {
+            let g = module.globals[id]!
+            let name = analysis.interface.privateGlobals[id]!
+            let value = try initializers.removeValue(forKey: name)
+                ?? g.initializer.flatMap { module.constants[$0] }.map { try render(constant: $0) }
+                ?? zero(of: g.type)
+            text += "\n\(name) = \(value.rendered)"
+        }
+        if !globalNames.isEmpty { text += "\n" }
         for f in functions {
             text += "\n\n" + f.rendered + "\n"
         }
         let entry = functions.last(where: \.isEntry)?.name ?? analysis.entryName
         return DecompiledShader(source: text, warnings: warnings, entryPoint: entry)
+    }
+
+    // MARK: - PyShader's `py_globals`
+
+    /// Module variables initialized at the start of the entry point are
+    /// initialized at module level instead, where the source had them.
+    /// glslang stores a global's initializer in `main` when it is not a plain
+    /// constant; only ones that read nothing move. PyShader sets its module
+    /// variables in a `py_globals` function every entry wrapper calls first;
+    /// those assignments are the module-level values again and the function
+    /// and its calls go.
+    private func foldGlobalsInit(_ functions: inout [PyFunction], globals: Set<String>) throws -> [String: PyExpr] {
+        var values: [String: PyExpr] = [:]
+        if let id = analysis.order.first(where: { module.names[$0] == "py_globals" }),
+           let index = functions.firstIndex(where: { $0.name == analysis.name(of: id) }),
+           functions[index].body.allSatisfy({ s in
+               if case .assign(.name(let g), _) = s { return globals.contains(g) }
+               if case .ret(nil) = s { return true }
+               return false
+           }) {
+            let name = functions[index].name
+            for case .assign(.name(let g), let e) in functions[index].body where values[g] == nil { values[g] = e }
+            functions.remove(at: index)
+            for i in functions.indices {
+                functions[i].body.removeAll { s in
+                    if case .expr(.call(name, let args)) = s, args.isEmpty { return true }
+                    return false
+                }
+            }
+        }
+        if let entry = functions.firstIndex(where: \.isEntry) {
+            while case .assign(.name(let g), let e)? = functions[entry].body.first,
+                  globals.contains(g), values[g] == nil, isConstant(e) {
+                values[g] = e
+                functions[entry].body.removeFirst()
+            }
+        }
+        return values
+    }
+
+    /// Reads no variable and calls only constructors and builtins.
+    private func isConstant(_ e: PyExpr) -> Bool {
+        if case .name = e { return false }
+        if case .call(let f, _) = e, ShaderType.named(f) == nil, !PyNames.builtins.contains(f) || f == "discard" { return false }
+        return e.children.allSatisfy(isConstant)
     }
 
     // MARK: - Constants

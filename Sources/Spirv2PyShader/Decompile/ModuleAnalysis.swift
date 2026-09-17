@@ -25,6 +25,9 @@ final class ModuleAnalysis {
     private(set) var outParams: [SpirvId: [Int]] = [:]
     /// Interface values a function reads, itself or through callees; extra trailing parameters.
     private(set) var threaded: [SpirvId: [InterfaceValue]] = [:]
+    /// Module variables a function writes, itself or through callees: a call
+    /// to it is a side effect on them.
+    private(set) var writtenGlobals: [SpirvId: Set<String>] = [:]
     /// Struct types that need a `class`, in first-use order, with their Python names.
     private(set) var structs: [ShaderType] = []
     private(set) var structNames: [ShaderType: String] = [:]
@@ -59,6 +62,7 @@ final class ModuleAnalysis {
         nameFunctions()
         findOutParams()
         threadInterfaceValues()
+        findWrittenGlobals()
         collectStructs()
     }
 
@@ -172,6 +176,30 @@ final class ModuleAnalysis {
             return sorted
         }
         for id in order { threaded[id] = values(of: id) }
+    }
+
+    // MARK: - Module variables
+
+    /// Stored through any chain, or passed by pointer to a call (which may store).
+    private func findWrittenGlobals() {
+        var memo: [SpirvId: Set<String>] = [:]
+        func written(by id: SpirvId) -> Set<String> {
+            if let w = memo[id] { return w }
+            let scan = scan(id)
+            var set = Set<String>()
+            for root in scan.storedRoots {
+                if let name = interface.privateGlobals[root] { set.insert(name) }
+            }
+            for call in scan.calls {
+                for arg in call.operands.dropFirst(3) {
+                    if let root = scan.root(arg), let name = interface.privateGlobals[root] { set.insert(name) }
+                }
+                set.formUnion(written(by: call.operands[2]))
+            }
+            memo[id] = set
+            return set
+        }
+        for id in order { writtenGlobals[id] = written(by: id) }
     }
 
     // MARK: - Structs

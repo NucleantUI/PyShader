@@ -26,6 +26,10 @@ final class FunctionEmitter {
     private var locals: [String: LocalVariable] = [:]
     /// Names bound to compile-time resource handles (`FloatArray` arguments) rather than variables.
     private var handles: [String: ShaderType] = [:]
+    /// Module variables this function declared `global`, so plain assignment writes them.
+    private var declaredGlobals: Swift.Set<String> = []
+    /// Storage class of pointers not in `Function` storage (module variables and chains into them).
+    private var pointerStorage: [SpirvId: SpirvStorageClass] = [:]
 
     /// True when the current block already ended with a terminator.
     private(set) var terminated = false
@@ -65,6 +69,9 @@ final class FunctionEmitter {
     /// Emits a parameterless void function whose body is built in Swift (the entry-point wrappers).
     func emitWrapper(id: SpirvId, _ body: (FunctionEmitter) throws -> Void) throws {
         let paramIds = beginFunction([])
+        if let initFn = compiler.globalsInit {
+            emit(.init(.opFunctionCall, [builder.type(.void), builder.allocate(), initFn]))
+        }
         try body(self)
         if !terminated { terminate(.init(.opReturn)) }
         finishFunction(id: id, paramIds: paramIds, returnType: .void)
@@ -173,6 +180,39 @@ final class FunctionEmitter {
     func lookupLocal(_ name: String) -> LocalVariable? { locals[name] }
     func lookupHandle(_ name: String) -> ShaderType? { handles[name] }
 
+    /// The module variable `name`, when there is one.
+    func lookupVariable(_ name: String, line: Int) throws -> LocalVariable? {
+        if let v = compiler.variable(name) {
+            pointerStorage[v.ptr] = .private
+            return v
+        }
+        if program.variables[name] != nil {
+            throw PyShaderError("module variable `\(name)` is read before it is initialized", line: line)
+        }
+        return nil
+    }
+
+    /// `global a, b`: assignments to these names write the module variables.
+    private func declareGlobals(_ g: Global) throws {
+        for name in g.names {
+            guard program.variables[name] != nil else {
+                throw PyShaderError("`\(name)` is not a module variable", line: g.lineno)
+            }
+            if locals[name] != nil {
+                throw PyShaderError("`\(name)` is assigned before its `global` declaration", line: g.lineno)
+            }
+            declaredGlobals.insert(name)
+        }
+    }
+
+    /// A pointer into `base` (a variable or a chain into one), in the same storage class.
+    func chain(_ base: SpirvId, _ elem: ShaderType, _ indices: [SpirvId]) -> Value {
+        let storage = pointerStorage[base] ?? .function
+        let v = emit(.opAccessChain, type: .pointer(storage, elem), [base] + indices)
+        if storage != .function { pointerStorage[v.id] = storage }
+        return v
+    }
+
     @discardableResult
     func declareLocal(_ name: String, type: ShaderType) -> LocalVariable {
         let ptrType = builder.type(.pointer(.function, type))
@@ -208,7 +248,7 @@ final class FunctionEmitter {
             return load(ptr, type: t)
         case .component(let ptr, let index, let vt):
             let elem = vt.elementType!
-            let chain = emit(.opAccessChain, type: .pointer(.function, elem), [ptr, index])
+            let chain = chain(ptr, elem, [index])
             return load(chain.id, type: elem)
         case .swizzle(let ptr, let vt, let indices):
             let whole = load(ptr, type: vt)
@@ -224,7 +264,7 @@ final class FunctionEmitter {
         case .component(let ptr, let index, let vt):
             let elem = vt.elementType!
             let v = try coerce(value, to: elem, line: line)
-            let chain = emit(.opAccessChain, type: .pointer(.function, elem), [ptr, index])
+            let chain = chain(ptr, elem, [index])
             store(chain.id, v.id)
         case .swizzle(let ptr, let vt, let indices):
             guard Swift.Set(indices).count == indices.count else {
@@ -234,7 +274,7 @@ final class FunctionEmitter {
             let v = try coerce(value, to: target, line: line)
             if indices.count == 1 {
                 let elem = vt.elementType!
-                let chain = emit(.opAccessChain, type: .pointer(.function, elem), [ptr, builder.constant(int: indices[0])])
+                let chain = chain(ptr, elem, [builder.constant(int: indices[0])])
                 store(chain.id, v.id)
                 return
             }
@@ -256,8 +296,9 @@ final class FunctionEmitter {
     func pointer(for expr: Expression, line: Int) throws -> (ptr: SpirvId, type: ShaderType)? {
         switch expr {
         case .name(let n):
-            guard let local = locals[n.id] else { return nil }
-            return (local.ptr, local.type)
+            if let local = locals[n.id] { return (local.ptr, local.type) }
+            guard let v = try lookupVariable(n.id, line: line) else { return nil }
+            return (v.ptr, v.type)
         case .subscriptExpr(let sub):
             guard let base = try pointer(for: sub.value, line: line) else { return nil }
             guard let elem = base.type.elementType(at: nil), !base.type.isFloatArray else {
@@ -265,13 +306,13 @@ final class FunctionEmitter {
                     guard let k = constantIndex(sub.slice), let member = base.type.elementType(at: k) else {
                         throw PyShaderError("tuple index must be a constant", line: line)
                     }
-                    let chain = emit(.opAccessChain, type: .pointer(.function, member), [base.ptr, builder.constant(int: k)])
+                    let chain = chain(base.ptr, member, [builder.constant(int: k)])
                     return (chain.id, member)
                 }
                 return nil
             }
             let index = try emitIndex(sub.slice, count: base.type.count, line: line)
-            let chain = emit(.opAccessChain, type: .pointer(.function, elem), [base.ptr, index])
+            let chain = chain(base.ptr, elem, [index])
             return (chain.id, elem)
         case .attribute(let a):
             guard let base = try pointer(for: a.value, line: line) else { return nil }
@@ -279,7 +320,7 @@ final class FunctionEmitter {
                 guard let k = members.firstIndex(where: { $0.0 == a.attr }) else {
                     throw PyShaderError("`\(name)` has no field `\(a.attr)`", line: line)
                 }
-                let chain = emit(.opAccessChain, type: .pointer(.function, members[k].1), [base.ptr, builder.constant(int: k)])
+                let chain = chain(base.ptr, members[k].1, [builder.constant(int: k)])
                 return (chain.id, members[k].1)
             }
             guard let indices = Swizzle.indices(for: a.attr), indices.count == 1, base.type.isVector else { return nil }
@@ -287,7 +328,7 @@ final class FunctionEmitter {
                 throw PyShaderError("component \(indices[0]) is out of range for `\(base.type)`", line: line)
             }
             let elem = base.type.elementType!
-            let chain = emit(.opAccessChain, type: .pointer(.function, elem), [base.ptr, builder.constant(int: indices[0])])
+            let chain = chain(base.ptr, elem, [builder.constant(int: indices[0])])
             return (chain.id, elem)
         default:
             return nil
@@ -298,10 +339,14 @@ final class FunctionEmitter {
     func lvalue(for target: Expression, line: Int) throws -> LValue {
         switch target {
         case .name(let n):
-            guard let local = locals[n.id] else {
-                throw PyShaderError("`\(n.id)` is not defined", line: line)
+            if let local = locals[n.id] { return .variable(ptr: local.ptr, type: local.type) }
+            if declaredGlobals.contains(n.id), let v = try lookupVariable(n.id, line: line) {
+                return .variable(ptr: v.ptr, type: v.type)
             }
-            return .variable(ptr: local.ptr, type: local.type)
+            if program.variables[n.id] != nil {
+                throw PyShaderError("`\(n.id)` is a module variable; declare `global \(n.id)` to assign to it", line: line)
+            }
+            throw PyShaderError("`\(n.id)` is not defined", line: line)
         case .attribute(let a):
             guard let base = try pointer(for: a.value, line: line) else {
                 throw PyShaderError("can only assign to components of a variable (e.g. `color.rgb = ...`)", line: line)
@@ -415,7 +460,7 @@ final class FunctionEmitter {
         case .delete(let d):
             throw PyShaderError("del is not available in shader code", line: d.lineno)
         case .global(let g):
-            throw PyShaderError("module constants are read-only; `global` is not needed", line: g.lineno)
+            try declareGlobals(g)
         default:
             throw PyShaderError("unsupported statement", line: stmt.lineno)
         }
@@ -473,6 +518,8 @@ final class FunctionEmitter {
         if case .name(let n) = target {
             if let local = locals[n.id] {
                 try store(.variable(ptr: local.ptr, type: local.type), value, line: line)
+            } else if declaredGlobals.contains(n.id), let v = try lookupVariable(n.id, line: line) {
+                try store(.variable(ptr: v.ptr, type: v.type), value, line: line)
             } else {
                 guard value.type.isStorable else {
                     throw PyShaderError("cannot store a `\(value.type)` in a variable", line: line)
@@ -489,6 +536,9 @@ final class FunctionEmitter {
     private func emitAnnAssign(_ a: AnnAssign) throws {
         guard case .name(let n) = a.target else {
             throw PyShaderError("only plain variables can be annotated", line: a.lineno)
+        }
+        if declaredGlobals.contains(n.id) {
+            throw PyShaderError("`\(n.id)` is a module variable; it cannot be annotated here", line: a.lineno)
         }
         var type = try program.resolveType(a.annotation, line: a.lineno)
         if case .array(let elem, -1) = type {

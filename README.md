@@ -96,12 +96,19 @@ sq(uv.x)    # float
 sq(uv)      # float2
 ```
 
-Module-level constants are inlined where used:
+Module-level constants are inlined where used; one a function declares
+`global` is a per-invocation variable instead:
 
 ```py
 PI = 3.14159265
 RED = float3(1.0, 0.0, 0.0)
 NO_HIT = (False, -1.0, float3(0.0))
+steps = 0
+
+def march(p: float3) -> float:
+    global steps
+    steps += 1
+    return length(p) - 1.0
 ```
 
 No recursion (SPIR-V forbids it), no classes, no imports besides `pyshader`,

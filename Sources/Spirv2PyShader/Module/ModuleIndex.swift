@@ -38,6 +38,8 @@ struct GlobalVariable {
     let type: ShaderType
     let storage: SpirvStorageClass
     let name: String?
+    /// The constant it starts as, when the module says.
+    let initializer: SpirvId?
 }
 
 struct EntryPoint {
@@ -199,7 +201,8 @@ final class ModuleIndex {
                 guard case .pointer(let storage, let pointee) = try type(inst.operands[0]) else {
                     throw Spirv2PyShaderError("global %\(inst.operands[1]) has a non-pointer type")
                 }
-                globals[inst.operands[1]] = .init(id: inst.operands[1], type: pointee, storage: storage, name: names[inst.operands[1]])
+                globals[inst.operands[1]] = .init(id: inst.operands[1], type: pointee, storage: storage, name: names[inst.operands[1]],
+                                                  initializer: inst.operands.count > 3 ? inst.operands[3] : nil)
                 globalOrder.append(inst.operands[1])
 
             case .opFunction:
