@@ -343,6 +343,10 @@
       this.device = device;
       if (!this.context) {
         this.context = this.canvas.getContext("webgpu");
+        if (!this.context) {
+          throw new Error("This browser reports WebGPU but refuses a WebGPU canvas; it may be disabled for this GPU. "
+            + "Chrome: check chrome://gpu; Firefox: dom.webgpu.enabled; Safari 26 works out of the box.");
+        }
         this.format = navigator.gpu.getPreferredCanvasFormat();
         this.context.configure({ device, format: this.format, alphaMode: "opaque" });
       }
