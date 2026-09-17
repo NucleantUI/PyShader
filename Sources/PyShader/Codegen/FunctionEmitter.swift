@@ -273,8 +273,15 @@ final class FunctionEmitter {
             let chain = emit(.opAccessChain, type: .pointer(.function, elem), [base.ptr, index])
             return (chain.id, elem)
         case .attribute(let a):
-            guard let indices = Swizzle.indices(for: a.attr), indices.count == 1,
-                  let base = try pointer(for: a.value, line: line), base.type.isVector else { return nil }
+            guard let base = try pointer(for: a.value, line: line) else { return nil }
+            if case .structure(let name, let members) = base.type {
+                guard let k = members.firstIndex(where: { $0.0 == a.attr }) else {
+                    throw PyShaderError("`\(name)` has no field `\(a.attr)`", line: line)
+                }
+                let chain = emit(.opAccessChain, type: .pointer(.function, members[k].1), [base.ptr, builder.constant(int: k)])
+                return (chain.id, members[k].1)
+            }
+            guard let indices = Swizzle.indices(for: a.attr), indices.count == 1, base.type.isVector else { return nil }
             guard indices[0] < base.type.componentCount else {
                 throw PyShaderError("component \(indices[0]) is out of range for `\(base.type)`", line: line)
             }
@@ -297,6 +304,12 @@ final class FunctionEmitter {
         case .attribute(let a):
             guard let base = try pointer(for: a.value, line: line) else {
                 throw PyShaderError("can only assign to components of a variable (e.g. `color.rgb = ...`)", line: line)
+            }
+            if case .structure = base.type {
+                guard let p = try pointer(for: target, line: line) else {
+                    throw PyShaderError("can only assign to a field of a variable", line: line)
+                }
+                return .variable(ptr: p.ptr, type: p.type)
             }
             guard base.type.isVector else {
                 throw PyShaderError("`\(base.type)` has no component `\(a.attr)`", line: line)
@@ -476,7 +489,7 @@ final class FunctionEmitter {
         guard case .name(let n) = a.target else {
             throw PyShaderError("only plain variables can be annotated", line: a.lineno)
         }
-        var type = try ShaderProgram.resolveType(a.annotation, line: a.lineno)
+        var type = try program.resolveType(a.annotation, line: a.lineno)
         if case .array(let elem, -1) = type {
             // `xs: list[float4] = [...]` — the length is the value's.
             guard let valueExpr = a.value else {

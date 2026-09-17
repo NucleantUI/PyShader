@@ -227,6 +227,7 @@ enum SpirvMemoryModel: UInt32 {
 }
 
 enum SpirvExecutionModel: UInt32 {
+    case vertex = 0
     case fragment = 4
     case glCompute = 5
 }
@@ -250,6 +251,7 @@ enum SpirvDecoration: UInt32 {
     case bufferBlock = 3
     case arrayStride = 6
     case builtIn = 11
+    case flat = 14
     case nonWritable = 24
     case nonReadable = 25
     case location = 30
@@ -259,12 +261,15 @@ enum SpirvDecoration: UInt32 {
 }
 
 enum SpirvBuiltIn: UInt32 {
+    case position = 0
     case fragCoord = 15
     case pointCoord = 16
     case frontFacing = 17
     case sampleId = 18
     case sampleMask = 20
     case globalInvocationId = 28
+    case vertexIndex = 42
+    case instanceIndex = 43
 }
 
 enum SpirvDim: UInt32 {

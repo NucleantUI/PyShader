@@ -47,7 +47,8 @@ struct ErrorTests {
     }
 
     @Test func classes() {
-        compileError("class Foo:\n    pass\ndef main(uv: float2) -> float4:\n    return float4(1.0)\n", contains: "classes", line: 1)
+        compileError("class Foo:\n    pass\ndef main(uv: float2) -> float4:\n    return float4(1.0)\n", contains: "at least one field", line: 1)
+        compileError("class Foo(Bar):\n    x: float\ndef main(uv: float2) -> float4:\n    return float4(1.0)\n", contains: "base classes", line: 1)
     }
 
     @Test func imports() {

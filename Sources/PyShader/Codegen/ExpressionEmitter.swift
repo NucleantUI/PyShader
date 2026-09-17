@@ -105,7 +105,7 @@ extension FunctionEmitter {
         if program.lambdas[n.id] != nil || program.functions[n.id] != nil {
             throw PyShaderError("`\(n.id)` is a function; call it", line: n.lineno)
         }
-        if ShaderType.named(n.id) != nil {
+        if ShaderType.named(n.id) != nil || program.structs[n.id] != nil {
             throw PyShaderError("`\(n.id)` is a type; call it to construct a value", line: n.lineno)
         }
         throw PyShaderError("`\(n.id)` is not defined", line: n.lineno)
@@ -712,6 +712,12 @@ extension FunctionEmitter {
 
     private func emitAttribute(_ a: Attribute) throws -> Value {
         let base = try emitExpression(a.value)
+        if case .structure(let name, let members) = base.type {
+            guard let k = members.firstIndex(where: { $0.0 == a.attr }) else {
+                throw PyShaderError("`\(name)` has no field `\(a.attr)`", line: a.lineno)
+            }
+            return emit(.opCompositeExtract, type: members[k].1, [base.id, UInt32(k)])
+        }
         guard base.type.isVector else {
             throw PyShaderError("`\(base.type)` has no attribute `\(a.attr)`", line: a.lineno)
         }
@@ -806,6 +812,9 @@ extension FunctionEmitter {
     // MARK: Calls
 
     private func emitCall(_ c: Call) throws -> Value {
+        if case .name(let n) = c.fun, let type = program.structs[n.id] {
+            return try constructStruct(type, c, line: c.lineno)
+        }
         guard c.keywords.isEmpty else {
             throw PyShaderError("keyword arguments are not supported in shader calls", line: c.lineno)
         }
@@ -848,11 +857,37 @@ extension FunctionEmitter {
         throw PyShaderError("unknown function `\(name)`", line: c.lineno)
     }
 
+    /// `Name(a, b)` / `Name(field=a, ...)`: every field exactly once, positionally in
+    /// declaration order or by keyword, each converted to its field's type.
+    private func constructStruct(_ type: ShaderType, _ c: Call, line: Int) throws -> Value {
+        guard case .structure(let name, let members) = type else { preconditionFailure() }
+        var values: [Value?] = Array(repeating: nil, count: members.count)
+        guard c.args.count <= members.count else {
+            throw PyShaderError("`\(name)` has \(members.count) field(s), got \(c.args.count) positional argument(s)", line: line)
+        }
+        for (i, arg) in c.args.enumerated() {
+            values[i] = try coerce(try emitExpression(arg), to: members[i].1, line: line)
+        }
+        for keyword in c.keywords {
+            guard let field = keyword.arg, let k = members.firstIndex(where: { $0.0 == field }) else {
+                throw PyShaderError("`\(name)` has no field `\(keyword.arg ?? "**")`", line: line)
+            }
+            guard values[k] == nil else {
+                throw PyShaderError("`\(name)`: field `\(field)` given twice", line: line)
+            }
+            values[k] = try coerce(try emitExpression(keyword.value), to: members[k].1, line: line)
+        }
+        if let missing = members.indices.first(where: { values[$0] == nil }) {
+            throw PyShaderError("`\(name)`: missing field `\(members[missing].0)`", line: line)
+        }
+        return emit(.opCompositeConstruct, type: type, values.map { $0!.id })
+    }
+
     private func callUser(_ fn: ShaderFunctionSignature, _ args: [Value], line: Int) throws -> Value {
         guard fn.name != functionName else {
             throw PyShaderError("recursion is not allowed in shader code (`\(fn.name)` calls itself)", line: line)
         }
-        guard fn.name != program.entryPoint else {
+        guard !program.isEntry(fn.name) else {
             throw PyShaderError("`\(fn.name)` is the entry point and cannot be called", line: line)
         }
         guard args.count == fn.params.count else {

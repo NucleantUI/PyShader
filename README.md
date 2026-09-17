@@ -165,9 +165,42 @@ Types, promotion and operator rules in detail: [vector-types.md](vector-types.md
 | `color` | `float4` | vertex colour, forwarded by a bare `return` | — |
 | *ShaderArgument name* | `float`…`float4`, `FloatArray` | — | argument buffer |
 
+### Vertex + fragment
+
+The graphics target compiles one module with two entry points. `vertex`
+returns a `class` whose first field is the `float4` position (y-up clip
+space, as in OpenGL — the wrapper flips it for Vulkan); every other field is
+a varying, which `fragment` takes by name like any other input:
+
+```python
+class Glow:
+    position: float4
+    local: float2
+    seed: float
+
+def vertex(vertex_index: int, instance_index: int, touches: FloatArray) -> Glow:
+    t = instance_index * 3
+    corner = QUAD[vertex_index]
+    return Glow(float4(float2(touches[t], touches[t + 1]) + corner * 0.25, 0.0, 1.0),
+                local=corner * 0.5 + 0.5, seed=touches[t + 2])
+
+def fragment(local: float2, seed: float, time: float) -> float4:
+    return float4(float3(mod(seed + time, 1.0)), smoothstep(0.5, 0.0, distance(local, float2(0.5))))
+```
+
+There are no vertex buffers: `vertex_index` and `instance_index` are the
+only vertex-stage inputs besides the uniforms (`time`, `time_delta`,
+`frame`, `resolution`, `mouse`, `mouse_click`) and the arguments, which both
+stages may take. The fragment stage has `uv`, `frag_coord`, `pixel` and
+`front_facing` besides. A varying may shadow a built-in input (`uv` for a
+quad's own coordinate is common), but not an argument. Classes are plain
+structs — annotated fields only, constructed positionally or by keyword,
+read with `v.field` — and work anywhere, not just as varyings.
+
 ## Examples
 
 - [Examples/](Examples/) — one file per feature, all validated with `spirv-val` in the tests.
+- [Examples/graphics/](Examples/graphics/) — a vertex + fragment module: Baby Lights' instanced glows.
 - [Examples/shadertoy/](Examples/shadertoy/) — four ShaderToy shaders in GLSL
   and PyShader side by side, plus an app that runs each pair next to each
   other. [Its README](Examples/shadertoy/README.md) lists what porting needed.
@@ -203,14 +236,17 @@ Or from the command line:
 swift run pyshaderc shader.py -o shader.spv [--target compute --content --arg name:float4]
 ```
 
-Two targets, same Python: `.fragment(FragmentInterface)` for a fragment stage
+Three targets, same Python: `.fragment(FragmentInterface)` for a fragment stage
 (default: NucleantVulkan's `NucleantShader` layout), `.computeImage(ComputeImageInterface)`
 for a compute stage writing a storage image (NucleantVulkan's `OGLShaderNode`,
-as NucleantSwiftUI drives it). Bindings and argument declarations are
-properties of the interface structs.
+as NucleantSwiftUI drives it), and `.graphics(GraphicsInterface)` for a
+vertex + fragment pair in one module (NucleantVulkan's `VertFragShaderNode`);
+`CompiledShader.vertexEntryPoint` names the second entry point. Bindings and
+argument declarations are properties of the interface structs.
 
 In NucleantSwiftUI, `ShaderFunction(pyshader: source)` goes wherever a
-`ShaderFunction` goes — `Shader(...)`, `.shader(_:)`, `arguments:`.
+`ShaderFunction` goes — `Shader(...)`, `.shader(_:)`, `arguments:` — and
+`VertexShaderFunction(pyshader: source)` into a `VertexShader(...)`.
 
 ## Development
 

@@ -13,14 +13,30 @@ public enum ShaderTarget: Sendable {
     /// A compute stage writing one pixel per invocation into a storage image
     /// (NucleantVulkan's `OGLShaderNode`, as NucleantSwiftUI's `Shader` view uses it).
     case computeImage(ComputeImageInterface)
+    /// A vertex stage and a fragment stage in one module, drawing into a colour
+    /// attachment (NucleantVulkan's `VertFragShaderNode`, as NucleantSwiftUI's
+    /// `VertexShader` view uses it).
+    case graphics(GraphicsInterface)
 
     public static let nucleant: ShaderTarget = .fragment(.nucleant)
     public static let nucleantSwiftUI: ShaderTarget = .computeImage(.nucleantSwiftUI)
+    public static let nucleantSwiftUIGraphics: ShaderTarget = .graphics(.nucleantSwiftUI)
 
+    /// The entry point a single-stage target compiles; the fragment one for `.graphics`.
     var entryPoint: String {
         switch self {
         case .fragment(let i): return i.entryPoint
         case .computeImage(let i): return i.entryPoint
+        case .graphics(let i): return i.fragmentEntryPoint
+        }
+    }
+
+    /// Where the shader-argument buffer is bound, when the target has one.
+    var argumentsBinding: (set: Int, binding: Int)? {
+        switch self {
+        case .fragment: return nil
+        case .computeImage(let i): return i.argumentsBinding.map { (i.descriptorSet, $0) }
+        case .graphics(let i): return i.argumentsBinding.map { (i.descriptorSet, $0) }
         }
     }
 }
@@ -160,36 +176,75 @@ public struct ComputeImageInterface: Sendable {
     }
 }
 
-/// What the frontend needs to know about the entry point, independent of the target.
+/// What the frontend needs to know about one entry point, independent of the target.
 struct EntrySignature {
     let entryPoint: String
-    let outputType: ShaderType
-    let parameterTypes: [String: ShaderType]
-    let parameterNames: [String]
+    /// The type the entry point must return; `nil` when it is declared by the
+    /// function's own annotation (a vertex stage returns whatever varyings
+    /// struct the module defines).
+    let outputType: ShaderType?
+    var parameterTypes: [String: ShaderType]
+    var parameterNames: [String]
+    /// Whether `return` without a value forwards the `color` input (fragment stages).
+    let forwardsColor: Bool
 
-    init(_ target: ShaderTarget) throws {
+    init(entryPoint: String, outputType: ShaderType?, parameterTypes: [String: ShaderType], parameterNames: [String], forwardsColor: Bool) {
+        self.entryPoint = entryPoint
+        self.outputType = outputType
+        self.parameterTypes = parameterTypes
+        self.parameterNames = parameterNames
+        self.forwardsColor = forwardsColor
+    }
+
+    /// Every entry point the target compiles, keyed by its Python name.
+    static func all(for target: ShaderTarget) throws -> [String: EntrySignature] {
         switch target {
         case .fragment(let i):
-            entryPoint = i.entryPoint
-            outputType = i.output.type
             var types: [String: ShaderType] = [:]
             for input in i.inputs { types[input.name] = input.type }
             for pc in i.pushConstants { types[pc.name] = pc.type }
-            parameterTypes = types
-            parameterNames = i.parameterNames
+            let entry = EntrySignature(
+                entryPoint: i.entryPoint, outputType: i.output.type,
+                parameterTypes: types, parameterNames: i.parameterNames, forwardsColor: true
+            )
+            return [i.entryPoint: entry]
         case .computeImage(let i):
-            entryPoint = i.entryPoint
-            outputType = .float(4)
             var types: [String: ShaderType] = [:]
             for (name, input) in i.inputs { types[name] = input.type }
-            for (index, arg) in i.arguments.enumerated() {
-                if types[arg.name] != nil {
-                    throw PyShaderError("shader argument `\(arg.name)` clashes with a built-in input name")
-                }
-                types[arg.name] = arg.kind == .floatArray ? .floatArray(argument: index) : arg.kind.type
+            try addArguments(i.arguments, to: &types)
+            let entry = EntrySignature(
+                entryPoint: i.entryPoint, outputType: .float(4),
+                parameterTypes: types, parameterNames: i.parameterNames, forwardsColor: true
+            )
+            return [i.entryPoint: entry]
+        case .graphics(let i):
+            var vertexTypes: [String: ShaderType] = [:]
+            var fragmentTypes: [String: ShaderType] = [:]
+            for (name, input) in i.inputs {
+                if input.inVertex { vertexTypes[name] = input.type }
+                if input.inFragment { fragmentTypes[name] = input.type }
             }
-            parameterTypes = types
-            parameterNames = i.parameterNames
+            try addArguments(i.arguments, to: &vertexTypes)
+            try addArguments(i.arguments, to: &fragmentTypes)
+            return [
+                i.vertexEntryPoint: EntrySignature(
+                    entryPoint: i.vertexEntryPoint, outputType: nil,
+                    parameterTypes: vertexTypes, parameterNames: i.parameterNames(vertex: true), forwardsColor: false
+                ),
+                i.fragmentEntryPoint: EntrySignature(
+                    entryPoint: i.fragmentEntryPoint, outputType: .float(4),
+                    parameterTypes: fragmentTypes, parameterNames: i.parameterNames(vertex: false), forwardsColor: true
+                ),
+            ]
+        }
+    }
+
+    private static func addArguments(_ arguments: [(name: String, kind: ShaderArgumentKind)], to types: inout [String: ShaderType]) throws {
+        for (index, arg) in arguments.enumerated() {
+            if types[arg.name] != nil {
+                throw PyShaderError("shader argument `\(arg.name)` clashes with a built-in input name")
+            }
+            types[arg.name] = arg.kind == .floatArray ? .floatArray(argument: index) : arg.kind.type
         }
     }
 }

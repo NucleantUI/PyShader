@@ -132,6 +132,7 @@ public indirect enum ShaderType: Hashable, Sendable, CustomStringConvertible {
     public var isStorable: Bool {
         switch self {
         case .scalar, .vector, .matrix, .tuple: return true
+        case .structure(_, let members): return members.allSatisfy { $0.1.isStorable }
         case .array(let t, let n): return n >= 0 && t.isStorable
         default: return false
         }

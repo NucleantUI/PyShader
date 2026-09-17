@@ -8,12 +8,22 @@
 import Foundation
 import PySwiftAST
 
-/// A compiled fragment shader ready for `vkCreateShaderModule`.
+/// A compiled shader ready for `vkCreateShaderModule`.
 public struct CompiledShader: Sendable {
     /// SPIR-V words (little-endian, magic first).
     public let spirv: [UInt32]
-    /// Name of the SPIR-V entry point (`pName` for the pipeline stage).
+    /// Name of the SPIR-V entry point (`pName` for the pipeline stage). For a
+    /// `.graphics` target this is the fragment stage's; see `vertexEntryPoint`.
     public let entryPoint: String
+    /// The vertex stage's entry point in the same module, for a `.graphics`
+    /// target; nil for a single-stage one.
+    public let vertexEntryPoint: String?
+
+    init(spirv: [UInt32], entryPoint: String, vertexEntryPoint: String? = nil) {
+        self.spirv = spirv
+        self.entryPoint = entryPoint
+        self.vertexEntryPoint = vertexEntryPoint
+    }
 
     /// The same words as raw bytes, e.g. for writing a `.spv` file.
     public var bytes: Data {
@@ -30,7 +40,8 @@ public enum PyShader {
         try compile(source, target: .fragment(interface))
     }
 
-    /// Compiles Python shader source for the given target (fragment stage or compute-into-image).
+    /// Compiles Python shader source for the given target: a fragment stage, a
+    /// compute-into-image stage, or a vertex + fragment pair in one module.
     public static func compile(_ source: String, target: ShaderTarget) throws -> CompiledShader {
         let module: Module
         do {
@@ -43,7 +54,9 @@ public enum PyShader {
         let program = try ShaderProgram(module: module, target: target)
         let compiler = ShaderCompiler(program: program)
         let words = try compiler.compile()
-        return CompiledShader(spirv: words, entryPoint: target.entryPoint)
+        var vertexEntryPoint: String?
+        if case .graphics(let i) = target { vertexEntryPoint = i.vertexEntryPoint }
+        return CompiledShader(spirv: words, entryPoint: target.entryPoint, vertexEntryPoint: vertexEntryPoint)
     }
 
     /// Strips the indentation shared by every non-blank line (source embedded in a
