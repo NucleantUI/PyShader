@@ -9,9 +9,14 @@ struct GlslTests {
     @Test("every ShaderToy example decompiles to PyShader that compiles", arguments: try exampleSources("Examples/shadertoy/opengl", suffix: ".glsl"))
     func shaderToy(_ example: (name: String, source: String)) throws {
         guard let words = try Tools.compileGLSL(wrapShaderToy(example.source)) else { return }
-        let out = try decompileAndRecompile(words)
+        let out = try decompileAndRecompile(words, interface: .shaderToy)
         #expect(out.source.contains("def mainImage("))
-        #expect(out.source.contains("def main(frag_coord: float4"))
+        #expect(out.source.contains("def main(frag_coord: float2"))
+        // The hand ports' shape: it runs as a NucleantSwiftUI `Shader` (the compute
+        // target), unless it needs derivatives, as cube-lines does.
+        if !out.source.contains("fwidth(") && !out.source.contains("dfdx(") && !out.source.contains("dfdy(") {
+            #expect(throws: Never.self) { try PyShader.compile(out.source, target: .computeImage(.nucleantSwiftUI(samplesContent: false))) }
+        }
     }
 
     @Test("out parameters become tuple returns and uniforms are threaded into helpers")
@@ -44,7 +49,7 @@ struct GlslTests {
         }
         """)
         guard let words = try Tools.compileGLSL(glsl) else { return }
-        let out = try decompileAndRecompile(words)
+        let out = try decompileAndRecompile(words, interface: .shaderToy)
         let s = out.source
         #expect(s.contains("class Hit:\n    t: float\n    n: float3"))
         #expect(s.contains("def sdf(p: float3, r: float) -> float:\n    p.x *= 2.0\n    return length(p) - r"))
@@ -58,7 +63,7 @@ struct GlslTests {
         #expect(s.contains("1.0 if h.t > 0.5 and p.x < 0.0 else 0.5"))
         #expect(s.contains("int(p.x * 4.0) % 3"))
         #expect(s.contains("col.xyz *= sin(time)"))
-        #expect(s.contains("return mainImage(float4(0.0), frag_coord.xy, time, resolution)"))
+        #expect(s.contains("return mainImage(float4(0.0), frag_coord, time, resolution)"))
     }
 
     @Test("ternaries, discard, matrices and arrays")
@@ -78,7 +83,7 @@ struct GlslTests {
         }
         """)
         guard let words = try Tools.compileGLSL(glsl) else { return }
-        let s = try decompileAndRecompile(words).source
+        let s = try decompileAndRecompile(words, interface: .shaderToy).source
         #expect(s.contains("def rot(a: float) -> float2x2:"))
         #expect(s.contains("discard()"))
         #expect(s.contains("w = [0.1, 0.2, 0.3]"))
@@ -100,7 +105,7 @@ struct GlslTests {
         }
         """)
         guard let words = try Tools.compileGLSL(glsl) else { return }
-        let s = try decompileAndRecompile(words).source
+        let s = try decompileAndRecompile(words, interface: .shaderToy).source
         #expect(s.contains("x *= 2654435769"))
         #expect(s.contains(") & 65535) / 65535.0"))
     }

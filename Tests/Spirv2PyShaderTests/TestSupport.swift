@@ -80,34 +80,21 @@ func exampleSources(_ subdirectory: String = "Examples", suffix: String = ".py")
     return try files.map { ($0, try String(contentsOf: dir.appendingPathComponent($0), encoding: .utf8)) }
 }
 
-/// The NucleantVulkan fragment layout, for GLSL: ShaderToy's names on top of it.
-let glslPrelude = """
-#version 450
-layout(location = 0) in vec2 uv;
-layout(location = 0) out vec4 fragColor;
-layout(push_constant) uniform PushConstants { float time; vec2 resolution; vec2 mouse; } pc;
-#define iTime pc.time
-#define iResolution pc.resolution
-#define iMouse vec4(pc.mouse, 0.0, 0.0)
-#define iFrame 0
-#define iTimeDelta 0.016
-#line 1
-
-"""
-
-/// Wraps ShaderToy-style GLSL (`mainImage`) into a complete fragment shader.
+/// Wraps ShaderToy-style GLSL (`mainImage`) into a complete fragment shader
+/// against `FragmentInterface.shaderToy`.
 func wrapShaderToy(_ body: String) -> String {
-    glslPrelude + body + "\nvoid main() { mainImage(fragColor, gl_FragCoord.xy); }\n"
+    ShaderToy.wrap(body)
 }
 
-/// Decompiles, expects no warnings, compiles the result with PyShader and validates it.
+/// Decompiles, expects no warnings, compiles the result with PyShader for the
+/// same interface and validates it.
 @discardableResult
-func decompileAndRecompile(_ words: [UInt32], sourceLocation: SourceLocation = #_sourceLocation) throws -> DecompiledShader {
-    let decompiled = try Spirv2PyShader.decompile(words)
+func decompileAndRecompile(_ words: [UInt32], interface: FragmentInterface = .nucleant, sourceLocation: SourceLocation = #_sourceLocation) throws -> DecompiledShader {
+    let decompiled = try Spirv2PyShader.decompile(words, interface: interface)
     #expect(decompiled.warnings.isEmpty, "warnings: \(decompiled.warnings)", sourceLocation: sourceLocation)
     let recompiled: CompiledShader
     do {
-        recompiled = try PyShader.compile(decompiled.source)
+        recompiled = try PyShader.compile(decompiled.source, target: .fragment(interface))
     } catch {
         Issue.record("PyShader rejected the decompiled source: \(error)\n\(decompiled.source)", sourceLocation: sourceLocation)
         return decompiled

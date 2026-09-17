@@ -18,10 +18,13 @@
 //
 //  pyshader_decompile goes the other way: SPIR-V bytes in, PyShader source
 //  out (see the docs' GLSL converter). Its options:
+//    interface=nucleant|shadertoy       (the layout the module was compiled against; default nucleant)
 //    rename=spirvName:pyName            (repeatable)
 //    entry=name                         (the entry point, when the module has several)
 //    header=0                           (no "# Decompiled from …" line)
-//  The warnings of the last decompile are readable through pyshader_decompile_warnings.
+//  The warnings of the last decompile are readable through pyshader_decompile_warnings,
+//  and pyshader_shadertoy_prelude gives the GLSL that `interface=shadertoy` expects
+//  in front of a ShaderToy `mainImage` (its epilogue is `pyshader_shadertoy_epilogue`).
 //
 
 import PyShader
@@ -162,8 +165,9 @@ public func pyshader_vertex_entry_point(_ pointer: UnsafeMutableRawPointer?, _ c
     copyOut(vertexEntryPointBytes, to: pointer, capacity: capacity)
 }
 
-private func decompileOptions(from options: String) throws -> DecompileOptions {
+private func decompileOptions(from options: String) throws -> (DecompileOptions, FragmentInterface) {
     var result = DecompileOptions()
+    var interface = FragmentInterface.nucleant
     for pair in options.split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" }) {
         let parts = pair.split(separator: "=", maxSplits: 1).map(String.init)
         guard parts.count == 2 else { throw Spirv2PyShaderError("bad option `\(pair)`") }
@@ -176,11 +180,17 @@ private func decompileOptions(from options: String) throws -> DecompileOptions {
             result.entryPoint = parts[1]
         case "header":
             result.header = parts[1] == "1" || parts[1] == "true"
+        case "interface":
+            switch parts[1] {
+            case "nucleant": interface = .nucleant
+            case "shadertoy": interface = .shaderToy
+            default: throw Spirv2PyShaderError("unknown interface `\(parts[1])`")
+            }
         default:
             throw Spirv2PyShaderError("unknown option `\(parts[0])`")
         }
     }
-    return result
+    return (result, interface)
 }
 
 /// Returns 0 on success (result = PyShader source), 1 on failure (result = error text).
@@ -200,8 +210,8 @@ public func pyshader_decompile(
             UnsafeMutableRawBufferPointer(buffer).copyMemory(from: UnsafeRawBufferPointer(start: spirvPointer, count: Int(spirvLength)))
             count = Int(spirvLength) / 4
         }
-        let options = try decompileOptions(from: string(from: optionsPointer, length: optionsLength))
-        let shader = try Spirv2PyShader.decompile(words, options: options)
+        let (options, interface) = try decompileOptions(from: string(from: optionsPointer, length: optionsLength))
+        let shader = try Spirv2PyShader.decompile(words, interface: interface, options: options)
         decompileWarningBytes = Array(shader.warnings.joined(separator: "\n").utf8)
         storeResult(Array(shader.source.utf8))
         return 0
@@ -218,6 +228,18 @@ public func pyshader_decompile(
 @_cdecl("pyshader_decompile_warnings")
 public func pyshader_decompile_warnings(_ pointer: UnsafeMutableRawPointer?, _ capacity: Int32) -> Int32 {
     copyOut(decompileWarningBytes, to: pointer, capacity: capacity)
+}
+
+@_expose(wasm, "pyshader_shadertoy_prelude")
+@_cdecl("pyshader_shadertoy_prelude")
+public func pyshader_shadertoy_prelude(_ pointer: UnsafeMutableRawPointer?, _ capacity: Int32) -> Int32 {
+    copyOut(Array(ShaderToy.prelude.utf8), to: pointer, capacity: capacity)
+}
+
+@_expose(wasm, "pyshader_shadertoy_epilogue")
+@_cdecl("pyshader_shadertoy_epilogue")
+public func pyshader_shadertoy_epilogue(_ pointer: UnsafeMutableRawPointer?, _ capacity: Int32) -> Int32 {
+    copyOut(Array(ShaderToy.epilogue.utf8), to: pointer, capacity: capacity)
 }
 
 private func copyOut(_ bytes: [UInt8], to pointer: UnsafeMutableRawPointer?, capacity: Int32) -> Int32 {

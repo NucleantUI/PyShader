@@ -258,6 +258,7 @@ the browser: [GLSL to PyShader](https://nucleantui.github.io/PyShader/convert/).
 
 ```sh
 swift run spirv2py shader.spv -o shader.py [--rename iTime=time]...
+swift run spirv2py shader.spv --shadertoy   # compiled with ShaderToy.wrap: the compute target's names
 ```
 
 ```swift

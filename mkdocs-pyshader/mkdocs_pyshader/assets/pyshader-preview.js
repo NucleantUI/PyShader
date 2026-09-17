@@ -777,32 +777,36 @@
     }
   }
 
-  /**
-   * NucleantVulkan's fragment layout with ShaderToy's names on top, for a
-   * pasted `mainImage`. `#line 1` keeps glslang's line numbers those of the
-   * pasted text. A source with its own `#version` is taken as it is.
-   */
-  const SHADERTOY_PRELUDE = `#version 450
-layout(location = 0) in vec2 uv;
-layout(location = 0) out vec4 fragColor;
-layout(push_constant) uniform PushConstants { float time; vec2 resolution; vec2 mouse; } pc;
-#define iTime pc.time
-#define iResolution pc.resolution
-#define iMouse vec4(pc.mouse, 0.0, 0.0)
-#define iFrame 0
-#define iTimeDelta 0.016
-#line 1
-`;
+  /** A string export of the Swift module (`pyshader_shadertoy_prelude` and the like). */
+  function readExport(swift, name) {
+    const size = swift[name](0, 0);
+    if (size <= 0) return "";
+    const buf = swift.pyshader_alloc(size);
+    swift[name](buf, size);
+    const text = decoder.decode(new Uint8Array(swift.memory.buffer, buf, size));
+    swift.pyshader_dealloc(buf, size);
+    return text;
+  }
 
-  function wrapGLSL(source) {
-    if (/^\s*#\s*version\b/m.test(source)) return source;
-    return SHADERTOY_PRELUDE + source + "\nvoid main() { mainImage(fragColor, gl_FragCoord.xy); }\n";
+  /**
+   * A pasted `mainImage` is wrapped in the decompiler's ShaderToy layout
+   * (`ShaderToy.wrap` in Swift; its names are the compute target's, so the
+   * result runs as a NucleantSwiftUI `Shader`). Its `#line 1` keeps
+   * glslang's line numbers those of the pasted text. A source with its own
+   * `#version` is compiled as it is, against NucleantVulkan's layout.
+   */
+  async function wrapGLSL(source) {
+    if (/^\s*#\s*version\b/m.test(source)) return { glsl: source, interface: "nucleant" };
+    const { swift } = await loadModules();
+    const glsl = readExport(swift, "pyshader_shadertoy_prelude") + source + readExport(swift, "pyshader_shadertoy_epilogue");
+    return { glsl, interface: "shadertoy" };
   }
 
   /** GLSL -> PyShader source; throws GLSLError or Error. */
   async function convertGLSL(source, options) {
-    const { spirv, messages } = await compileGLSL(wrapGLSL(source));
-    const result = await decompile(spirv, options);
+    const wrapped = await wrapGLSL(source);
+    const { spirv, messages } = await compileGLSL(wrapped.glsl);
+    const result = await decompile(spirv, `interface=${wrapped.interface} ${options || ""}`);
     return { source: result.source, warnings: [...messages, ...result.warnings] };
   }
 
@@ -849,10 +853,10 @@ layout(push_constant) uniform PushConstants { float time; vec2 resolution; vec2 
 
   const CONVERT_HELP = [
     "Paste a ShaderToy shader (its mainImage) on the left; the PyShader for it appears on the right.",
-    "iTime → time, iResolution → resolution, iMouse.xy → mouse, fragCoord → frag_coord.xy; iFrame is 0 and iTimeDelta 0.016.",
-    "A source with its own #version line is compiled as it is (NucleantVulkan's fragment layout: uv at location 0, push constants time / resolution / mouse).",
+    "fragCoord → frag_coord, iResolution → resolution, iTime → time, iTimeDelta → time_delta, iFrame → frame, iMouse.xy → mouse, iMouse.zw → mouse_click.",
+    "Those are the names NucleantSwiftUI's Shader and the previews on this site give main, so the result runs there as it is (unless it uses derivatives).",
     "Not translated: iChannel textures, iDate, iSampleRate, the keyboard.",
-    "The result is a fragment-target shader: main takes frag_coord, time, resolution and mouse by name.",
+    "A source with its own #version line is compiled as it is, against NucleantVulkan's fragment layout (uv at location 0; push constants time, resolution, mouse).",
   ];
 
   /** One `pyshader-convert` block: a GLSL editor on the left, the PyShader it becomes on the right. */

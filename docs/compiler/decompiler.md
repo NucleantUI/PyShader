@@ -12,7 +12,11 @@ swift run spirv2py shader.spv --rename iTime=time --rename iResolution=resolutio
 
 For ShaderToy code there is no need for the tools: the
 [GLSL to PyShader](../convert.md) page runs glslang and the decompiler in
-the browser.
+the browser. It compiles the `mainImage` against `FragmentInterface.shaderToy`
+(`ShaderToy.wrap(glsl)` gives the same GLSL; `spirv2py --shadertoy` reads
+the result), whose names are the compute target's — `frag_coord` as a
+`float2`, `resolution`, `time`, `time_delta`, `frame`, `mouse`,
+`mouse_click` — so the PyShader runs as a NucleantSwiftUI `Shader` as it is.
 
 ```swift
 import Spirv2PyShader
