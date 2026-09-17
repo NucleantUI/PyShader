@@ -32,8 +32,8 @@ Options go on the fence line as `key="value"`:
 | `target="graphics"` | compile a vertex + fragment module and draw it; default `compute` |
 | `vertices="6" instances="3"` | the draw call for a graphics target |
 | `height="360"` | the preview's height (the editor's, in `pyshader-edit`): pixels, or any CSS length such as `calc(100vh - 12rem)` |
-| `aspect="16:9"` | size the preview by its width and this ratio instead of `height` |
-| `layout="horizontal"` | `pyshader-edit` only: `horizontal` puts the editor and preview side by side, `vertical` the preview above the editor, `auto` (default) horizontal on wide screens and vertical on narrow ones |
+| `aspect="16:9"` | size the preview by its width and this ratio instead of `height`; in `pyshader-edit` the toolbar offers 16:9, 4:3, 1:1 and fill |
+| `layout="horizontal"` | `pyshader-edit` only: the initial layout — `horizontal` (editor and preview side by side), `vertical` (preview above the editor) or `auto` (default: by screen width). The block's toolbar lets the reader switch, and remembers the choice in the browser |
 | `debounce="1000"` | `pyshader-edit` only: milliseconds of typing pause before a recompile (default 1000) |
 | `title="…"` `linenums="1"` `hl_lines="2 3"` | passed to the code block |
 

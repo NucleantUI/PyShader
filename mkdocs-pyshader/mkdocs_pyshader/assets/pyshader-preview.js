@@ -583,7 +583,57 @@
     return monacoPromise;
   }
 
+  const LAYOUTS = [["horizontal", "Side by side"], ["vertical", "Stacked"]];
+  const ASPECTS = [["16/9", "16:9"], ["4/3", "4:3"], ["1/1", "1:1"], ["", "Fill"]];
+
+  function pref(key, fallback) {
+    try { return localStorage.getItem(`pyshader.${key}`) ?? fallback; } catch { return fallback; }
+  }
+  function setPref(key, value) {
+    try { localStorage.setItem(`pyshader.${key}`, value); } catch {}
+  }
+
+  /** Layout and aspect pickers above an edit block; the fence options are the defaults. */
+  function attachToolbar(preview) {
+    const el = preview.element;
+    const bar = document.createElement("div");
+    bar.className = "pyshader-toolbar";
+    el.insertBefore(bar, el.firstChild);
+
+    const group = (label, choices, current, apply) => {
+      const wrap = document.createElement("span");
+      wrap.className = "pyshader-toolbar-group";
+      wrap.append(Object.assign(document.createElement("span"), { className: "pyshader-toolbar-label", textContent: label }));
+      const buttons = choices.map(([value, text]) => {
+        const b = Object.assign(document.createElement("button"), { type: "button", textContent: text });
+        b.addEventListener("click", () => { select(value); apply(value); });
+        wrap.append(b);
+        return [value, b];
+      });
+      const select = (value) => buttons.forEach(([v, b]) => b.classList.toggle("pyshader-active", v === value));
+      select(current);
+      apply(current);
+      return wrap;
+    };
+
+    const fenceLayout = [...el.classList].find((c) => c.startsWith("pyshader-layout-"))?.slice(16) || "auto";
+    const defaultLayout = fenceLayout === "auto" ? (matchMedia("(max-width: 76em)").matches ? "vertical" : "horizontal") : fenceLayout;
+    bar.append(group("Layout", LAYOUTS, pref("layout", defaultLayout), (value) => {
+      el.classList.remove("pyshader-layout-auto", "pyshader-layout-horizontal", "pyshader-layout-vertical");
+      el.classList.add(`pyshader-layout-${value}`);
+      setPref("layout", value);
+    }));
+
+    const fenceAspect = el.style.getPropertyValue("--pyshader-aspect").trim();
+    bar.append(group("Preview", ASPECTS, pref("aspect", fenceAspect), (value) => {
+      el.classList.toggle("pyshader-has-aspect", !!value);
+      el.style.setProperty("--pyshader-aspect", value || "auto");
+      setPref("aspect", value);
+    }));
+  }
+
   async function attachEditor(preview) {
+    attachToolbar(preview);
     const monaco = await loadMonaco();
     const host = document.createElement("div");
     host.className = "pyshader-editor";
