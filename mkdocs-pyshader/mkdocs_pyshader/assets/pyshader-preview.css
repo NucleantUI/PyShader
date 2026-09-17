@@ -70,11 +70,21 @@
   height: var(--pyshader-height);
 }
 
+/* Narrow: preview on top, editor below, sharing the block's height (the
+   on-screen keyboard covers the bottom, so the picture stays visible). */
 @media (max-width: 76em) {
   .pyshader-edit {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+    height: var(--pyshader-height);
   }
   .pyshader-edit .pyshader-frame {
-    height: calc(var(--pyshader-height) * 0.7);
+    order: -1;
+    height: auto;
+    min-height: 0;
+  }
+  .pyshader-editor {
+    height: auto;
+    min-height: 0;
   }
 }
