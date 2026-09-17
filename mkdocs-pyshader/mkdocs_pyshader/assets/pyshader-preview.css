@@ -11,6 +11,12 @@
   background: #000;
 }
 
+/* aspect="16:9" on the fence: the frame follows its width instead of a height. */
+.pyshader-has-aspect .pyshader-frame {
+  height: auto;
+  aspect-ratio: var(--pyshader-aspect);
+}
+
 .pyshader-canvas {
   display: block;
   width: 100%;
@@ -51,12 +57,15 @@
   border-radius: 0 0 0.2rem 0.2rem;
 }
 
-/* Editor + preview side by side. */
+/* Editor + preview. layout="horizontal": side by side; "vertical": preview
+   above the editor; "auto" (default): horizontal on wide screens, vertical
+   on narrow ones. The editor's height is --pyshader-height; the preview's is
+   its aspect ratio when given, else the same height. */
 .pyshader-edit {
   --pyshader-height: 420px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 0.6rem;
+  align-items: start;
 }
 
 .pyshader-editor {
@@ -66,25 +75,24 @@
   overflow: hidden;
 }
 
-.pyshader-edit .pyshader-frame {
-  height: var(--pyshader-height);
+.pyshader-layout-horizontal,
+.pyshader-layout-auto {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 
-/* Narrow: preview on top, editor below, sharing the block's height (the
-   on-screen keyboard covers the bottom, so the picture stays visible). */
+.pyshader-layout-vertical {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.pyshader-layout-vertical .pyshader-frame {
+  order: -1;
+}
+
 @media (max-width: 76em) {
-  .pyshader-edit {
+  .pyshader-layout-auto {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
-    height: var(--pyshader-height);
   }
-  .pyshader-edit .pyshader-frame {
+  .pyshader-layout-auto .pyshader-frame {
     order: -1;
-    height: auto;
-    min-height: 0;
-  }
-  .pyshader-editor {
-    height: auto;
-    min-height: 0;
   }
 }

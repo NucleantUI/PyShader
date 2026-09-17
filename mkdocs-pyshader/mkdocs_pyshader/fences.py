@@ -19,6 +19,9 @@ _OPTIONS = {
     "content": str,
     "target": str,
     "height": str,
+    "aspect": str,
+    "layout": str,
+    "debounce": int,
     "vertices": int,
     "instances": int,
     "title": str,
@@ -27,6 +30,8 @@ _OPTIONS = {
 }
 
 _ARG_KINDS = {"float", "float2", "float3", "float4", "floatArray"}
+_ASPECT_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*[:/]\s*(\d+(?:\.\d+)?)\s*$")
+_LAYOUTS = {"auto", "horizontal", "vertical"}
 _ARG_RE = re.compile(r"^\s*(?P<name>[A-Za-z_]\w*)\s*:\s*(?P<kind>\w+)\s*(?:=\s*(?P<value>[^,;]+))?\s*$")
 
 # Set by the plugin: where `file=` paths resolve from.
@@ -39,6 +44,10 @@ def validator(language, inputs, options, attrs, md):
             try:
                 options[key] = _OPTIONS[key](value)
             except ValueError:
+                return False
+            if key == "aspect" and not _ASPECT_RE.match(value):
+                return False
+            if key == "layout" and value not in _LAYOUTS:
                 return False
         else:
             attrs[key] = value
@@ -72,15 +81,26 @@ def _preview_div(source: str, options: dict, mode: str) -> str:
         "target": options.get("target", "compute"),
         "args": _parse_args(options["args"]) if "args" in options else [],
     }
-    for key in ("content", "height", "vertices", "instances"):
+    for key in ("content", "height", "vertices", "instances", "debounce"):
         if key in options:
             data[key] = options[key]
+    styles = []
     height = options.get("height", "")
     if height.isdigit():
         height += "px"
-    style = f' style="--pyshader-height:{height}"' if height else ""
+    if height:
+        styles.append(f"--pyshader-height:{height}")
+    if "aspect" in options:
+        w, h = _ASPECT_RE.match(options["aspect"]).groups()
+        styles.append(f"--pyshader-aspect:{w}/{h}")
+    style = f' style="{";".join(styles)}"' if styles else ""
+    classes = [f"pyshader-{mode}"]
+    if "aspect" in options:
+        classes.append("pyshader-has-aspect")
+    if mode == "edit":
+        classes.append(f"pyshader-layout-{options.get('layout', 'auto')}")
     return (
-        f'<div class="pyshader pyshader-{mode}"{style} data-pyshader="{html.escape(json.dumps(data), quote=True)}">'
+        f'<div class="pyshader {" ".join(classes)}"{style} data-pyshader="{html.escape(json.dumps(data), quote=True)}">'
         '<div class="pyshader-frame"><canvas class="pyshader-canvas"></canvas>'
         '<div class="pyshader-status"></div></div></div>'
     )

@@ -602,10 +602,12 @@
       wordWrap: "off",
     });
     const model = editor.getModel();
+    // Recompile once typing has paused for `debounce` ms (fence option; 1 s by default).
+    const debounce = Number(preview.data.debounce) > 0 ? Number(preview.data.debounce) : 1000;
     let timer = null;
     editor.onDidChangeModelContent(() => {
       clearTimeout(timer);
-      timer = setTimeout(() => preview.setSource(editor.getValue()), 250);
+      timer = setTimeout(() => preview.setSource(editor.getValue()), debounce);
     });
     preview.onError = (error) => {
       const markers = error && error.line

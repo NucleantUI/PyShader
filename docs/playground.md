@@ -6,7 +6,7 @@ hide:
   - footer
 ---
 
-```pyshader-edit height="calc(100vh - 5.6rem)"
+```pyshader-edit aspect="16:9" height="calc(100vh - 5.6rem)"
 from pyshader import *
 
 PI = 3.14159265

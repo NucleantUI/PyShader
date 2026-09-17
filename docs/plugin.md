@@ -31,7 +31,10 @@ Options go on the fence line as `key="value"`:
 | `content="img/card.png"` | the image `layer()` reads, relative to the site root; a test card when omitted |
 | `target="graphics"` | compile a vertex + fragment module and draw it; default `compute` |
 | `vertices="6" instances="3"` | the draw call for a graphics target |
-| `height="360"` | the preview's height: pixels, or any CSS length such as `calc(100vh - 12rem)` |
+| `height="360"` | the preview's height (the editor's, in `pyshader-edit`): pixels, or any CSS length such as `calc(100vh - 12rem)` |
+| `aspect="16:9"` | size the preview by its width and this ratio instead of `height` |
+| `layout="horizontal"` | `pyshader-edit` only: `horizontal` puts the editor and preview side by side, `vertical` the preview above the editor, `auto` (default) horizontal on wide screens and vertical on narrow ones |
+| `debounce="1000"` | `pyshader-edit` only: milliseconds of typing pause before a recompile (default 1000) |
 | `title="…"` `linenums="1"` `hl_lines="2 3"` | passed to the code block |
 
 ## Setup
