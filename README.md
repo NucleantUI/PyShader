@@ -248,6 +248,21 @@ In NucleantSwiftUI, `ShaderFunction(pyshader: source)` goes wherever a
 `ShaderFunction` goes — `Shader(...)`, `.shader(_:)`, `arguments:` — and
 `VertexShaderFunction(pyshader: source)` into a `VertexShader(...)`.
 
+## Documentation
+
+The docs site (MkDocs + Material) lives in [docs/](docs/) and runs every
+example live in the browser: the compiler built to WebAssembly compiles the
+page's Python to SPIR-V, naga turns it into WGSL, WebGPU draws it. The
+[mkdocs-pyshader](mkdocs-pyshader/) plugin provides the `pyshader`,
+`pyshader-preview` and `pyshader-edit` (Monaco) fences.
+
+```sh
+uv sync --group docs            # mkdocs-material + the plugin
+python3 scripts/build_wasm.py   # PyShaderWasm/ (wasm Swift SDK) and NagaWasm/ (Rust) -> plugin assets
+node scripts/check_docs.mjs     # every snippet in docs/ through both wasm modules
+uv run mkdocs serve
+```
+
 ## Development
 
 ```sh

@@ -12,3 +12,12 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pyshader"]
+
+[dependency-groups]
+docs = [
+    "mkdocs-material>=9.5",
+    "mkdocs-pyshader",
+]
+
+[tool.uv.sources]
+mkdocs-pyshader = { path = "mkdocs-pyshader", editable = true }

@@ -1,0 +1,96 @@
+site_name: PyShader
+site_description: Shaders in Python syntax, compiled straight to SPIR-V.
+site_url: https://nucleantui.github.io/PyShader/
+repo_url: https://github.com/NucleantUI/PyShader
+repo_name: NucleantUI/PyShader
+edit_uri: ""
+docs_dir: docs
+exclude_docs: |
+  docs-plan.md
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: blue
+      accent: light blue
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: blue
+      accent: light blue
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.instant
+    - navigation.footer
+    - content.code.copy
+    - content.tabs.link
+    - search.suggest
+    - toc.follow
+
+extra_css:
+  - stylesheets/extra.css
+
+plugins:
+  - search
+  - pyshader
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Language:
+      - Types: language/types.md
+      - Operators: language/operators.md
+      - Functions & constants: language/functions.md
+      - Control flow: language/control-flow.md
+      - Lists & tuples: language/lists.md
+      - Classes: language/classes.md
+      - Builtins: language/builtins.md
+  - Targets:
+      - Overview: targets/index.md
+      - Fragment: targets/fragment.md
+      - Compute: targets/compute.md
+      - Graphics: targets/graphics.md
+  - Examples:
+      - Gallery: examples/index.md
+      - Plasma: examples/plasma.md
+      - Control flow: examples/control-flow.md
+      - Lambdas & types: examples/lambdas-and-types.md
+      - Module style: examples/module-style.md
+      - Arguments: examples/arguments.md
+      - Effects (layer): examples/effects.md
+      - SwiftUI gallery: examples/swiftui-gallery.md
+      - ShaderToy ports: examples/shadertoy.md
+      - Instanced glow (graphics): examples/graphics.md
+      - Builtins & forwarding: examples/fragment-only.md
+  - Playground: playground.md
+  - Compiler:
+      - Swift API & CLI: compiler/api.md
+      - How it works: compiler/internals.md
+  - Docs plugin: plugin.md
