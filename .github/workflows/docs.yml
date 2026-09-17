@@ -1,0 +1,95 @@
+# Builds the docs site (MkDocs + the two wasm modules the previews run) and
+# publishes it to GitHub Pages. Pages must be set to "GitHub Actions" as the
+# source once, under Settings > Pages.
+
+name: docs
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  SWIFT_VERSION: 6.3.3
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # Swift via swiftly, plus the wasm SDK of the same version.
+      - name: Cache Swift toolchain and wasm SDK
+        id: swift-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/share/swiftly
+            ~/.swiftpm/swift-sdks
+          key: swift-${{ env.SWIFT_VERSION }}-wasm-${{ runner.os }}
+
+      - name: Install Swift ${{ env.SWIFT_VERSION }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binutils git gnupg2 libc6-dev libcurl4-openssl-dev libedit2 libgcc-13-dev \
+            libncurses-dev libpython3-dev libsqlite3-0 libstdc++-13-dev libxml2-dev libz3-dev pkg-config \
+            tzdata unzip zlib1g-dev binaryen
+          curl -fsSLO "https://download.swift.org/swiftly/linux/swiftly-$(uname -m).tar.gz"
+          tar zxf "swiftly-$(uname -m).tar.gz"
+          ./swiftly init --assume-yes --no-modify-profile --skip-install --quiet-shell-followup
+          . ~/.local/share/swiftly/env.sh
+          swiftly install --use --assume-yes "$SWIFT_VERSION"
+          echo "${SWIFTLY_BIN_DIR:-$HOME/.local/share/swiftly/bin}" >> "$GITHUB_PATH"
+          if ! swift sdk list | grep -q "swift-${SWIFT_VERSION}-RELEASE_wasm"; then
+            curl -fsSLO "https://download.swift.org/swift-${SWIFT_VERSION}-release/wasm-sdk/swift-${SWIFT_VERSION}-RELEASE/swift-${SWIFT_VERSION}-RELEASE_wasm.artifactbundle.tar.gz"
+            swift sdk install "swift-${SWIFT_VERSION}-RELEASE_wasm.artifactbundle.tar.gz"
+          fi
+          swift --version
+          swift sdk list
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache wasm build products
+        uses: actions/cache@v4
+        with:
+          path: |
+            PyShaderWasm/.build
+            NagaWasm/target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: wasm-${{ runner.os }}-${{ hashFiles('Package.resolved', 'PyShaderWasm/Package.swift', 'NagaWasm/Cargo.lock', 'Sources/**', 'PyShaderWasm/Sources/**', 'NagaWasm/src/**') }}
+          restore-keys: wasm-${{ runner.os }}-
+
+      - name: Build pyshader.wasm and naga.wasm
+        run: python3 scripts/build_wasm.py
+
+      - uses: astral-sh/setup-uv@v5
+      - name: Build the site
+        run: |
+          uv sync --group docs
+          uv run mkdocs build --strict
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

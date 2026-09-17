@@ -1,0 +1,26 @@
+/* Let the content use the window; the previews want the room. */
+.md-grid {
+  max-width: 110rem;
+}
+
+/* Playground: the editor gets the page. */
+.md-content .pyshader-edit {
+  gap: 0.8rem;
+}
+
+/* A page that is only an editor block: Material's auto h1, spacing and footer go,
+   so header (2.4rem) + tabs (2.4rem) + the block are exactly one viewport. */
+.md-main__inner:has(.pyshader-edit) {
+  margin-top: 0.4rem;
+}
+.md-content__inner:has(> .pyshader-edit) {
+  margin: 0 0.4rem;
+  padding: 0;
+}
+.md-content__inner:has(> .pyshader-edit)::before,
+.md-content__inner:has(> .pyshader-edit) > h1 {
+  display: none;
+}
+.md-content__inner:has(> .pyshader-edit) > .pyshader-edit {
+  margin: 0;
+}
