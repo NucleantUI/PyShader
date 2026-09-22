@@ -201,7 +201,7 @@ final class ShaderProgram {
         if functions[c.name] != nil || globals[c.name] != nil || lambdas[c.name] != nil || structs[c.name] != nil {
             throw PyShaderError("`\(c.name)` is already defined at module level", line: c.lineno)
         }
-        if ShaderType.named(c.name) != nil || c.name == "FloatArray" {
+        if ShaderType.named(c.name) != nil || ShaderType.argumentArray(named: c.name) != nil {
             throw PyShaderError("`\(c.name)` is a built-in type name", line: c.lineno)
         }
         if !c.bases.isEmpty || !c.keywords.isEmpty {
@@ -264,7 +264,7 @@ final class ShaderProgram {
                 }
                 if let ann = arg.annotation {
                     let declared = try resolveType(ann, line: def.lineno)
-                    guard declared == type || (declared == .floatArray(argument: -1) && type.isFloatArray) else {
+                    guard declared == type || Self.sameArgumentArray(declared, type) else {
                         throw PyShaderError("`\(arg.arg)` is a `\(type)` input, not `\(declared)`", line: def.lineno)
                     }
                 }
@@ -326,16 +326,23 @@ final class ShaderProgram {
         return try Self.resolveType(expr, line: line)
     }
 
+    /// An annotation's array type (bound to no argument) against the input's
+    /// (bound to one): the same when their elements match.
+    private static func sameArgumentArray(_ declared: ShaderType, _ input: ShaderType) -> Bool {
+        if case .floatArray(_, let a) = declared, case .floatArray(_, let b) = input { return a == b }
+        return false
+    }
+
     /// Resolves a built-in type annotation (`float3`, `pyshader.float3`, `tuple[...]`).
     static func resolveType(_ expr: Expression, line: Int) throws -> ShaderType {
         switch expr {
         case .name(let n):
             if let t = ShaderType.named(n.id) { return t }
-            if n.id == "FloatArray" { return .floatArray(argument: -1) }
+            if let t = ShaderType.argumentArray(named: n.id) { return t }
             throw PyShaderError("unknown type `\(n.id)`", line: line)
         case .attribute(let a):
             if let t = ShaderType.named(a.attr) { return t }
-            if a.attr == "FloatArray" { return .floatArray(argument: -1) }
+            if let t = ShaderType.argumentArray(named: a.attr) { return t }
             throw PyShaderError("unknown type `\(a.attr)`", line: line)
         case .constant(let c):
             if case .string(let s) = c.value, let t = ShaderType.named(s) { return t }

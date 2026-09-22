@@ -31,6 +31,10 @@ __all__ = [
     "short",
     "ushort",
     "FloatArray",
+    "Float2Array",
+    "Float3Array",
+    "Float4Array",
+    "PI",
     "layer",
     "discard",
     "float2",
@@ -8840,6 +8844,11 @@ def discard() -> None:
     ...
 
 
+# Constants
+PI: float = 3.141592653589793
+"""π. The compiler emits the nearest `float` to it, so nothing needs defining."""
+
+
 # Host resources
 def layer(p: float2) -> float4:
     """The view the effect is applied to, sampled at `p` in [0, 1] (compute
@@ -8850,7 +8859,31 @@ def layer(p: float2) -> float4:
 
 class FloatArray:
     """A `.floatArray` ShaderArgument: `a[i]` (clamped to the ends, 0.0 when
-    empty) and `len(a)`. Only usable as a `main` parameter."""
+    empty) and `len(a)`. Only usable as an entry point parameter."""
 
     def __getitem__(self, index: int) -> float: ...
+    def __len__(self) -> int: ...
+
+
+class Float2Array:
+    """A `.float2Array` ShaderArgument: `a[i]` is a `float2` (clamped to the
+    ends, zeros when empty) and `len(a)` counts them."""
+
+    def __getitem__(self, index: int) -> float2: ...
+    def __len__(self) -> int: ...
+
+
+class Float3Array:
+    """A `.float3Array` ShaderArgument: `a[i]` is a `float3` (clamped to the
+    ends, zeros when empty) and `len(a)` counts them."""
+
+    def __getitem__(self, index: int) -> float3: ...
+    def __len__(self) -> int: ...
+
+
+class Float4Array:
+    """A `.float4Array` ShaderArgument: `a[i]` is a `float4` (clamped to the
+    ends, zeros when empty) and `len(a)` counts them."""
+
+    def __getitem__(self, index: int) -> float4: ...
     def __len__(self) -> int: ...

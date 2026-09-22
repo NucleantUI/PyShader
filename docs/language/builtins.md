@@ -15,9 +15,18 @@ vectors where GLSL allows it: `min(v, 0.5)`, `clamp(v, 0.0, 1.0)`,
 | Vector relational | `any` `all` — on a `boolN` from a vector comparison |
 | Derivatives | `dfdx` / `dFdx` `dfdy` / `dFdy` `fwidth` — [fragment target](../targets/fragment.md) only, an error in compute as in GLSL |
 | Fragment control | `discard()` — fragment target only |
-| Host resources | `layer(p: float2) -> float4` — the view under a `.shader(_:)` effect ([compute target](../targets/compute.md)); `len(a)` on a `FloatArray` argument, a list, a tuple or a vector |
+| Host resources | `layer(p: float2) -> float4` — the view under a `.shader(_:)` effect ([compute](../targets/compute.md) and [graphics](../targets/graphics.md) targets); `len(a)` on an array argument (`FloatArray` … `Float4Array`), a list, a tuple or a vector |
 
 All map to `GLSL.std.450` or core SPIR-V ops.
+
+## Constants
+
+| Name | Value |
+|---|---|
+| `PI` | π, at the precision a `float` holds — nothing to define in the shader |
+
+A module that binds the name itself wins, so a shader carrying its own
+`PI = 3.14159265` compiles as it always did.
 
 !!! note "Previews on this site"
     WebGPU has no `isnan` / `isinf`, no 16-bit integers and no push

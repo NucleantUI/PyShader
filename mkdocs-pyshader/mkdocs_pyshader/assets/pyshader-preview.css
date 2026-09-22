@@ -97,6 +97,87 @@
   cursor: pointer;
 }
 
+.pyshader-toolbar-controls {
+  position: relative;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.6rem;
+}
+
+.pyshader-toolbar-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.pyshader-toolbar-field input,
+.pyshader-popover input,
+.pyshader-popover select {
+  padding: 0.15rem 0.35rem;
+  border: 1px solid var(--md-default-fg-color--lightest, #ddd);
+  border-radius: 0.2rem;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.pyshader-toolbar-field input {
+  width: 3.4rem;
+}
+
+/* The ShaderArgument rows, under the toolbar's Arguments button. */
+.pyshader-popover {
+  position: absolute;
+  z-index: 3;
+  top: calc(100% + 0.4rem);
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 22rem;
+  max-width: min(32rem, 88vw);
+  padding: 0.6rem;
+  border: 1px solid var(--md-default-fg-color--lightest, #ddd);
+  border-radius: 0.2rem;
+  background: var(--md-default-bg-color, #fff);
+  box-shadow: 0 0.4rem 1.2rem rgba(0, 0, 0, 0.18);
+}
+
+.pyshader-popover-row {
+  display: grid;
+  grid-template-columns: 7rem 6.5rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.pyshader-popover-row > * {
+  min-width: 0;
+}
+
+span.pyshader-popover-name,
+span.pyshader-popover-kind {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+span.pyshader-popover-kind {
+  color: var(--md-default-fg-color--light);
+}
+
+.pyshader-popover-empty {
+  margin: 0;
+  color: var(--md-default-fg-color--light);
+}
+
+.pyshader-popover-add {
+  align-self: flex-start;
+}
+
+.pyshader-popover-remove {
+  padding: 0.15rem 0.4rem;
+  line-height: 1;
+}
+
 .pyshader-toolbar-clipboard {
   margin-left: auto;
 }

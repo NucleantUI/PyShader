@@ -39,8 +39,8 @@ as in GLSL compute.
 
 ### Host resources (compute target)
 `layer(p: float2) -> float4` — the view under a `.shader(_:)` effect, sampled
-with explicit LOD 0 (binding 2). `FloatArray` arguments: `a[i]` (clamped, 0.0
-when empty), `len(a)`.
+with explicit LOD 0 (binding 2). `FloatArray` / `Float2Array` … `Float4Array`
+arguments: `a[i]` (clamped, zero when empty), `len(a)`.
 
 ### Conversions / constructors
 Every type name (`float`, `int`, `uint`, `half`, `short`, `ushort`, `bool`,
@@ -79,7 +79,7 @@ Compute target (`.nucleantSwiftUI`, NucleantSwiftUI's `Shader` / `.shader(_:)`):
 | `resolution`   | `float2` | `imageSize(uOutput)` |
 | `mouse`        | `float2` | `Uniforms.mouseInfo.xy`, y flipped |
 | `mouse_click`  | `float2` | `Uniforms.mouseInfo.zw`, y flipped |
-| *argument*     | `float` / `float2` / `float3` / `float4` / `FloatArray` | the `ShaderArgument` of that name, binding 3 |
+| *argument*     | `float` / `float2` / `float3` / `float4` / `FloatArray` / `Float2Array` … `Float4Array` | the `ShaderArgument` of that name, binding 3 |
 
 Fragment target (`.nucleant`, NucleantVulkan's `NucleantShader` layout):
 

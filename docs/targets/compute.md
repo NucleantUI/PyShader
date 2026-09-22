@@ -16,7 +16,7 @@
 | `resolution`   | `float2` | `imageSize(uOutput)` |
 | `mouse`        | `float2` | `Uniforms.mouseInfo.xy`, y flipped |
 | `mouse_click`  | `float2` | `Uniforms.mouseInfo.zw`, y flipped |
-| *argument*     | `float` / `float2` / `float3` / `float4` / `FloatArray` | the `ShaderArgument` of that name |
+| *argument*     | `float` / `float2` / `float3` / `float4` / `FloatArray` / `Float2Array` … `Float4Array` | the `ShaderArgument` of that name |
 
 ## Bindings
 
@@ -30,7 +30,8 @@ Descriptor set 0, local size 8 × 8:
 | 3 | `readonly buffer { float data[]; }` — only with arguments |
 
 The argument buffer starts with an `(offset, count)` float pair per argument,
-then the values; `a[i]` on a `FloatArray` clamps to the ends.
+then the values, an array's elements packed one after another; `a[i]` on an
+array clamps to the ends.
 
 ## Effects: `layer()`
 

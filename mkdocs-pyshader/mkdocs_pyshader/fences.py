@@ -31,7 +31,8 @@ _OPTIONS = {
     "hl_lines": str,
 }
 
-_ARG_KINDS = {"float", "float2", "float3", "float4", "floatArray"}
+_ARG_KINDS = {"float", "float2", "float3", "float4",
+              "floatArray", "float2Array", "float3Array", "float4Array"}
 _ASPECT_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*[:/]\s*(\d+(?:\.\d+)?)\s*$")
 _LAYOUTS = {"auto", "horizontal", "vertical"}
 _ARG_RE = re.compile(r"^\s*(?P<name>[A-Za-z_]\w*)\s*:\s*(?P<kind>\w+)\s*(?:=\s*(?P<value>[^,;]+))?\s*$")
@@ -80,10 +81,10 @@ def _preview_div(source: str, options: dict, mode: str) -> str:
     data = {
         "mode": mode,
         "source": source,
-        "target": options.get("target", "compute"),
         "args": _parse_args(options["args"]) if "args" in options else [],
     }
-    for key in ("content", "height", "vertices", "instances", "debounce"):
+    # No `target`: the preview reads it off the source, and off each edit.
+    for key in ("target", "content", "height", "vertices", "instances", "debounce"):
         if key in options:
             data[key] = options[key]
     styles = []

@@ -29,6 +29,13 @@ function compile(source, options) {
   return { wgsl: text };
 }
 
+// The target and the arguments a block does not name are read off its source,
+// by the preview's own rules: its code is taken from the asset so the two cannot drift.
+const previewJs = fs.readFileSync(path.join(assets, 'pyshader-preview.js'), 'utf8');
+const from = previewJs.indexOf('// What a source asks for'), to = previewJs.indexOf('// WebGPU');
+if (from < 0 || to < from) throw new Error('pyshader-preview.js: cannot find the detection helpers');
+const { detectTarget, detectArguments } = new Function(`${previewJs.slice(from, to)}\nreturn { detectTarget, detectArguments };`)();
+
 // ```pyshader[-preview|-edit] key="value" ...\n...\n``` (pyshader-convert holds GLSL; not checked here)
 const fence = /^```(pyshader(?:-preview|-edit)?)(?![\w-])([^\n]*)\n([\s\S]*?)^```/gm;
 const optionRe = /([a-zA-Z_]+)=(?:"([^"]*)"|'([^']*)')/g;
@@ -41,12 +48,12 @@ for (const file of files) {
     const options = {};
     for (const o of m[2].matchAll(optionRe)) options[o[1]] = o[2] ?? o[3];
     const source = options.file ? fs.readFileSync(path.join(root, options.file), 'utf8') : m[3];
-    const parts = [`target=${options.target ?? 'compute'}`];
+    const parts = [`target=${options.target ?? detectTarget(source)}`];
     if (options.content || /\blayer\s*\(/.test(source)) parts.push('content=1');
-    for (const arg of (options.args ?? '').split(',')) {
-      const a = /^\s*(\w+)\s*:\s*(\w+)/.exec(arg);
-      if (a) parts.push(`arg=${a[1]}:${a[2]}`);
-    }
+    const declared = (options.args ?? '').split(',')
+      .map((arg) => /^\s*(\w+)\s*:\s*(\w+)/.exec(arg)).filter(Boolean)
+      .map((a) => ({ name: a[1], kind: a[2] }));
+    for (const arg of declared.length ? declared : detectArguments(source)) parts.push(`arg=${arg.name}:${arg.kind}`);
     const line = text.slice(0, m.index).split('\n').length;
     const result = compile(source, parts.join(' '));
     count++;

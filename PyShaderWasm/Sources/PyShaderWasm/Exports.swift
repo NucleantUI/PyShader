@@ -10,7 +10,8 @@
 //  Options are whitespace-separated `key=value` pairs:
 //    target=compute|fragment|graphics   (default compute)
 //    content=1                          (compute/graphics: the shader may call layer())
-//    arg=name:float|float2|float3|float4|floatArray   (repeatable, in buffer order)
+//    arg=name:float|float2|float3|float4|floatArray|float2Array|float3Array|float4Array
+//                                       (repeatable, in buffer order)
 //
 //  On success the result is the SPIR-V module as bytes, and the entry point
 //  names are readable through pyshader_entry_point / pyshader_vertex_entry_point.
@@ -78,6 +79,9 @@ private func target(from options: String) throws -> ShaderTarget {
             case "float3": kind = .float3
             case "float4": kind = .float4
             case "floatArray": kind = .floatArray
+            case "float2Array": kind = .float2Array
+            case "float3Array": kind = .float3Array
+            case "float4Array": kind = .float4Array
             default: throw PyShaderError("unknown argument kind `\(spec[1])`")
             }
             arguments.append((spec[0], kind))

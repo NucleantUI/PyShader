@@ -77,9 +77,10 @@ public indirect enum ShaderType: Hashable, Sendable, CustomStringConvertible {
     case sampledImage(ImageKind)
     /// An unsized array, the last member of a storage block.
     case runtimeArray(ShaderType)
-    /// A handle to one `floatArray` shader argument (compile-time index into the argument buffer).
-    /// Not a storable value: indexed with `a[i]`, measured with `len(a)`.
-    case floatArray(argument: Int)
+    /// A handle to one array shader argument (compile-time index into the argument buffer),
+    /// of `float` or `float2`/`float3`/`float4` elements. Not a storable value: indexed
+    /// with `a[i]`, measured with `len(a)`.
+    case floatArray(argument: Int, element: ShaderType)
 
     public static let bool: ShaderType = .scalar(.bool)
     public static let float: ShaderType = .scalar(.float(bits: 32))
@@ -173,6 +174,18 @@ public indirect enum ShaderType: Hashable, Sendable, CustomStringConvertible {
         return false
     }
 
+    /// The Python-facing names of the argument array types, `FloatArray` and
+    /// `Float2Array`…`Float4Array`, by element type.
+    static let argumentArrayNames: [(name: String, element: ShaderType)] = [
+        ("FloatArray", .float), ("Float2Array", .float(2)), ("Float3Array", .float(3)), ("Float4Array", .float(4)),
+    ]
+
+    /// The argument array type called `name`, as an annotation resolves it
+    /// (bound to no argument yet), or nil for any other name.
+    public static func argumentArray(named name: String) -> ShaderType? {
+        argumentArrayNames.first { $0.name == name }.map { .floatArray(argument: -1, element: $0.element) }
+    }
+
     public var isFloat: Bool { scalarKind?.isFloat ?? false }
     public var isInt: Bool { scalarKind?.isInt ?? false }
     public var isBool: Bool { scalarKind?.isBool ?? false }
@@ -203,7 +216,7 @@ public indirect enum ShaderType: Hashable, Sendable, CustomStringConvertible {
         case .image(.sampled2D): return "texture2D"
         case .sampledImage: return "sampler2D"
         case .runtimeArray(let t): return "\(t)[]"
-        case .floatArray: return "FloatArray"
+        case .floatArray(_, let element): return Self.argumentArrayNames.first { $0.element == element }?.name ?? "\(element)Array"
         }
     }
 
@@ -250,7 +263,7 @@ public indirect enum ShaderType: Hashable, Sendable, CustomStringConvertible {
         case (.image(let a), .image(let b)): return a == b
         case (.sampledImage(let a), .sampledImage(let b)): return a == b
         case (.runtimeArray(let a), .runtimeArray(let b)): return a == b
-        case (.floatArray(let a), .floatArray(let b)): return a == b
+        case (.floatArray(let a, let ae), .floatArray(let b, let be)): return a == b && ae == be
         default: return false
         }
     }
@@ -271,7 +284,7 @@ public indirect enum ShaderType: Hashable, Sendable, CustomStringConvertible {
         case .image(let k): hasher.combine(6); hasher.combine(k)
         case .sampledImage(let k): hasher.combine(7); hasher.combine(k)
         case .runtimeArray(let t): hasher.combine(8); hasher.combine(t)
-        case .floatArray(let i): hasher.combine(9); hasher.combine(i)
+        case .floatArray(let i, let element): hasher.combine(9); hasher.combine(i); hasher.combine(element)
         }
     }
 }

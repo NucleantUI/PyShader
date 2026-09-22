@@ -124,18 +124,23 @@ final class ShaderCompiler {
     }
 
     /// A scalar or vector `ShaderArgument`, loaded from the argument buffer;
-    /// nil for a `FloatArray`, which is a compile-time handle rather than a value.
+    /// nil for an array, which is a compile-time handle rather than a value.
     private func argumentValue(_ argument: (name: String, kind: ShaderArgumentKind), at index: Int, _ e: FunctionEmitter, line: Int) throws -> Value? {
-        if argument.kind == .floatArray { return nil }
+        if argument.kind.isArray { return nil }
         let offset = try e.convert(loadArgument(e, at: e.builder.constant(int: index * 2)), to: .int, line: line)
+        return loadArgument(e, at: offset, type: argument.kind.type)
+    }
+
+    /// `type` (a float or vector) read from the argument buffer starting at float index `at`.
+    private func loadArgument(_ e: FunctionEmitter, at offset: Value, type: ShaderType) -> Value {
         var components: [SpirvId] = []
-        for k in 0..<argument.kind.componentCount {
+        for k in 0..<type.componentCount {
             let at = e.emit(.opIAdd, type: .int, [offset.id, e.builder.constant(int: k)])
             components.append(loadArgument(e, at: at.id).id)
         }
         return components.count == 1
             ? Value(id: components[0], type: .float)
-            : e.emit(.opCompositeConstruct, type: argument.kind.type, components)
+            : e.emit(.opCompositeConstruct, type: type, components)
     }
 
     /// `(x, resolution.y - y)`: a y-down pair from the uniforms in shader space.
@@ -470,11 +475,6 @@ final class ShaderCompiler {
         }
     }
 
-    private var computeInterface: ComputeImageInterface? {
-        if case .computeImage(let i) = program.target { return i }
-        return nil
-    }
-
     /// `uArgs.data[index]` as a float.
     private func loadArgument(_ e: FunctionEmitter, at index: SpirvId) -> Value {
         let buffer = argumentBufferVariable()
@@ -500,39 +500,42 @@ final class ShaderCompiler {
         return v
     }
 
-    /// `len(a)` for a `FloatArray` argument.
+    /// `len(a)` for an array argument.
     func argumentArrayCount(_ argument: Int, from e: FunctionEmitter, line: Int) throws -> Value {
         guard program.target.argumentsBinding != nil else {
-            throw PyShaderError("FloatArray arguments are only available in the compute and graphics targets", line: line)
+            throw PyShaderError("array arguments are only available in the compute and graphics targets", line: line)
         }
         return try e.convert(loadArgument(e, at: e.builder.constant(int: argument * 2 + 1)), to: .int, line: line)
     }
 
-    /// `a[i]` for a `FloatArray` argument: clamped to the ends, 0.0 when empty.
-    func loadArgumentArrayElement(_ argument: Int, index: Value, from e: FunctionEmitter, line: Int) throws -> Value {
+    /// `a[i]` for an array argument of `element`s: clamped to the ends, zero when
+    /// empty. Elements are `componentCount` floats each, packed one after another.
+    func loadArgumentArrayElement(_ argument: Int, element: ShaderType, index: Value, from e: FunctionEmitter, line: Int) throws -> Value {
         guard program.target.argumentsBinding != nil else {
-            throw PyShaderError("FloatArray arguments are only available in the compute and graphics targets", line: line)
+            throw PyShaderError("array arguments are only available in the compute and graphics targets", line: line)
         }
         let count = try argumentArrayCount(argument, from: e, line: line)
         let offset = try e.convert(loadArgument(e, at: e.builder.constant(int: argument * 2)), to: .int, line: line)
         let zero = e.builder.constant(int: 0)
         let last = e.emit(.opISub, type: .int, [count.id, e.builder.constant(int: 1)])
         let clamped = e.emitExt(.sClamp, type: .int, [index.id, zero, last.id])
-        let at = e.emit(.opIAdd, type: .int, [offset.id, clamped.id])
-        let value = loadArgument(e, at: at.id)
+        let stride = e.emit(.opIMul, type: .int, [clamped.id, e.builder.constant(int: element.componentCount)])
+        let at = e.emit(.opIAdd, type: .int, [offset.id, stride.id])
+        let value = loadArgument(e, at: at, type: element)
         let nonEmpty = e.emit(.opSGreaterThan, type: .bool, [count.id, zero])
-        return e.emit(.opSelect, type: .float, [nonEmpty.id, value.id, e.builder.constant(float: 0)])
+        return e.select(nonEmpty, value.id, e.builder.zero(of: element), type: element)
     }
 
-    /// `layer(p)`: the view's own pixels, sampled with an explicit LOD (compute has no derivatives).
+    /// `layer(p)`: the view's own pixels, sampled with an explicit LOD (compute
+    /// has no derivatives, and a vertex stage has none either).
     func sampleContent(at coordinate: Value, from e: FunctionEmitter, line: Int) throws -> Value {
-        guard let interface = computeInterface, let binding = interface.contentBinding else {
+        guard let binding = program.target.contentBinding else {
             throw PyShaderError("layer() needs a content image; this target does not provide one", line: line)
         }
         if contentImage == nil {
             let v = builder.globalVariable(type: .sampledImage(.sampled2D), storage: .uniformConstant, name: "uContent")
-            builder.decorate(v, .descriptorSet, [UInt32(interface.descriptorSet)])
-            builder.decorate(v, .binding, [UInt32(binding)])
+            builder.decorate(v, .descriptorSet, [UInt32(binding.set)])
+            builder.decorate(v, .binding, [UInt32(binding.binding)])
             contentImage = v
         }
         let sampled = e.load(contentImage!, type: .sampledImage(.sampled2D))

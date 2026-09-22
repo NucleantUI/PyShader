@@ -26,7 +26,7 @@ is available.
 | `color` | `float4` | vertex colour, forwarded by a bare `return` | — | — |
 | `front_facing` | `bool` | `gl_FrontFacing` | — | fragment stage |
 | `vertex_index` `instance_index` | `int` | — | — | vertex stage |
-| *ShaderArgument name* | `float` … `float4`, `FloatArray` | — | argument buffer | both stages |
+| *ShaderArgument name* | `float` … `float4`, `FloatArray`, `Float2Array` … `Float4Array` | — | argument buffer | both stages |
 
 Shader space is y-up with `(0, 0)` bottom-left, as ShaderToy has it; the
 wrapper flips what needs flipping so `uv`, `frag_coord` and `mouse` agree

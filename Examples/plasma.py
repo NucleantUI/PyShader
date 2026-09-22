@@ -1,6 +1,5 @@
 """Classic plasma. Uses push constants (time, resolution) and the uv input."""
 
-PI = 3.14159265
 SPEED = 0.7
 
 

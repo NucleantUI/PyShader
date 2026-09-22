@@ -31,6 +31,11 @@ struct SpirvWords {
 
     func has(_ op: SpirvOp) -> Bool { count(op) > 0 }
 
+    /// The literal word of every scalar `OpConstant`, e.g. a float's bit pattern.
+    var scalarConstants: [UInt32] {
+        instructions.filter { $0.opcode == SpirvOp.opConstant.rawValue && $0.operands.count == 3 }.map { $0.operands[2] }
+    }
+
     func extInstCount(_ inst: GLSLstd450) -> Int {
         instructions.filter { $0.opcode == SpirvOp.opExtInst.rawValue && $0.operands.count > 3 && $0.operands[3] == inst.rawValue }.count
     }

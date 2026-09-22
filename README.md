@@ -170,7 +170,7 @@ Types, promotion and operator rules in detail: [vector-types.md](vector-types.md
 | `time` `resolution` `mouse` | | push constants | `Uniforms` block |
 | `time_delta` `frame` `pixel` `mouse_click` | | — | `Uniforms` / invocation id |
 | `color` | `float4` | vertex colour, forwarded by a bare `return` | — |
-| *ShaderArgument name* | `float`…`float4`, `FloatArray` | — | argument buffer |
+| *ShaderArgument name* | `float`…`float4`, `FloatArray`, `Float2Array`…`Float4Array` | — | argument buffer |
 
 ### Vertex + fragment
 

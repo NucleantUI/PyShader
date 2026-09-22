@@ -68,6 +68,50 @@ struct GraphicsTargetTests {
         #expect(words.has(.opFNegate), "position.y is flipped into Vulkan clip space")
     }
 
+    @Test("layer() samples the view at binding 2, in either stage")
+    func content() throws {
+        let words = try compileValid("""
+        class V:
+            position: float4
+            uv: float2
+
+        def vertex(vertex_index: int) -> V:
+            corner = float2(float(vertex_index & 1), float(vertex_index >> 1))
+            return V(position=float4(corner * 2.0 - 1.0, 0.0, 1.0), uv=corner)
+
+        def fragment(uv: float2, time: float) -> float4:
+            return layer(uv + float2(sin(uv.y * 20.0 + time) * 0.02, 0.0))
+        """, target: .graphics(.nucleantSwiftUI(samplesContent: true, arguments: [])))
+        #expect(words.count(.opImageSampleExplicitLod) == 1)
+        #expect(words.has(.opTypeSampledImage))
+        let bindings = words.instructions
+            .filter { $0.opcode == SpirvOp.opDecorate.rawValue && $0.operands[1] == SpirvDecoration.binding.rawValue }
+            .map { $0.operands[2] }
+        #expect(bindings.sorted() == [1, 2], "Uniforms at 1, the view's pixels at 2")
+    }
+
+    @Test("layer() without a content image is an error")
+    func noContent() {
+        do {
+            _ = try PyShader.compile("""
+            class V:
+                position: float4
+                uv: float2
+
+            def vertex() -> V:
+                return V(float4(0.0), float2(0.0))
+
+            def fragment(uv: float2) -> float4:
+                return layer(uv)
+            """, target: .nucleantSwiftUIGraphics)
+            Issue.record("expected an error")
+        } catch let error as PyShaderError {
+            #expect(error.message.contains("content image"))
+        } catch {
+            Issue.record("unexpected \(error)")
+        }
+    }
+
     @Test("fragment inputs, integer varyings are flat")
     func fragmentInputs() throws {
         let words = try compileValid("""

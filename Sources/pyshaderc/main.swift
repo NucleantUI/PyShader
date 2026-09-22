@@ -2,7 +2,7 @@
 //  pyshaderc: compile a PyShader .py file to a SPIR-V .spv file.
 //
 //  usage: pyshaderc <input.py> [-o output.spv] [--target fragment|compute|graphics]
-//                   [--content] [--arg name:float|float2|float3|float4|floatArray]...
+//                   [--content] [--arg name:float|float2|float3|float4|floatArray|float2Array|float3Array|float4Array]...
 //
 //  `--target compute` builds for NucleantSwiftUI's `Shader` view (storage image),
 //  `--target graphics` for its `VertexShader` view (vertex + fragment, one module);
@@ -49,6 +49,9 @@ while !args.isEmpty {
         case "float3": kind = .float3
         case "float4": kind = .float4
         case "floatArray": kind = .floatArray
+        case "float2Array": kind = .float2Array
+        case "float3Array": kind = .float3Array
+        case "float4Array": kind = .float4Array
         default: usage()
         }
         arguments.append((spec[0], kind))
@@ -64,7 +67,7 @@ let target: ShaderTarget
 switch targetName {
 case "fragment": target = .nucleant
 case "compute": target = .computeImage(.nucleantSwiftUI(samplesContent: samplesContent, arguments: arguments))
-case "graphics": target = .graphics(.nucleantSwiftUI(arguments: arguments))
+case "graphics": target = .graphics(.nucleantSwiftUI(samplesContent: samplesContent, arguments: arguments))
 default: usage()
 }
 

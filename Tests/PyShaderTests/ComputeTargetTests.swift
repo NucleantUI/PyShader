@@ -79,6 +79,36 @@ struct ComputeTargetTests {
         #expect(words.has(.opSelect))
     }
 
+    @Test("vector arrays: an element is a vector, zero when empty, and the annotation must match")
+    func vectorArrays() throws {
+        let interface = ComputeImageInterface.nucleantSwiftUI(samplesContent: false, arguments: [
+            ("points", .float2Array), ("glows", .float4Array),
+        ])
+        let words = try compileValid("""
+        def main(uv: float2, points: Float2Array, glows: Float4Array) -> float4:
+            i = int(uv.x * float(len(points)))
+            p = points[i]
+            g = glows[len(glows) - 1]
+            return float4(p, 0.0, 1.0) * g
+        """, target: .computeImage(interface))
+        // Elements are read a float at a time from the shared buffer and
+        // assembled; the empty-array fallback is a vector zero.
+        #expect(words.extInstCount(.sClamp) == 2)
+        #expect(words.has(.opCompositeConstruct))
+        #expect(words.has(.opConstantComposite))
+        #expect(words.has(.opSelect))
+
+        do {
+            _ = try PyShader.compile("def main(points: FloatArray) -> float4:\n    return float4(points[0])\n", target: .computeImage(interface))
+            Issue.record("expected an error")
+        } catch let error as PyShaderError {
+            #expect(error.message.contains("Float2Array"))
+            #expect(error.line == 1)
+        } catch {
+            Issue.record("unexpected \(error)")
+        }
+    }
+
     @Test("FloatArray cannot be stored or passed on")
     func floatArrayMisuse() {
         let interface = ComputeImageInterface.nucleantSwiftUI(samplesContent: false, arguments: [("a", .floatArray)])

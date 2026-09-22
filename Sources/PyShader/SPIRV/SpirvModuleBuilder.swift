@@ -148,7 +148,7 @@ final class SpirvModuleBuilder {
             id = allocate()
             declarations.append(.init(.opTypeRuntimeArray, [id, elemId]))
         case .floatArray:
-            preconditionFailure("FloatArray handles have no SPIR-V type")
+            preconditionFailure("argument array handles have no SPIR-V type")
         }
         typeIds[t] = id
         return id

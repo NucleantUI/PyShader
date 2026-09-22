@@ -41,10 +41,10 @@ whole language in use.
 ## The language in one screen
 
 ```pyshader
-PI = 3.14159265                          # module constants are inlined
+TURN = 2.0 * PI                          # module constants are inlined; PI is a builtin
 
 def palette(t: float) -> float3:         # global defs with annotated parameters
-    return 0.5 + 0.5 * cos(6.28318 * (t + float3(0.0, 0.33, 0.67)))
+    return 0.5 + 0.5 * cos(TURN * (t + float3(0.0, 0.33, 0.67)))
 
 def box(p: float2) -> tuple[float, float2]:   # several results come back as a tuple
     d = abs(p) - 0.3

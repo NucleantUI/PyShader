@@ -59,4 +59,9 @@ VertexShader(VertexShaderFunction(pyshader: source), vertices: 6, instances: tou
 ```
 
 The [Instanced glow](../examples/graphics.md) example is the whole module,
-drawn live.
+drawn live. A module with both stages needs nothing said about it: the docs'
+previews and the [Playground](../playground.md) compile it as a graphics
+target on sight, draw the vertices its `vertex_index` list holds, and take
+its arguments from what the two stages ask for. What no source can say — how
+many instances to draw, and what the arguments hold — the Playground's
+toolbar asks for.

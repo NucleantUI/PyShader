@@ -36,12 +36,14 @@ MISS = (False, -1.0, float3(0.0))   # a tuple constant
 
 `len()` works on any composite: a vector, a list, a tuple.
 
-## `FloatArray`
+## `FloatArray`, `Float2Array`, `Float3Array`, `Float4Array`
 
-`FloatArray` is the one host-provided array: a `.floatArray` `ShaderArgument`
-handed to `main` on the [compute](../targets/compute.md) and
-[graphics](../targets/graphics.md) targets. `a[i]` reads (clamped to the
-ends, `0.0` when empty) and `len(a)` counts; it cannot be stored or passed on.
+These are the host-provided arrays: a `.floatArray` (or `.float2Array` …
+`.float4Array`) `ShaderArgument` handed to `main` on the
+[compute](../targets/compute.md) and [graphics](../targets/graphics.md)
+targets. `a[i]` reads one element — a `float`, or a `float2`/`float3`/`float4`
+— clamped to the ends and zero when empty, and `len(a)` counts; an array
+cannot be stored or passed on.
 
 ## In use
 

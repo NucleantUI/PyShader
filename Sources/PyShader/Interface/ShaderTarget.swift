@@ -31,6 +31,16 @@ public enum ShaderTarget: Sendable {
         }
     }
 
+    /// Where the view's own pixels are bound for `layer()`, when the target
+    /// samples them.
+    var contentBinding: (set: Int, binding: Int)? {
+        switch self {
+        case .fragment: return nil
+        case .computeImage(let i): return i.contentBinding.map { (i.descriptorSet, $0) }
+        case .graphics(let i): return i.contentBinding.map { (i.descriptorSet, $0) }
+        }
+    }
+
     /// Where the shader-argument buffer is bound, when the target has one.
     var argumentsBinding: (set: Int, binding: Int)? {
         switch self {
@@ -46,6 +56,8 @@ public enum ShaderArgumentKind: Sendable, Hashable {
     case float, float2, float3, float4
     /// A `float[]` of any length; `a[i]` reads (clamped to the ends), `len(a)` counts.
     case floatArray
+    /// `vec2[]`, `vec3[]`, `vec4[]`: as `floatArray`, with `a[i]` a vector.
+    case float2Array, float3Array, float4Array
 
     var type: ShaderType {
         switch self {
@@ -53,19 +65,24 @@ public enum ShaderArgumentKind: Sendable, Hashable {
         case .float2: return .float(2)
         case .float3: return .float(3)
         case .float4: return .float(4)
-        case .floatArray: return .floatArray(argument: -1)
+        case .floatArray: return .floatArray(argument: -1, element: .float)
+        case .float2Array: return .floatArray(argument: -1, element: .float(2))
+        case .float3Array: return .floatArray(argument: -1, element: .float(3))
+        case .float4Array: return .floatArray(argument: -1, element: .float(4))
         }
     }
 
+    /// Floats per value: the vector width, or the element's for an array.
     var componentCount: Int {
         switch self {
-        case .float: return 1
-        case .float2: return 2
-        case .float3: return 3
-        case .float4: return 4
-        case .floatArray: return 0
+        case .float, .floatArray: return 1
+        case .float2, .float2Array: return 2
+        case .float3, .float3Array: return 3
+        case .float4, .float4Array: return 4
         }
     }
+
+    var isArray: Bool { type.isFloatArray }
 }
 
 /// The compute-shader contract of NucleantVulkan's `OGLShaderNode` / NucleantSwiftUI's
@@ -244,7 +261,11 @@ struct EntrySignature {
             if types[arg.name] != nil {
                 throw PyShaderError("shader argument `\(arg.name)` clashes with a built-in input name")
             }
-            types[arg.name] = arg.kind == .floatArray ? .floatArray(argument: index) : arg.kind.type
+            if case .floatArray(_, let element) = arg.kind.type {
+                types[arg.name] = .floatArray(argument: index, element: element)
+            } else {
+                types[arg.name] = arg.kind.type
+            }
         }
     }
 }

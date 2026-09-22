@@ -5,7 +5,9 @@
  * source goes through two wasm modules in the browser: PyShader (Swift, WASI)
  * compiles it to SPIR-V, naga (Rust) turns that into WGSL, which the browser
  * takes. Compute-target shaders write a storage texture that is blitted to
- * the canvas; graphics-target ones draw straight into it.
+ * the canvas; graphics-target ones — a module with a `vertex` and a `fragment`
+ * stage, which the fence names or `detectTarget` recognises — draw straight
+ * into it.
  *
  * `pyshader-edit` blocks put a Monaco editor next to the canvas and recompile
  * on every change.
@@ -207,6 +209,93 @@
   }
 
   // ---------------------------------------------------------------------------
+  // What a source asks for
+
+  const DEF = (name) => new RegExp(`^[ \\t]*def[ \\t]+${name}[ \\t]*\\(`, "m");
+  const VERTEX_DEF = DEF("vertex"), FRAGMENT_DEF = DEF("fragment"), MAIN_DEF = DEF("main");
+
+  /** A module with a `vertex` and a `fragment` stage is a graphics target; anything else computes. */
+  function detectTarget(source) {
+    return !MAIN_DEF.test(source) && VERTEX_DEF.test(source) && FRAGMENT_DEF.test(source) ? "graphics" : "compute";
+  }
+
+  /** The number of elements in the list literal whose `[` is at `start`, or 0. */
+  function listLength(source, start) {
+    let depth = 0, items = 0, item = false;
+    for (let i = start; i < source.length; i++) {
+      const c = source[i];
+      if (c === "]" && depth === 1) return items + (item ? 1 : 0);
+      if (c === "," && depth === 1) { items += item ? 1 : 0; item = false; }
+      else if (c === "[" || c === "(") { item = item || depth > 0; depth++; }
+      else if (c === ")" || c === "]") depth--;
+      else if (depth > 0 && c.trim()) item = true;
+    }
+    return 0;
+  }
+
+  /**
+   * How many vertices a graphics source draws: the length of the list its vertex
+   * stage indexes with `vertex_index`, following one name to the next, as the
+   * compiler's "dynamic indexing needs the list in a variable" makes it one
+   * (`corner = quad[vertex_index]`, `quad = QUAD`, `QUAD = [...]`), else 0.
+   */
+  function detectVertices(source) {
+    let name = /([A-Za-z_]\w*)\s*\[\s*vertex_index\b/.exec(source)?.[1];
+    for (let hop = 0; name && hop < 4; hop++) {
+      const assigned = new RegExp(`^[ \\t]*${name}[ \\t]*=[ \\t]*(\\[|[A-Za-z_]\\w*[ \\t]*$)`, "m").exec(source);
+      if (!assigned) return 0;
+      if (assigned[1] === "[") return listLength(source, assigned.index + assigned[0].length - 1);
+      name = assigned[1].trim();
+    }
+    return 0;
+  }
+
+  // The parameter names both targets fill in themselves; anything else an
+  // entry point takes is a ShaderArgument (or, in `fragment`, a varying).
+  const BUILTIN_PARAMS = new Set([
+    "uv", "frag_coord", "pixel", "front_facing", "time", "time_delta",
+    "frame", "resolution", "mouse", "mouse_click", "vertex_index", "instance_index",
+  ]);
+  const ARG_KINDS = {
+    float: "float", float2: "float2", float3: "float3", float4: "float4",
+    FloatArray: "floatArray", Float2Array: "float2Array", Float3Array: "float3Array", Float4Array: "float4Array",
+  };
+
+  /** The `name: Type` parameters of `def name(...)`, or []. */
+  function parameters(source, name) {
+    const m = new RegExp(`^[ \\t]*def[ \\t]+${name}[ \\t]*\\(([^)]*)\\)`, "m").exec(source);
+    if (!m) return [];
+    return m[1].split(",").map((p) => /^\s*([A-Za-z_]\w*)\s*:\s*([A-Za-z_]\w*)/.exec(p)).filter(Boolean)
+      .map((p) => ({ name: p[1], type: p[2] }));
+  }
+
+  /** The varyings a graphics module interpolates: the fields of the class `vertex` returns. */
+  function varyings(source) {
+    const returns = /^[ \t]*def[ \t]+vertex[ \t]*\([^)]*\)[ \t]*->[ \t]*([A-Za-z_]\w*)/m.exec(source);
+    if (!returns) return [];
+    const body = new RegExp(`^class[ \\t]+${returns[1]}[ \\t]*:[ \\t]*$((?:\\n(?:[ \\t]+.*)?)*)`, "m").exec(source);
+    return body ? [...body[1].matchAll(/^[ \t]+([A-Za-z_]\w*)[ \t]*:/gm)].map((m) => m[1]) : [];
+  }
+
+  /**
+   * The `ShaderArgument`s a source implies: every entry-point parameter that is
+   * neither a built-in input nor a varying, in the order the stages take them,
+   * which is the order the argument buffer is packed in.
+   */
+  function detectArguments(source) {
+    const seen = new Set(varyings(source));
+    const args = [];
+    for (const entry of ["vertex", "fragment", "main"]) {
+      for (const { name, type } of parameters(source, entry)) {
+        if (BUILTIN_PARAMS.has(name) || seen.has(name)) continue;
+        seen.add(name);
+        if (ARG_KINDS[type]) args.push({ name, kind: ARG_KINDS[type], value: [] });
+      }
+    }
+    return args;
+  }
+
+  // ---------------------------------------------------------------------------
   // WebGPU
 
   let devicePromise = null;
@@ -248,14 +337,19 @@
     const data = [];
     for (const arg of args) {
       const value = arg.value.length ? arg.value : defaultArgument(arg.kind);
-      data.push(header + values.length, value.length);
+      // The header pair is (offset, count), and `len(a)` reads that count: floats
+      // for a value, but elements for an array of vectors.
+      data.push(header + values.length, Math.floor(value.length / (isArgArray(arg.kind) ? argWidth(arg.kind) : 1)));
       values.push(...value);
     }
     return new Float32Array([...data, ...values, 0]);
   }
 
+  const isArgArray = (kind) => kind.endsWith("Array");
+  const argWidth = (kind) => Number(/\d/.exec(kind)?.[0]) || 1;
+
   function defaultArgument(kind) {
-    return { float: [1], float2: [1, 1], float3: [1, 1, 1], float4: [1, 1, 1, 1], floatArray: [0] }[kind];
+    return Array(argWidth(kind)).fill(isArgArray(kind) ? 0 : 1);
   }
 
   /** A content image for `layer()` when the block names none: a soft test card. */
@@ -300,6 +394,9 @@
       this.mouse = [0, 0, 0, 0];
       this.pressed = false;
       this.frameIndex = 0;
+      this.argValues = new Map();
+      this.extraArgs = [];
+      this.disposers = [];
       this.startTime = performance.now();
       this.lastTime = this.startTime;
       this.compileId = 0;
@@ -341,10 +438,36 @@
       }
     }
 
+    /** The fence's target, or the one the current source implies. */
+    target() {
+      return this.data.target || detectTarget(this.source);
+    }
+
+    /** The fence's argument declarations, or the source's, carrying any values the toolbar holds. */
+    declaredArguments() {
+      const declared = this.data.args?.length ? this.data.args : detectArguments(this.source);
+      return declared.map((a) => (this.argValues.has(a.name) ? { ...a, value: this.argValues.get(a.name) } : a));
+    }
+
+    /** Those, and the rows the Arguments panel adds for what the source does not declare. */
+    arguments() {
+      const declared = this.declaredArguments();
+      const named = new Set(declared.map((a) => a.name));
+      return [...declared, ...this.extraArgs.filter((a) => a.name && !named.has(a.name))];
+    }
+
+    /** The graphics draw call: the toolbar's counts, the fence's, or the source's. */
+    draw() {
+      return {
+        vertices: this.drawOverride?.vertices || this.data.vertices || detectVertices(this.source) || 3,
+        instances: this.drawOverride?.instances || this.data.instances || 1,
+      };
+    }
+
     options() {
-      const parts = [`target=${this.data.target || "compute"}`];
+      const parts = [`target=${this.target()}`];
       if (this.data.content || /\blayer\s*\(/.test(this.source)) parts.push("content=1");
-      for (const arg of this.data.args || []) parts.push(`arg=${arg.name}:${arg.kind}`);
+      for (const arg of this.arguments()) parts.push(`arg=${arg.name}:${arg.kind}`);
       return parts.join(" ");
     }
 
@@ -367,6 +490,7 @@
       try {
         await this.build();
         this.status("");
+        this.onCompiled?.();
       } catch (error) {
         this.status(error.message, "error");
         console.error(error);
@@ -388,7 +512,7 @@
       if (!this.uniforms) this.uniforms = device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
       this.resize();
       // Keep drawing the old pipeline until the new one is ready.
-      const next = this.data.target === "graphics" ? new GraphicsPipeline(this) : new ComputePipeline(this);
+      const next = this.target() === "graphics" ? new GraphicsPipeline(this) : new ComputePipeline(this);
       await next.build();
       const old = this.pipeline;
       this.pipeline = next;
@@ -397,7 +521,7 @@
     }
 
     argumentBuffer() {
-      const args = this.data.args || [];
+      const args = this.arguments();
       if (!args.length) return null;
       const packed = packArguments(args);
       const buffer = this.device.createBuffer({ size: packed.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
@@ -467,6 +591,7 @@
       this.stop();
       this.resizeObserver.disconnect();
       this.pipeline?.dispose();
+      for (const off of this.disposers) off();
     }
   }
 
@@ -554,7 +679,7 @@
     }
 
     async build() {
-      const { device, compiled, data } = this.p;
+      const { device, compiled } = this.p;
       const module = device.createShaderModule({ code: compiled.wgsl });
       const info = await module.getCompilationInfo();
       const errors = info.messages.filter((m) => m.type === "error");
@@ -579,8 +704,9 @@
       const entries = [{ binding: 1, resource: { buffer: this.p.uniforms } }];
       if (this.args) entries.push({ binding: 3, resource: { buffer: this.args } });
       this.bindGroup = device.createBindGroup({ layout: this.pipeline.getBindGroupLayout(0), entries });
-      this.vertices = data.vertices || 3;
-      this.instances = data.instances || 1;
+      const draw = this.p.draw();
+      this.vertices = draw.vertices;
+      this.instances = draw.instances;
     }
 
     resize() {}
@@ -653,6 +779,139 @@
     return [paste, copy];
   }
 
+  const ARG_KINDS_IN_ORDER = ["float", "float2", "float3", "float4", "floatArray", "float2Array", "float3Array", "float4Array"];
+
+  /** `1 0.5 0` -> [1, 0.5, 0]; null when it is not a list of numbers. */
+  function parseValues(text) {
+    const parsed = text.split(/[\s,]+/).filter(Boolean).map(Number);
+    return parsed.length && !parsed.some(Number.isNaN) ? parsed : null;
+  }
+
+  function element(tag, className, properties) {
+    return Object.assign(document.createElement(tag), { className, ...properties });
+  }
+
+  /** A number field in the toolbar, calling `apply` with its new value. */
+  function countField(label, value, apply) {
+    const wrap = element("label", "pyshader-toolbar-field");
+    const input = element("input", "", { type: "number", min: "1", value: String(value) });
+    input.addEventListener("change", () => apply(input.value));
+    wrap.append(element("span", "", { textContent: label }), input);
+    return wrap;
+  }
+
+  /**
+   * The draw call, and the `ShaderArgument`s behind an Arguments button: a row
+   * per argument the source declares, holding the values handed to it, and rows
+   * the reader adds for what it does not — a name, a kind, its values. A value
+   * only rebuilds the pipeline; a name or a kind is a declaration, so it
+   * recompiles. The panel is built as it opens, so an edit to the source is
+   * picked up without a half-typed row being taken away under the reader.
+   */
+  function attachControls(preview, bar) {
+    const controls = element("span", "pyshader-toolbar-group pyshader-toolbar-controls");
+    const draw = element("span", "pyshader-toolbar-group");
+    const open = element("button", "", { type: "button", textContent: "Arguments" });
+    const panel = element("div", "pyshader-popover", { hidden: true });
+    controls.append(draw, open, panel);
+    bar.append(controls);
+
+    const rebuild = () => {
+      if (preview.compiled) preview.build().catch((e) => preview.status(e.message, "error"));
+    };
+    const recompile = () => preview.setSource(preview.source);
+
+    const valueField = (arg, apply) => {
+      const input = element("input", "", { type: "text", spellcheck: false, placeholder: arg.kind,
+        value: (arg.value.length ? arg.value : defaultArgument(arg.kind)).join(" ") });
+      input.addEventListener("change", () => {
+        const values = parseValues(input.value);
+        if (!values) return preview.status(`${arg.name || "argument"}: want numbers, as \`1 0.5 0\``, "error");
+        apply(values);
+        rebuild();
+      });
+      return input;
+    };
+
+    const declaredRow = (arg) => {
+      const row = element("div", "pyshader-popover-row");
+      row.append(
+        element("span", "pyshader-popover-name", { textContent: arg.name, title: arg.name }),
+        element("span", "pyshader-popover-kind", { textContent: arg.kind }),
+        valueField(arg, (values) => preview.argValues.set(arg.name, values)),
+      );
+      return row;
+    };
+
+    const addedRow = (arg, render) => {
+      const row = element("div", "pyshader-popover-row");
+      const name = element("input", "pyshader-popover-name", { type: "text", spellcheck: false, placeholder: "name", value: arg.name });
+      name.addEventListener("change", () => { arg.name = name.value.trim(); recompile(); });
+      const kind = element("select", "pyshader-popover-kind");
+      for (const k of ARG_KINDS_IN_ORDER) kind.append(new Option(k, k, false, k === arg.kind));
+      kind.addEventListener("change", () => { arg.kind = kind.value; arg.value = []; recompile(); render(); });
+      const remove = element("button", "pyshader-popover-remove", { type: "button", textContent: "×", title: `Remove ${arg.name || "this row"}` });
+      remove.addEventListener("click", () => {
+        preview.extraArgs.splice(preview.extraArgs.indexOf(arg), 1);
+        recompile();
+        render();
+      });
+      row.append(name, kind, valueField(arg, (values) => { arg.value = values; }), remove);
+      return row;
+    };
+
+    const render = () => {
+      panel.replaceChildren();
+      const declared = preview.declaredArguments();
+      if (!declared.length && !preview.extraArgs.length) {
+        panel.append(element("p", "pyshader-popover-empty", {
+          textContent: "This shader asks for no arguments. Add a row to pass one it takes by name.",
+        }));
+      }
+      for (const arg of declared) panel.append(declaredRow(arg));
+      for (const arg of preview.extraArgs) panel.append(addedRow(arg, render));
+      const add = element("button", "pyshader-popover-add", { type: "button", textContent: "+ Add argument" });
+      add.addEventListener("click", () => {
+        preview.extraArgs.push({ name: "", kind: "float", value: [] });
+        render();
+      });
+      panel.append(add);
+    };
+
+    const setOpen = (isOpen) => {
+      if (isOpen) render();
+      panel.hidden = !isOpen;
+      open.classList.toggle("pyshader-active", isOpen);
+    };
+    open.addEventListener("click", (e) => { e.stopPropagation(); setOpen(panel.hidden); });
+    const outside = (e) => { if (!panel.hidden && !panel.contains(e.target)) setOpen(false); };
+    const escape = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("click", outside);
+    document.addEventListener("keydown", escape);
+    preview.disposers.push(() => {
+      document.removeEventListener("click", outside);
+      document.removeEventListener("keydown", escape);
+    });
+
+    // The draw call belongs to a vertex + fragment module, and to no other.
+    let graphics = null;
+    preview.onCompiled = () => {
+      const isGraphics = preview.target() === "graphics";
+      if (isGraphics === graphics) return;
+      graphics = isGraphics;
+      draw.replaceChildren();
+      if (!isGraphics) return;
+      const counts = preview.draw();
+      draw.append(element("span", "pyshader-toolbar-label", { textContent: "Draw" }),
+        ...[["vertices", "Vertices"], ["instances", "Instances"]].map(([key, label]) =>
+          countField(label, counts[key], (value) => {
+            preview.drawOverride = { ...preview.draw(), [key]: Math.max(1, Math.round(Number(value)) || 1) };
+            rebuild();
+          })));
+    };
+    preview.onCompiled();
+  }
+
   /** Layout and aspect pickers above an edit block; the fence options are the defaults. */
   function attachToolbar(preview) {
     const el = preview.element;
@@ -690,6 +949,8 @@
       el.style.setProperty("--pyshader-aspect", value || "auto");
       setPref("aspect", value);
     }));
+
+    attachControls(preview, bar);
   }
 
   async function attachEditor(preview) {

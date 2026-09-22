@@ -86,6 +86,10 @@ public struct GraphicsInterface: Sendable {
     public var descriptorSet: Int
     /// `Uniforms { vec4 timeInfo; vec4 res; vec4 mouseInfo; }`, std140, read by both stages.
     public var uniformBinding: Int
+    /// `sampler2D` of the view the effect is applied to; enables `layer(uv)`,
+    /// as in the compute target. Set for a `.shader(_:)` effect whose
+    /// function is a vertex + fragment pair.
+    public var contentBinding: Int?
     /// `readonly buffer { float data[]; }` holding the shader arguments, as the compute
     /// target has it. Needed when `arguments` is non-empty.
     public var argumentsBinding: Int?
@@ -99,6 +103,7 @@ public struct GraphicsInterface: Sendable {
         fragmentEntryPoint: String = "fragment",
         descriptorSet: Int = 0,
         uniformBinding: Int = 1,
+        contentBinding: Int? = nil,
         argumentsBinding: Int? = nil,
         arguments: [(name: String, kind: ShaderArgumentKind)] = [],
         inputs: [String: Input] = GraphicsInterface.defaultInputs
@@ -107,6 +112,7 @@ public struct GraphicsInterface: Sendable {
         self.fragmentEntryPoint = fragmentEntryPoint
         self.descriptorSet = descriptorSet
         self.uniformBinding = uniformBinding
+        self.contentBinding = contentBinding
         self.argumentsBinding = argumentsBinding
         self.arguments = arguments
         self.inputs = inputs
@@ -127,13 +133,17 @@ public struct GraphicsInterface: Sendable {
         "mouse_click": .mouseClick,
     ]
 
-    /// NucleantSwiftUI's `VertexShader` view without arguments.
+    /// NucleantSwiftUI's `VertexShader` view without content or arguments.
+    /// Use `nucleantSwiftUI(samplesContent:arguments:)` for a `.shader(_:)`
+    /// effect or a shader with `ShaderArgument`s.
     public static let nucleantSwiftUI = GraphicsInterface()
 
     public static func nucleantSwiftUI(
+        samplesContent: Bool = false,
         arguments: [(name: String, kind: ShaderArgumentKind)]
     ) -> GraphicsInterface {
         GraphicsInterface(
+            contentBinding: samplesContent ? 2 : nil,
             argumentsBinding: arguments.isEmpty ? nil : 3,
             arguments: arguments
         )

@@ -112,6 +112,9 @@ extension FunctionEmitter {
         if ShaderType.named(n.id) != nil || program.structs[n.id] != nil {
             throw PyShaderError("`\(n.id)` is a type; call it to construct a value", line: n.lineno)
         }
+        if let constant = BuiltinConstants.value(named: n.id) {
+            return Value(id: builder.constant(float: constant), type: .float)
+        }
         throw PyShaderError("`\(n.id)` is not defined", line: n.lineno)
     }
 
@@ -740,12 +743,12 @@ extension FunctionEmitter {
             return load(p.ptr, type: p.type)
         }
         let base = try emitExpression(s.value)
-        if case .floatArray(let argument) = base.type {
+        if case .floatArray(let argument, let element) = base.type {
             let index = try emitExpression(s.slice)
             guard index.type.isScalar, index.type.isInt else {
                 throw PyShaderError("array index must be an integer, got `\(index.type)`", line: s.lineno)
             }
-            return try compiler.loadArgumentArrayElement(argument, index: index, from: self, line: s.lineno)
+            return try compiler.loadArgumentArrayElement(argument, element: element, index: index, from: self, line: s.lineno)
         }
         switch base.type {
         case .vector:
@@ -804,13 +807,18 @@ extension FunctionEmitter {
         let a = try emitExpression(i.body)
         let b = try emitExpression(i.orElse)
         let (x, y) = try promote(a, b, line: i.lineno)
+        return select(cond, x.id, y.id, type: x.type)
+    }
+
+    /// `cond ? x : y` for one scalar condition, whatever the result's arity.
+    func select(_ cond: Value, _ x: SpirvId, _ y: SpirvId, type: ShaderType) -> Value {
         var c = cond
-        if x.type.isVector {
+        if type.isVector {
             // SPIR-V 1.0 requires the condition to match the result's arity.
-            let n = x.type.componentCount
+            let n = type.componentCount
             c = emit(.opCompositeConstruct, type: .bool(n), Array(repeating: cond.id, count: n))
         }
-        return emit(.opSelect, type: x.type, [c.id, x.id, y.id])
+        return emit(.opSelect, type: type, [c.id, x, y])
     }
 
     // MARK: Calls

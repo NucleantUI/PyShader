@@ -60,9 +60,10 @@ hit = box(ro, rd); hit[1]
 A tuple is a struct in SPIR-V; `return a, b` converts each element to its
 declared slot. Module constants may be tuples (`MISS = (False, -1.0, float3(0.0))`).
 
-`FloatArray` is the host-provided array: a `.floatArray` `ShaderArgument`
-handed to `main` on the compute target — `a[i]` and `len(a)` only, not
-storable or passable. There are no structs or textures beyond `layer()` yet
+`FloatArray` and `Float2Array`…`Float4Array` are the host-provided arrays: a
+`.floatArray` (`.float2Array` …) `ShaderArgument` handed to `main` on the
+compute and graphics targets — `a[i]` (a scalar or vector) and `len(a)` only,
+not storable or passable. There are no structs or textures beyond `layer()` yet
 (see `shader-api-status.md`).
 
 ## Declaring variables

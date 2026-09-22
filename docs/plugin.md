@@ -29,10 +29,10 @@ Options go on the fence line as `key="value"`:
 |---|---|
 | `file="Examples/plasma.py"` | take the source from a file (relative to `mkdocs.yml`) instead of the fence body |
 | `examples="Examples/shadertoy/opengl"` | `pyshader-convert` only: a folder whose `.glsl` files fill a picker; the first one is the initial source when the body is empty |
-| `args="gain:float=1.5, tint:float4=1 0.6 0.2 1, mins:floatArray=0.2 0.5"` | `ShaderArgument`s: name, kind and the values to pass |
+| `args="gain:float=1.5, tint:float4=1 0.6 0.2 1, mins:floatArray=0.2 0.5"` | `ShaderArgument`s: name, kind (`float` … `float4`, `floatArray`, `float2Array` … `float4Array`) and the values to pass, an array's one element after another. Without it the preview declares them off the entry points' parameters — everything that is not a built-in input or a varying — and passes 1s; a `pyshader-edit` block's toolbar has a field per argument, taking its values as they are written here |
 | `content="img/card.png"` | the image `layer()` reads, relative to the site root; a test card when omitted |
-| `target="graphics"` | compile a vertex + fragment module and draw it; default `compute` |
-| `vertices="6" instances="3"` | the draw call for a graphics target |
+| `target="graphics"` | override the target. A module that defines a `vertex` and a `fragment` stage is compiled as a vertex + fragment pair and drawn; anything else is a `compute` shader. The preview reads that off the source, and off every edit in a `pyshader-edit` block, so the option is only for forcing it |
+| `vertices="6" instances="3"` | the draw call for a graphics target. `vertices` defaults to the length of the list the vertex stage indexes with `vertex_index` — 3 when it indexes none — and `instances` to 1. A `pyshader-edit` block's toolbar offers both for a graphics module |
 | `height="360"` | the preview's height (the editor's, in `pyshader-edit`): pixels, or any CSS length such as `calc(100vh - 12rem)` |
 | `aspect="16:9"` | size the preview by its width and this ratio instead of `height`; in `pyshader-edit` the toolbar offers 16:9, 4:3, 1:1 and fill |
 | `layout="horizontal"` | `pyshader-edit` only: the initial layout — `horizontal` (editor and preview side by side), `vertical` (preview above the editor) or `auto` (default: by screen width). The block's toolbar lets the reader switch, and remembers the choice in the browser |
@@ -63,8 +63,9 @@ deploy is not served from a browser's cache) and injects a
 
 1. `pyshader.wasm` — the Swift package `PyShaderWasm/` built as a WASI
    reactor with the wasm Swift SDK — compiles the source to SPIR-V for the
-   compute target (or graphics, when asked), with `content=1` when the
-   source calls `layer()` and the declared arguments.
+   compute target, or the graphics target when the fence asks for it or the
+   module defines both stages, with `content=1` when the source calls
+   `layer()` and the declared arguments.
 2. `naga.wasm` — the Rust crate `NagaWasm/` — splits the combined image
    sampler `layer()` uses into a texture and a sampler (naga's SPIR-V
    frontend takes `OpSampledImage` but not a sampled-image global), then

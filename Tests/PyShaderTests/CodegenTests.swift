@@ -158,6 +158,24 @@ struct CodegenTests {
         #expect(words.has(.opVectorTimesScalar))
     }
 
+    @Test("`PI` is there without defining it, and a module's own name still wins")
+    func builtinConstants() throws {
+        // The nearest float to π (0x40490FDB); Swift's own `Float.pi` rounds toward zero.
+        let pi = Float(Double.pi).bitPattern
+        let words = try compileValid("""
+        def main(uv: float2) -> float4:
+            return float4(cos(2.0 * PI * uv.x), 0.0, 0.0, 1.0)
+        """)
+        #expect(words.scalarConstants.contains(pi))
+
+        let own = try compileValid("""
+        PI = 3.0
+        def main(uv: float2) -> float4:
+            return float4(cos(2.0 * PI * uv.x), 0.0, 0.0, 1.0)
+        """)
+        #expect(!own.scalarConstants.contains(pi))
+    }
+
     @Test("module variables: `global` makes a Private variable set before the entry point")
     func moduleVariables() throws {
         let source = """

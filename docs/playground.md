@@ -9,8 +9,6 @@ hide:
 ```pyshader-edit aspect="16:9" height="calc(100vh - 5.6rem)"
 from pyshader import *
 
-PI = 3.14159265
-
 
 def palette(t: float) -> float3:
     return 0.5 + 0.5 * cos(2.0 * PI * (t + float3(0.0, 0.33, 0.67)))
