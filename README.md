@@ -163,7 +163,7 @@ Types, promotion and operator rules in detail: [vector-types.md](vector-types.md
 
 ### Entry point inputs
 
-| parameter | type | fragment target | compute target (NucleantSwiftUI) |
+| parameter | type | fragment target | compute target (NucleantUI) |
 |---|---|---|---|
 | `uv` | `float2` | `vTexCoord` | `frag_coord / resolution`, y-up |
 | `frag_coord` | `float2`/`float4` | `gl_FragCoord` | pixel centre, y-up |
@@ -211,8 +211,8 @@ read with `v.field` — and work anywhere, not just as varyings.
 - [Examples/shadertoy/](Examples/shadertoy/) — four ShaderToy shaders in GLSL
   and PyShader side by side, plus an app that runs each pair next to each
   other. [Its README](Examples/shadertoy/README.md) lists what porting needed.
-- [Examples/NucleantSwiftUIExample/](Examples/NucleantSwiftUIExample/) — a
-  gallery of `.py` shaders and `.py` effects in a NucleantSwiftUI window.
+- [Examples/NucleantUIExample/](Examples/NucleantUIExample/) — a
+  gallery of `.py` shaders and `.py` effects in a NucleantUI window.
 - [Examples/liquid_glass/](Examples/liquid_glass/) — a home screen whose
   app icons are liquid glass, each its own `.shader` effect.
 
@@ -233,7 +233,7 @@ uv run scripts/generate_stub.py   # regenerate after changing the API
 import PyShader
 
 let shader = try PyShader.compile(source)                             // fragment, NucleantVulkan VKShader layout
-let compute = try PyShader.compile(source, target: .nucleantSwiftUI)  // compute, NucleantSwiftUI Shader layout
+let compute = try PyShader.compile(source, target: .nucleantUI)  // compute, NucleantUI Shader layout
 shader.spirv        // [UInt32] for vkCreateShaderModule
 ```
 
@@ -246,12 +246,12 @@ swift run pyshaderc shader.py -o shader.spv [--target compute --content --arg na
 Three targets, same Python: `.fragment(FragmentInterface)` for a fragment stage
 (default: NucleantVulkan's `NucleantShader` layout), `.computeImage(ComputeImageInterface)`
 for a compute stage writing a storage image (NucleantVulkan's `OGLShaderNode`,
-as NucleantSwiftUI drives it), and `.graphics(GraphicsInterface)` for a
+as NucleantUI drives it), and `.graphics(GraphicsInterface)` for a
 vertex + fragment pair in one module (NucleantVulkan's `VertFragShaderNode`);
 `CompiledShader.vertexEntryPoint` names the second entry point. Bindings and
 argument declarations are properties of the interface structs.
 
-In NucleantSwiftUI, `ShaderFunction(pyshader: source)` goes wherever a
+In NucleantUI, `ShaderFunction(pyshader: source)` goes wherever a
 `ShaderFunction` goes — `Shader(...)`, `.shader(_:)`, `arguments:` — and
 `VertexShaderFunction(pyshader: source)` into a `VertexShader(...)`.
 

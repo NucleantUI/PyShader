@@ -12,10 +12,10 @@ struct GlslTests {
         let out = try decompileAndRecompile(words, interface: .shaderToy)
         #expect(out.source.contains("def mainImage("))
         #expect(out.source.contains("def main(frag_coord: float2"))
-        // The hand ports' shape: it runs as a NucleantSwiftUI `Shader` (the compute
+        // The hand ports' shape: it runs as a NucleantUI `Shader` (the compute
         // target), unless it needs derivatives, as cube-lines does.
         if !out.source.contains("fwidth(") && !out.source.contains("dfdx(") && !out.source.contains("dfdy(") {
-            #expect(throws: Never.self) { try PyShader.compile(out.source, target: .computeImage(.nucleantSwiftUI(samplesContent: false))) }
+            #expect(throws: Never.self) { try PyShader.compile(out.source, target: .computeImage(.nucleantUI(samplesContent: false))) }
         }
     }
 
@@ -132,7 +132,7 @@ struct GlslTests {
         // The read of `steps` before the call stays before it.
         #expect(s.contains("before = float(steps)\n    c = shade("))
         #expect(s.contains("def main(frag_coord: float2, time: float, resolution: float2) -> float4:\n    return mainImage("))
-        #expect(throws: Never.self) { try PyShader.compile(s, target: .computeImage(.nucleantSwiftUI(samplesContent: false))) }
+        #expect(throws: Never.self) { try PyShader.compile(s, target: .computeImage(.nucleantUI(samplesContent: false))) }
     }
 
     @Test("unsigned constants above Int32.max and integer hashing")

@@ -206,7 +206,7 @@ struct CodegenTests {
         #expect(privates.count == 3)
         // `K` stays an inlined constant; `py_globals` initializes the rest and each wrapper calls it first.
         #expect(words.has(.opFunctionCall))
-        _ = try compileValid(source, target: .computeImage(.nucleantSwiftUI(samplesContent: false)))
+        _ = try compileValid(source, target: .computeImage(.nucleantUI(samplesContent: false)))
     }
 
     @Test("custom interface")

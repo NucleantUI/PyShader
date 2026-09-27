@@ -4,7 +4,7 @@
 holds ShaderToy shaders as written in `opengl/` and the same shaders in
 PyShader in `pyshader/`, structured function for function so they can be
 read side by side. `App/` runs each pair next to each other in
-NucleantSwiftUI: the GLSL through `ShaderFunction(shaderToy:)`, the Python
+NucleantUI: the GLSL through `ShaderFunction(shaderToy:)`, the Python
 through `ShaderFunction(pyshader:)`. A port is right when the two halves match.
 
 ## What porting needed
@@ -21,7 +21,7 @@ through `ShaderFunction(pyshader:)`. A port is right when the two halves match.
 | `#if` / `#ifdef` | the chosen branch is what gets ported |
 | `iMouse.z > 0.0`, `iMouse.xy` | `mouse_click.x > 0.0`, `mouse` (y-up, as the wrapper flips it) |
 | `fwidth` / `dFdx` | fragment-only, as in GLSL; cube-lines takes an 8-tap `fcos` path without derivatives instead |
-| alpha | ShaderToy ignores the alpha a shader writes; NucleantSwiftUI composites with it, so ports end with `float4(rgb, 1.0)` |
+| alpha | ShaderToy ignores the alpha a shader writes; NucleantUI composites with it, so ports end with `float4(rgb, 1.0)` |
 
 Noticed on the way: `\` line continuation is not accepted — wrap long
 expressions in parentheses; lists cannot be parameters or nest; matrices

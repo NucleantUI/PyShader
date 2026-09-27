@@ -1082,7 +1082,7 @@
   /**
    * A pasted `mainImage` is wrapped in the decompiler's ShaderToy layout
    * (`ShaderToy.wrap` in Swift; its names are the compute target's, so the
-   * result runs as a NucleantSwiftUI `Shader`). Its `#line 1` keeps
+   * result runs as a NucleantUI `Shader`). Its `#line 1` keeps
    * glslang's line numbers those of the pasted text. A source with its own
    * `#version` is compiled as it is, against NucleantVulkan's layout.
    */
@@ -1145,7 +1145,7 @@
   const CONVERT_HELP = [
     "Paste a ShaderToy shader (its mainImage) on the left; the PyShader for it appears on the right.",
     "fragCoord → frag_coord, iResolution → resolution, iTime → time, iTimeDelta → time_delta, iFrame → frame, iMouse.xy → mouse, iMouse.zw → mouse_click.",
-    "Those are the names NucleantSwiftUI's Shader and the previews on this site give main, so the result runs there as it is (unless it uses derivatives).",
+    "Those are the names NucleantUI's Shader and the previews on this site give main, so the result runs there as it is (unless it uses derivatives).",
     "Not translated: iChannel textures, iDate, iSampleRate, the keyboard.",
     "A source with its own #version line is compiled as it is, against NucleantVulkan's fragment layout (uv at location 0; push constants time, resolution, mouse).",
   ];

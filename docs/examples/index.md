@@ -18,7 +18,7 @@ result; move the pointer over the ones that read `mouse`.
 
 -   **[Lambdas & types](lambdas-and-types.md)** — lambdas per argument type, `half`, `uint` hashing
 
-    ```pyshader-preview file="Examples/NucleantSwiftUIExample/Sources/PyShaderSwiftUIExample/Resources/Shaders/06_lambdas.py" height="180"
+    ```pyshader-preview file="Examples/NucleantUIExample/Sources/PyShaderSwiftUIExample/Resources/Shaders/06_lambdas.py" height="180"
     ```
 
 -   **[Module style](module-style.md)** — the stub import, `pyshader.sin`, chained compares, indexing
@@ -36,9 +36,9 @@ result; move the pointer over the ones that read `mouse`.
     ```pyshader-preview file="Examples/compute/effect_ripple.py" height="180"
     ```
 
--   **[SwiftUI gallery](swiftui-gallery.md)** — the seven shaders of the NucleantSwiftUI example app
+-   **[SwiftUI gallery](swiftui-gallery.md)** — the seven shaders of the NucleantUI example app
 
-    ```pyshader-preview file="Examples/NucleantSwiftUIExample/Sources/PyShaderSwiftUIExample/Resources/Shaders/05_raymarch.py" height="180"
+    ```pyshader-preview file="Examples/NucleantUIExample/Sources/PyShaderSwiftUIExample/Resources/Shaders/05_raymarch.py" height="180"
     ```
 
 -   **[ShaderToy ports](shadertoy.md)** — four ShaderToy shaders, GLSL and PyShader side by side

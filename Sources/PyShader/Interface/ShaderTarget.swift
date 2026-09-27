@@ -11,16 +11,16 @@ public enum ShaderTarget: Sendable {
     /// A fragment stage writing a colour attachment (NucleantVulkan's `VKShader`).
     case fragment(FragmentInterface)
     /// A compute stage writing one pixel per invocation into a storage image
-    /// (NucleantVulkan's `OGLShaderNode`, as NucleantSwiftUI's `Shader` view uses it).
+    /// (NucleantVulkan's `OGLShaderNode`, as NucleantUI's `Shader` view uses it).
     case computeImage(ComputeImageInterface)
     /// A vertex stage and a fragment stage in one module, drawing into a colour
-    /// attachment (NucleantVulkan's `VertFragShaderNode`, as NucleantSwiftUI's
+    /// attachment (NucleantVulkan's `VertFragShaderNode`, as NucleantUI's
     /// `VertexShader` view uses it).
     case graphics(GraphicsInterface)
 
     public static let nucleant: ShaderTarget = .fragment(.nucleant)
-    public static let nucleantSwiftUI: ShaderTarget = .computeImage(.nucleantSwiftUI)
-    public static let nucleantSwiftUIGraphics: ShaderTarget = .graphics(.nucleantSwiftUI)
+    public static let nucleantUI: ShaderTarget = .computeImage(.nucleantUI)
+    public static let nucleantUIGraphics: ShaderTarget = .graphics(.nucleantUI)
 
     /// The entry point a single-stage target compiles; the fragment one for `.graphics`.
     var entryPoint: String {
@@ -85,7 +85,7 @@ public enum ShaderArgumentKind: Sendable, Hashable {
     var isArray: Bool { type.isFloatArray }
 }
 
-/// The compute-shader contract of NucleantVulkan's `OGLShaderNode` / NucleantSwiftUI's
+/// The compute-shader contract of NucleantVulkan's `OGLShaderNode` / NucleantUI's
 /// `ShaderPipeline`. Numbers are properties so a variant pipeline can adjust them; the
 /// shape (one storage image, one `Uniforms` block, optional content sampler and
 /// argument buffer) is what the wrapper generates code for.
@@ -172,12 +172,12 @@ public struct ComputeImageInterface: Sendable {
         "mouse_click": .mouseClick,
     ]
 
-    /// NucleantSwiftUI's `Shader` view without content or arguments. Use
-    /// `nucleantSwiftUI(samplesContent:arguments:)` for a `.shader(_:)` effect
+    /// NucleantUI's `Shader` view without content or arguments. Use
+    /// `nucleantUI(samplesContent:arguments:)` for a `.shader(_:)` effect
     /// or a shader with `ShaderArgument`s.
-    public static let nucleantSwiftUI = ComputeImageInterface()
+    public static let nucleantUI = ComputeImageInterface()
 
-    public static func nucleantSwiftUI(
+    public static func nucleantUI(
         samplesContent: Bool,
         arguments: [(name: String, kind: ShaderArgumentKind)] = []
     ) -> ComputeImageInterface {

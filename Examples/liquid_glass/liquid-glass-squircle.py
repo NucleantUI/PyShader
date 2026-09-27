@@ -1,6 +1,6 @@
 """Liquid glass (squircle)
 
-github.com/OverShifted/LiquidGlass (MIT) as a NucleantSwiftUI effect: a
+github.com/OverShifted/LiquidGlass (MIT) as a NucleantUI effect: a
 superellipse pad that magnifies the backdrop toward its centre, blurs and
 grains it a little, and lights the rim with an angular glow. A different
 recipe from liquid-glass.py: no surface normal, the displacement is a

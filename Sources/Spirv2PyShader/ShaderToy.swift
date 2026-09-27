@@ -5,7 +5,7 @@
 //  The layout ShaderToy code is compiled against before it is decompiled.
 //  Its names are the compute target's (`frag_coord` as a float2, `mouse`,
 //  `mouse_click`, `frame`, `time_delta`), so the PyShader that comes back is
-//  what the hand ports look like and runs as a NucleantSwiftUI `Shader`
+//  what the hand ports look like and runs as a NucleantUI `Shader`
 //  and in the docs' previews without edits.
 //
 

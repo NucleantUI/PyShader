@@ -8,7 +8,7 @@
 //
 
 import Foundation
-import NucleantSwiftUI
+import NucleantUI
 
 struct CatalogEntry: Identifiable {
     let id: Int

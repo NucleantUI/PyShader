@@ -1,18 +1,18 @@
 //
 //  PyShaderSwiftUIExample
 //
-//  PyShader inside NucleantSwiftUI, in the shape of NucleantSwiftUI's demo:
+//  PyShader inside NucleantUI, in the shape of NucleantUI's demo:
 //  a "Shaders" gallery of `Shader` views and an "Effects" gallery of
 //  `.shader(_:)` effects over a card, every row a live thumbnail and every
 //  entry opening full screen. The sources are the `.py` files in Resources/.
 //
-//  A shader that fails to compile is reported on stderr by NucleantSwiftUI
+//  A shader that fails to compile is reported on stderr by NucleantUI
 //  ("shader node build ... failed: PyShader: line N: ...") and its rect
 //  stays empty.
 //
 
 import Foundation
-import NucleantSwiftUI
+import NucleantUI
 import PyShader
 
 enum Palette {
@@ -211,7 +211,7 @@ struct GalleryRow<Thumbnail: View> {
 struct RootScreen {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("PyShader × NucleantSwiftUI")
+            Text("PyShader × NucleantUI")
                 .font(.title)
             Text("Shaders written in Python syntax, compiled straight to SPIR-V at runtime. Each entry is a .py file in Resources/ starting with `from pyshader import *`.")
                 .font(.footnote)
@@ -244,7 +244,7 @@ struct StartScreen {
 
 struct ExampleApp: NucleantApp {
     var body: some Scene {
-        WindowGroup("PyShader × NucleantSwiftUI", width: 900, height: 620) {
+        WindowGroup("PyShader × NucleantUI", width: 900, height: 620) {
             NavigationStack("PyShader") {
                 StartScreen()
             }

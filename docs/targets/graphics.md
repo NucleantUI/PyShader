@@ -1,8 +1,8 @@
 # Graphics target
 
-`.graphics(GraphicsInterface)` — `.nucleantSwiftUIGraphics` — compiles one
+`.graphics(GraphicsInterface)` — `.nucleantUIGraphics` — compiles one
 module with two entry points for NucleantVulkan's `VertFragShaderNode`, as
-NucleantSwiftUI's `VertexShader` view drives it. `CompiledShader.entryPoint`
+NucleantUI's `VertexShader` view drives it. `CompiledShader.entryPoint`
 names the fragment stage, `vertexEntryPoint` the vertex stage.
 
 `vertex` returns a `class` whose first field is the `float4` position
@@ -48,7 +48,7 @@ argument buffer at binding 3.
 
 ```swift
 let touches: [(name: String, kind: ShaderArgumentKind)] = [("touches", .floatArray), ("glowSeconds", .float)]
-let shader = try PyShader.compile(source, target: .graphics(.nucleantSwiftUI(arguments: touches)))
+let shader = try PyShader.compile(source, target: .graphics(.nucleantUI(arguments: touches)))
 // shader.vertexEntryPoint == "vertex", shader.entryPoint == "fragment"
 ```
 

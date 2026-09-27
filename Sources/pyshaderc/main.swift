@@ -4,7 +4,7 @@
 //  usage: pyshaderc <input.py> [-o output.spv] [--target fragment|compute|graphics]
 //                   [--content] [--arg name:float|float2|float3|float4|floatArray|float2Array|float3Array|float4Array]...
 //
-//  `--target compute` builds for NucleantSwiftUI's `Shader` view (storage image),
+//  `--target compute` builds for NucleantUI's `Shader` view (storage image),
 //  `--target graphics` for its `VertexShader` view (vertex + fragment, one module);
 //  `--content` adds the sampled content image (`layer()`), `--arg` a ShaderArgument.
 //
@@ -66,8 +66,8 @@ let input = inputs[0]
 let target: ShaderTarget
 switch targetName {
 case "fragment": target = .nucleant
-case "compute": target = .computeImage(.nucleantSwiftUI(samplesContent: samplesContent, arguments: arguments))
-case "graphics": target = .graphics(.nucleantSwiftUI(samplesContent: samplesContent, arguments: arguments))
+case "compute": target = .computeImage(.nucleantUI(samplesContent: samplesContent, arguments: arguments))
+case "graphics": target = .graphics(.nucleantUI(samplesContent: samplesContent, arguments: arguments))
 default: usage()
 }
 

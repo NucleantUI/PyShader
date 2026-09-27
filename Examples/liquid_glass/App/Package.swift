@@ -1,6 +1,6 @@
 // swift-tools-version: 6.2
 //
-// Liquid glass as a NucleantSwiftUI effect: `liquid-glass.py` (the PyShader
+// Liquid glass as a NucleantUI effect: `liquid-glass.py` (the PyShader
 // port of lq.glsl next to it) on rounded rects, labels and buttons, each a
 // `.shader(_:backdrop: true)` pad over a busy backdrop.
 //
@@ -19,14 +19,14 @@ let package = Package(
         .iOS(.v17),
     ],
     dependencies: [
-        .package(path: "../../../../NucleantSwiftUI"),
+        .package(path: "../../../../NucleantUI"),
         .package(path: "../../.."),
     ],
     targets: [
         .executableTarget(
             name: "LiquidGlassExample",
             dependencies: [
-                .product(name: "NucleantSwiftUI", package: "NucleantSwiftUI"),
+                .product(name: "NucleantUI", package: "NucleantUI"),
                 .product(name: "PyShader", package: "PyShader"),
             ]
         ),

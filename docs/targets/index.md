@@ -7,8 +7,8 @@ differs: which execution model, which inputs, and where they are bound.
 | Target | Swift | Stage | Host |
 |---|---|---|---|
 | [Fragment](fragment.md) | `.fragment(FragmentInterface)`, default `.nucleant` | one fragment stage over a fullscreen quad, push constants | NucleantVulkan's `NucleantShader` |
-| [Compute](compute.md) | `.computeImage(ComputeImageInterface)`, `.nucleantSwiftUI` | one compute invocation per pixel writing a storage image, a `Uniforms` block, optional content sampler and argument buffer | NucleantVulkan's `OGLShaderNode`, as NucleantSwiftUI's `Shader` / `.shader(_:)` drive it |
-| [Graphics](graphics.md) | `.graphics(GraphicsInterface)`, `.nucleantSwiftUIGraphics` | a vertex and a fragment stage in one module, no vertex buffers | NucleantVulkan's `VertFragShaderNode`, as NucleantSwiftUI's `VertexShader` drives it |
+| [Compute](compute.md) | `.computeImage(ComputeImageInterface)`, `.nucleantUI` | one compute invocation per pixel writing a storage image, a `Uniforms` block, optional content sampler and argument buffer | NucleantVulkan's `OGLShaderNode`, as NucleantUI's `Shader` / `.shader(_:)` drive it |
+| [Graphics](graphics.md) | `.graphics(GraphicsInterface)`, `.nucleantUIGraphics` | a vertex and a fragment stage in one module, no vertex buffers | NucleantVulkan's `VertFragShaderNode`, as NucleantUI's `VertexShader` drives it |
 
 `main` (or `vertex` / `fragment` for graphics) takes what it needs by
 parameter name. Names not in the target's table are an error that lists what
@@ -42,6 +42,6 @@ constant members with offsets and the output location;
 bindings, local size and argument declarations:
 
 ```swift
-let effect = ComputeImageInterface.nucleantSwiftUI(samplesContent: true, arguments: [("tint", .float4)])
+let effect = ComputeImageInterface.nucleantUI(samplesContent: true, arguments: [("tint", .float4)])
 let shader = try PyShader.compile(source, target: .computeImage(effect))
 ```

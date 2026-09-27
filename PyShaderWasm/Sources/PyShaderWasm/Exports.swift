@@ -90,9 +90,9 @@ private func target(from options: String) throws -> ShaderTarget {
         }
     }
     switch name {
-    case "compute": return .computeImage(.nucleantSwiftUI(samplesContent: samplesContent, arguments: arguments))
+    case "compute": return .computeImage(.nucleantUI(samplesContent: samplesContent, arguments: arguments))
     case "fragment": return .nucleant
-    case "graphics": return .graphics(.nucleantSwiftUI(arguments: arguments))
+    case "graphics": return .graphics(.nucleantUI(arguments: arguments))
     default: throw PyShaderError("unknown target `\(name)`")
     }
 }

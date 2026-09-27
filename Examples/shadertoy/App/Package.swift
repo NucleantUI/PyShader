@@ -21,14 +21,14 @@ let package = Package(
         .iOS(.v17),
     ],
     dependencies: [
-        .package(path: "../../../../NucleantSwiftUI"),
+        .package(path: "../../../../NucleantUI"),
         .package(path: "../../.."),
     ],
     targets: [
         .executableTarget(
             name: "ShadertoyExample",
             dependencies: [
-                .product(name: "NucleantSwiftUI", package: "NucleantSwiftUI"),
+                .product(name: "NucleantUI", package: "NucleantUI"),
                 .product(name: "PyShader", package: "PyShader"),
             ]
         ),

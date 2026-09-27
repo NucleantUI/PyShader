@@ -227,5 +227,5 @@ def main(frag_coord: float2, resolution: float2, time: float) -> float4:
 
     # Final color grading and contrast boost
     cf = pow(cf * 2.5, float4(1.1))
-    # The original leaves alpha at 0 (ShaderToy ignores it); NucleantSwiftUI composites with it.
+    # The original leaves alpha at 0 (ShaderToy ignores it); NucleantUI composites with it.
     return float4(cf.rgb, 1.0)

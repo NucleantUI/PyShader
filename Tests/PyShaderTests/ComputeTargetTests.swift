@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import PyShader
 
-@Suite("Compute target (NucleantSwiftUI)")
+@Suite("Compute target (NucleantUI)")
 struct ComputeTargetTests {
     static let plasma = """
     def main(uv: float2, time: float, resolution: float2, mouse: float2, frame: int, pixel: int2) -> float4:
@@ -12,7 +12,7 @@ struct ComputeTargetTests {
 
     @Test("GLCompute entry point with the OGLShaderNode layout")
     func layout() throws {
-        let words = try compileValid(Self.plasma, target: .nucleantSwiftUI)
+        let words = try compileValid(Self.plasma, target: .nucleantUI)
         let entry = words.instructions.first { $0.opcode == SpirvOp.opEntryPoint.rawValue }!
         #expect(entry.operands[0] == SpirvExecutionModel.glCompute.rawValue)
         let mode = words.instructions.first { $0.opcode == SpirvOp.opExecutionMode.rawValue }!
@@ -37,7 +37,7 @@ struct ComputeTargetTests {
         def main(uv: float2) -> float4:
             c = layer(uv)
             return float4(c.rgb * 0.5, c.a)
-        """, target: .computeImage(.nucleantSwiftUI(samplesContent: true)))
+        """, target: .computeImage(.nucleantUI(samplesContent: true)))
         #expect(words.count(.opImageSampleExplicitLod) == 1)
         #expect(words.has(.opTypeSampledImage))
         let bindings = words.instructions
@@ -49,7 +49,7 @@ struct ComputeTargetTests {
     @Test("layer() without a content image is an error")
     func noContent() {
         do {
-            _ = try PyShader.compile("def main(uv: float2) -> float4:\n    return layer(uv)\n", target: .nucleantSwiftUI)
+            _ = try PyShader.compile("def main(uv: float2) -> float4:\n    return layer(uv)\n", target: .nucleantUI)
             Issue.record("expected an error")
         } catch let error as PyShaderError {
             #expect(error.message.contains("content image"))
@@ -61,7 +61,7 @@ struct ComputeTargetTests {
 
     @Test("shader arguments: scalars, vectors and float arrays")
     func arguments() throws {
-        let interface = ComputeImageInterface.nucleantSwiftUI(samplesContent: false, arguments: [
+        let interface = ComputeImageInterface.nucleantUI(samplesContent: false, arguments: [
             ("gain", .float), ("tint", .float4), ("mins", .floatArray), ("size", .float2),
         ])
         let words = try compileValid("""
@@ -81,7 +81,7 @@ struct ComputeTargetTests {
 
     @Test("vector arrays: an element is a vector, zero when empty, and the annotation must match")
     func vectorArrays() throws {
-        let interface = ComputeImageInterface.nucleantSwiftUI(samplesContent: false, arguments: [
+        let interface = ComputeImageInterface.nucleantUI(samplesContent: false, arguments: [
             ("points", .float2Array), ("glows", .float4Array),
         ])
         let words = try compileValid("""
@@ -111,7 +111,7 @@ struct ComputeTargetTests {
 
     @Test("FloatArray cannot be stored or passed on")
     func floatArrayMisuse() {
-        let interface = ComputeImageInterface.nucleantSwiftUI(samplesContent: false, arguments: [("a", .floatArray)])
+        let interface = ComputeImageInterface.nucleantUI(samplesContent: false, arguments: [("a", .floatArray)])
         do {
             _ = try PyShader.compile("def main(a: FloatArray) -> float4:\n    b = a\n    return float4(b[0])\n", target: .computeImage(interface))
             Issue.record("expected an error")
@@ -124,7 +124,7 @@ struct ComputeTargetTests {
 
     @Test("every compute example compiles and validates", arguments: try computeExampleSources())
     func example(_ example: (name: String, source: String)) throws {
-        let interface = ComputeImageInterface.nucleantSwiftUI(samplesContent: true, arguments: [
+        let interface = ComputeImageInterface.nucleantUI(samplesContent: true, arguments: [
             ("gain", .float), ("tint", .float4), ("mins", .floatArray),
         ])
         try compileValid(example.source, target: .computeImage(interface))

@@ -2,7 +2,7 @@
 
 `opengl/` holds four ShaderToy shaders as written; `pyshader/` holds the same
 four in PyShader, structured function-for-function so they can be read side by
-side. `App/` runs each pair next to each other in NucleantSwiftUI:
+side. `App/` runs each pair next to each other in NucleantUI:
 
 ```sh
 cd App && swift run                                   # gallery
@@ -24,7 +24,7 @@ Porting these found three real gaps, all now implemented:
 
 Things that were expressible already but read differently:
 
-- **Alpha.** ShaderToy ignores the alpha a shader writes; NucleantSwiftUI
+- **Alpha.** ShaderToy ignores the alpha a shader writes; NucleantUI
   composites with it. star-and-galaxy never touches `.a` and so came out fully
   transparent — in both languages. Ports end with `float4(rgb, 1.0)`; the app
   forces `fragColor.a = 1.0` after `mainImage` on the GLSL side.

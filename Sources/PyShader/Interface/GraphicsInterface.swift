@@ -3,7 +3,7 @@
 //  PyShader
 //
 //  The vertex + fragment contract of NucleantVulkan's `VertFragShaderNode` /
-//  NucleantSwiftUI's `VertexShader` view. One Python module defines both
+//  NucleantUI's `VertexShader` view. One Python module defines both
 //  stages and compiles to one SPIR-V module with two entry points:
 //
 //      class Varyings:
@@ -133,12 +133,12 @@ public struct GraphicsInterface: Sendable {
         "mouse_click": .mouseClick,
     ]
 
-    /// NucleantSwiftUI's `VertexShader` view without content or arguments.
-    /// Use `nucleantSwiftUI(samplesContent:arguments:)` for a `.shader(_:)`
+    /// NucleantUI's `VertexShader` view without content or arguments.
+    /// Use `nucleantUI(samplesContent:arguments:)` for a `.shader(_:)`
     /// effect or a shader with `ShaderArgument`s.
-    public static let nucleantSwiftUI = GraphicsInterface()
+    public static let nucleantUI = GraphicsInterface()
 
-    public static func nucleantSwiftUI(
+    public static func nucleantUI(
         samplesContent: Bool = false,
         arguments: [(name: String, kind: ShaderArgumentKind)]
     ) -> GraphicsInterface {

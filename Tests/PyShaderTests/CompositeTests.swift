@@ -72,7 +72,7 @@ struct CompositeTests {
     func fragmentOnly() {
         for call in ["fwidth(uv.x)", "dfdx(uv.x)"] {
             do {
-                _ = try PyShader.compile("def main(uv: float2) -> float4:\n    return float4(\(call))\n", target: .nucleantSwiftUI)
+                _ = try PyShader.compile("def main(uv: float2) -> float4:\n    return float4(\(call))\n", target: .nucleantUI)
                 Issue.record("expected an error for \(call)")
             } catch let error as PyShaderError {
                 #expect(error.message.contains("fragment target"))
@@ -87,17 +87,17 @@ struct CompositeTests {
 
     @Test("every ShaderToy port compiles for the compute target", arguments: try shadertoyPorts())
     func shadertoy(_ port: (name: String, source: String)) throws {
-        try compileValid(port.source, target: .nucleantSwiftUI)
+        try compileValid(port.source, target: .nucleantUI)
     }
 
     @Test("the liquid glass effects compile with their arguments and the backdrop")
     func liquidGlass() throws {
         let dir = examplesDirectory.appendingPathComponent("liquid_glass")
         let optical = try String(contentsOf: dir.appendingPathComponent("liquid-glass.py"), encoding: .utf8)
-        try compileValid(optical, target: .computeImage(.nucleantSwiftUI(
+        try compileValid(optical, target: .computeImage(.nucleantUI(
             samplesContent: true, arguments: [("radius", .float), ("thickness", .float), ("inset", .float)])))
         let squircle = try String(contentsOf: dir.appendingPathComponent("liquid-glass-squircle.py"), encoding: .utf8)
-        try compileValid(squircle, target: .computeImage(.nucleantSwiftUI(
+        try compileValid(squircle, target: .computeImage(.nucleantUI(
             samplesContent: true, arguments: [("power", .float), ("blur", .float), ("noise", .float)])))
     }
 }

@@ -1,4 +1,4 @@
-"""A `.shader(_:)` effect for NucleantSwiftUI: reads the view through layer() and displaces it."""
+"""A `.shader(_:)` effect for NucleantUI: reads the view through layer() and displaces it."""
 
 
 def main(uv: float2, time: float, resolution: float2) -> float4:

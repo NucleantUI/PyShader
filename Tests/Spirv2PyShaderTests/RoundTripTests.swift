@@ -123,7 +123,7 @@ struct RoundTripTests {
 
     @Test("a compute module is refused with a clear message")
     func compute() throws {
-        let words = try PyShader.compile("def main(uv: float2) -> float4:\n    return float4(uv, 0.0, 1.0)\n", target: .nucleantSwiftUI).spirv
+        let words = try PyShader.compile("def main(uv: float2) -> float4:\n    return float4(uv, 0.0, 1.0)\n", target: .nucleantUI).spirv
         #expect(throws: Spirv2PyShaderError.self) { try Spirv2PyShader.decompile(words) }
         do {
             _ = try Spirv2PyShader.decompile(words)

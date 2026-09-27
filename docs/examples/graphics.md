@@ -2,7 +2,7 @@
 
 The [graphics target](../targets/graphics.md): one module with a `vertex`
 and a `fragment` entry point, a `class` for the varyings, and a `FloatArray`
-argument holding x, y, seed and start time per glow. NucleantSwiftUI's
+argument holding x, y, seed and start time per glow. NucleantUI's
 `VertexShader` draws it with `vertices: 6, instances: touches.count` — one
 quad per touch. It is the glow from the Kivy Baby Lights app.
 

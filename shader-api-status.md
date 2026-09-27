@@ -66,7 +66,7 @@ Every type name (`float`, `int`, `uint`, `half`, `short`, `ushort`, `bool`,
 ### Entry point
 `def main(...) -> float4`. Parameters are matched by name against the target.
 
-Compute target (`.nucleantSwiftUI`, NucleantSwiftUI's `Shader` / `.shader(_:)`):
+Compute target (`.nucleantUI`, NucleantUI's `Shader` / `.shader(_:)`):
 
 | parameter      | type     | source |
 |----------------|----------|--------|
@@ -114,5 +114,5 @@ Output is `fragColor` at `location 0`. Returning nothing from `main` forwards
 | packing: `pack_half2x16` ... | GLSL.std.450 pack/unpack |
 | `while ... else`, `for ... else`, `match`, comprehensions, f-strings | not shader-shaped |
 | Python stub module (`pyshader/__init__.pyi`) | for editor type checking of shader files |
-| running the output on a GPU in tests | `Examples/NucleantSwiftUIExample` does it by hand; unit tests use `spirv-val` and `spirv-opt` |
+| running the output on a GPU in tests | `Examples/NucleantUIExample` does it by hand; unit tests use `spirv-val` and `spirv-opt` |
 | constant folding beyond literals | drivers do it; `spirv-opt --target-env=vulkan1.0 -O` if wanted offline |

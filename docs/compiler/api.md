@@ -40,15 +40,15 @@ public enum ShaderTarget {
     case graphics(GraphicsInterface)
 
     static let nucleant: ShaderTarget                 // .fragment(.nucleant)
-    static let nucleantSwiftUI: ShaderTarget          // .computeImage(.nucleantSwiftUI)
-    static let nucleantSwiftUIGraphics: ShaderTarget  // .graphics(.nucleantSwiftUI)
+    static let nucleantUI: ShaderTarget          // .computeImage(.nucleantUI)
+    static let nucleantUIGraphics: ShaderTarget  // .graphics(.nucleantUI)
 }
 
 public enum ShaderArgumentKind { case float, float2, float3, float4, floatArray }
 ```
 
-`ComputeImageInterface.nucleantSwiftUI(samplesContent:arguments:)` and
-`GraphicsInterface.nucleantSwiftUI(arguments:)` build the NucleantSwiftUI
+`ComputeImageInterface.nucleantUI(samplesContent:arguments:)` and
+`GraphicsInterface.nucleantUI(arguments:)` build the NucleantUI
 layouts with a content sampler and an argument buffer; the structs' other
 properties (`entryPoint`, `localSize`, `descriptorSet`, bindings, `inputs`)
 are public for other pipelines. See [Targets](../targets/index.md).
@@ -70,7 +70,7 @@ swift run pyshaderc Examples/graphics/instanced_glow.py --target graphics --arg 
 spirv-val --target-env vulkan1.0 Examples/plasma.spv
 ```
 
-## In NucleantSwiftUI
+## In NucleantUI
 
 | where | what |
 |---|---|

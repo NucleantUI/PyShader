@@ -1,8 +1,8 @@
 # Compute target
 
-`.computeImage(ComputeImageInterface)` — `.nucleantSwiftUI` — compiles
+`.computeImage(ComputeImageInterface)` — `.nucleantUI` — compiles
 `main` as a compute stage that writes one pixel per invocation into an
-`rgba8` storage image. It is what NucleantSwiftUI's `Shader` view and
+`rgba8` storage image. It is what NucleantUI's `Shader` view and
 `.shader(_:)` effect run, and what the previews on this site run.
 
 | parameter      | type     | source |
@@ -47,14 +47,14 @@ page shows the whole gallery.
 ## Arguments
 
 ```swift
-let interface = ComputeImageInterface.nucleantSwiftUI(
+let interface = ComputeImageInterface.nucleantUI(
     samplesContent: false,
     arguments: [("gain", .float), ("tint", .float4), ("mins", .floatArray)]
 )
 let shader = try PyShader.compile(source, target: .computeImage(interface))
 ```
 
-In NucleantSwiftUI the same declaration comes from the `ShaderArgument`s
+In NucleantUI the same declaration comes from the `ShaderArgument`s
 handed to `Shader(_:arguments:)`; `main` takes them by name:
 
 ```pyshader file="Examples/compute/arguments.py" args="gain:float=1.5, tint:float4=1 0.6 0.2 1, mins:floatArray=0.2 0.5 0.9 0.4"

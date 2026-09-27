@@ -27,7 +27,7 @@ let source = """
     """
 
 let shader = try PyShader.compile(source)                             // fragment stage, NucleantVulkan's layout
-let compute = try PyShader.compile(source, target: .nucleantSwiftUI)  // compute stage, NucleantSwiftUI's layout
+let compute = try PyShader.compile(source, target: .nucleantUI)  // compute stage, NucleantUI's layout
 
 shader.spirv        // [UInt32] for vkCreateShaderModule
 shader.bytes        // the same words as Data, e.g. for a .spv file
@@ -38,12 +38,12 @@ Source embedded in a Swift multi-line string may be indented as a block; the
 compiler strips the shared indentation. Errors are `PyShaderError` values
 whose description reads `line 7: …` with the 1-based Python line.
 
-## In NucleantSwiftUI
+## In NucleantUI
 
 `ShaderFunction(pyshader:)` goes wherever a `ShaderFunction` goes:
 
 ```swift
-import NucleantSwiftUI
+import NucleantUI
 import PyShader
 
 Shader(ShaderFunction(pyshader: source))                    // a full-view shader
@@ -68,8 +68,8 @@ swift run pyshaderc glow.py --target graphics --arg touches:floatArray --arg glo
 | flag | meaning |
 |---|---|
 | `--target fragment` (default) | NucleantVulkan's `NucleantShader` fragment layout |
-| `--target compute` | NucleantSwiftUI's `Shader` view: a compute stage writing a storage image |
-| `--target graphics` | NucleantSwiftUI's `VertexShader` view: vertex + fragment in one module |
+| `--target compute` | NucleantUI's `Shader` view: a compute stage writing a storage image |
+| `--target graphics` | NucleantUI's `VertexShader` view: vertex + fragment in one module |
 | `--content` | the shader may call `layer()` (compute) |
 | `--arg name:kind` | a `ShaderArgument`; kinds are `float` `float2` `float3` `float4` `floatArray` |
 

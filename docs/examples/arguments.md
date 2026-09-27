@@ -22,5 +22,5 @@ Shader(ShaderFunction(pyshader: source), arguments: [
 
 An effect that takes its colour and strength as arguments:
 
-```pyshader file="Examples/NucleantSwiftUIExample/Sources/PyShaderSwiftUIExample/Resources/Effects/08_tint.py" args="tint:float4=1 0.5 0 1, strength:float=0.45"
+```pyshader file="Examples/NucleantUIExample/Sources/PyShaderSwiftUIExample/Resources/Effects/08_tint.py" args="tint:float4=1 0.5 0 1, strength:float=0.45"
 ```

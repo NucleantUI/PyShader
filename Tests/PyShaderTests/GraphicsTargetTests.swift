@@ -36,7 +36,7 @@ struct GraphicsTargetTests {
 
     @Test("one module, two entry points, shared uniforms and argument buffer")
     func layout() throws {
-        let shader = try PyShader.compile(Self.glow, target: .graphics(.nucleantSwiftUI(arguments: Self.touches)))
+        let shader = try PyShader.compile(Self.glow, target: .graphics(.nucleantUI(arguments: Self.touches)))
         #expect(shader.entryPoint == "fragment")
         #expect(shader.vertexEntryPoint == "vertex")
         if let result = try Tools.validate(shader) {
@@ -81,7 +81,7 @@ struct GraphicsTargetTests {
 
         def fragment(uv: float2, time: float) -> float4:
             return layer(uv + float2(sin(uv.y * 20.0 + time) * 0.02, 0.0))
-        """, target: .graphics(.nucleantSwiftUI(samplesContent: true, arguments: [])))
+        """, target: .graphics(.nucleantUI(samplesContent: true, arguments: [])))
         #expect(words.count(.opImageSampleExplicitLod) == 1)
         #expect(words.has(.opTypeSampledImage))
         let bindings = words.instructions
@@ -103,7 +103,7 @@ struct GraphicsTargetTests {
 
             def fragment(uv: float2) -> float4:
                 return layer(uv)
-            """, target: .nucleantSwiftUIGraphics)
+            """, target: .nucleantUIGraphics)
             Issue.record("expected an error")
         } catch let error as PyShaderError {
             #expect(error.message.contains("content image"))
@@ -124,7 +124,7 @@ struct GraphicsTargetTests {
 
         def fragment(kind: int, uv: float2, frag_coord: float2, pixel: int2, front_facing: bool, resolution: float2, mouse: float2) -> float4:
             return float4(uv, float(kind + pixel.x), 1.0) if front_facing else float4(frag_coord / resolution, mouse)
-        """, target: .nucleantSwiftUIGraphics)
+        """, target: .nucleantUIGraphics)
         let flats = words.instructions.filter { $0.opcode == SpirvOp.opDecorate.rawValue && $0.operands[1] == SpirvDecoration.flat.rawValue }
         #expect(flats.count == 1)
         let builtIns = words.instructions
@@ -150,7 +150,7 @@ struct GraphicsTargetTests {
 
         def fragment(uv: float2) -> float4:
             return float4(uv, 0.0, 1.0)
-        """, target: .nucleantSwiftUIGraphics)
+        """, target: .nucleantUIGraphics)
         // Two outputs at 0 and 1, one input at 1, fragColor at 0.
         let locations = words.instructions
             .filter { $0.opcode == SpirvOp.opDecorate.rawValue && $0.operands[1] == SpirvDecoration.location.rawValue }
@@ -170,7 +170,7 @@ struct GraphicsTargetTests {
 
         def fragment(uv: float2, frag_coord: float2) -> float4:
             return float4(uv, frag_coord)
-        """, target: .nucleantSwiftUIGraphics)
+        """, target: .nucleantUIGraphics)
         // `uv` comes from the varying; `frag_coord` alone pulls in gl_FragCoord.
         let builtIns = words.instructions
             .filter { $0.opcode == SpirvOp.opDecorate.rawValue && $0.operands[1] == SpirvDecoration.builtIn.rawValue }
@@ -198,12 +198,12 @@ struct GraphicsTargetTests {
 
         def fragment(t: float) -> float4:
             return float4(t)
-        """, target: .nucleantSwiftUIGraphics)
+        """, target: .nucleantUIGraphics)
     }
 
     @Test("every graphics example compiles and validates", arguments: try graphicsExampleSources())
     func example(_ example: (name: String, source: String)) throws {
-        let interface = GraphicsInterface.nucleantSwiftUI(arguments: [
+        let interface = GraphicsInterface.nucleantUI(arguments: [
             ("touches", .floatArray), ("glowSeconds", .float),
         ])
         try compileValid(example.source, target: .graphics(interface))
@@ -213,7 +213,7 @@ struct GraphicsTargetTests {
     func errors() {
         func compileError(_ source: String, contains needle: String, line: Int? = nil, arguments: [(name: String, kind: ShaderArgumentKind)] = [], sourceLocation: SourceLocation = #_sourceLocation) {
             do {
-                _ = try PyShader.compile(source, target: .graphics(.nucleantSwiftUI(arguments: arguments)))
+                _ = try PyShader.compile(source, target: .graphics(.nucleantUI(arguments: arguments)))
                 Issue.record("expected an error containing \"\(needle)\"", sourceLocation: sourceLocation)
             } catch let error as PyShaderError {
                 #expect(error.message.contains(needle), "got: \(error)", sourceLocation: sourceLocation)

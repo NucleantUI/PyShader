@@ -10,7 +10,7 @@
 //
 
 import Foundation
-import NucleantSwiftUI
+import NucleantUI
 import PyShader
 
 enum Glass {
@@ -350,7 +350,7 @@ struct HomeScreen {
 
 struct LiquidGlassApp: NucleantApp {
     var body: some Scene {
-        WindowGroup("Liquid glass — PyShader × NucleantSwiftUI", width: 900, height: 620) {
+        WindowGroup("Liquid glass — PyShader × NucleantUI", width: 900, height: 620) {
             HomeScreen()
         }
     }

@@ -1,7 +1,7 @@
 """Liquid glass
 
 "Optically correct" liquid glass (shadertoy.com/view/wccSDf) as a
-NucleantSwiftUI effect: the view's own rect is the glass pad, and layer(uv)
+NucleantUI effect: the view's own rect is the glass pad, and layer(uv)
 — the view plus its backdrop — is what the pad refracts. Only the glass part
 of the original; its half-strips background and mouse-driven pill are gone.
 

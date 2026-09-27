@@ -2,7 +2,7 @@
 
 make sure it only does the glass part and not the covering 50%
 
-# Write NucleantSwiftUI demo
+# Write NucleantUI demo
 
 make demo showing off rounded rects, labels, buttons each with liquid glass as effect 
 

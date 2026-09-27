@@ -16,7 +16,7 @@ the browser. It compiles the `mainImage` against `FragmentInterface.shaderToy`
 (`ShaderToy.wrap(glsl)` gives the same GLSL; `spirv2py --shadertoy` reads
 the result), whose names are the compute target's — `frag_coord` as a
 `float2`, `resolution`, `time`, `time_delta`, `frame`, `mouse`,
-`mouse_click` — so the PyShader runs as a NucleantSwiftUI `Shader` as it is.
+`mouse_click` — so the PyShader runs as a NucleantUI `Shader` as it is.
 
 ```swift
 import Spirv2PyShader

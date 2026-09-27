@@ -16,7 +16,7 @@ Functions return several values as tuples (`-> tuple[float, float3]`, then
 
 `main` takes its inputs by parameter name. Fragment target (NucleantVulkan
 VKShader): uv, color, frag_coord, front_facing, time, resolution, mouse.
-Compute target (NucleantSwiftUI Shader / .shader): uv, frag_coord, pixel,
+Compute target (NucleantUI Shader / .shader): uv, frag_coord, pixel,
 time, time_delta, frame, resolution, mouse, mouse_click, plus every
 ShaderArgument by name.
 
@@ -8852,7 +8852,7 @@ PI: float = 3.141592653589793
 # Host resources
 def layer(p: float2) -> float4:
     """The view the effect is applied to, sampled at `p` in [0, 1] (compute
-    target with content, i.e. NucleantSwiftUI's `.shader(_:)`). `layer(uv)`
+    target with content, i.e. NucleantUI's `.shader(_:)`). `layer(uv)`
     is the pixel under the current one."""
     ...
 

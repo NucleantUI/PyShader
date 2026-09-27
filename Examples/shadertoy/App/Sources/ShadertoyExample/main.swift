@@ -6,7 +6,7 @@
 //
 
 import Foundation
-import NucleantSwiftUI
+import NucleantUI
 import PyShader
 
 enum Palette {
@@ -38,7 +38,7 @@ enum Catalog {
     static let openglDirectory = root.appendingPathComponent("opengl")
     static let pyshaderDirectory = root.appendingPathComponent("pyshader")
 
-    /// Lines put in front of a GLSL source so it compiles under NucleantSwiftUI's
+    /// Lines put in front of a GLSL source so it compiles under NucleantUI's
     /// compute wrapper: `fwidth` does not exist in a compute shader, and a zero
     /// width sends cube-lines down the same 8-tap `fcos` path the port uses.
     static let glslPrelude: [String: String] = [
@@ -62,7 +62,7 @@ enum Catalog {
                     file: name,
                     name: title,
                     blurb: blurb,
-                    // ShaderToy ignores the alpha a shader writes; NucleantSwiftUI composites with
+                    // ShaderToy ignores the alpha a shader writes; NucleantUI composites with
                     // it, so force it opaque after mainImage — which is all `shaderToy:` adds anyway.
                     glsl: ShaderFunction(
                         functions: (glslPrelude[name] ?? "") + glsl,

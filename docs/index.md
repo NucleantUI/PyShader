@@ -26,8 +26,8 @@ draws it. Move the pointer over a preview that reads `mouse`. The
 
 PyShader is a Swift package. Its output is a SPIR-V module for one of three
 pipeline shapes: a **fragment** stage, a **compute** stage writing an image,
-or a **vertex + fragment** pair — the shapes NucleantVulkan and NucleantSwiftUI
-use. In NucleantSwiftUI a shader is one line:
+or a **vertex + fragment** pair — the shapes NucleantVulkan and NucleantUI
+use. In NucleantUI a shader is one line:
 
 ```swift
 Shader(ShaderFunction(pyshader: source))

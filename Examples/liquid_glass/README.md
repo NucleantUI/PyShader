@@ -24,7 +24,7 @@ cd Examples/liquid_glass/App && swift run
 ## How an effect gets a backdrop
 
 `.shader(_:)` gives a shader the view's own pixels, and glass needs what is
-*under* the view. `backdrop: true` (new in NucleantSwiftUI with this
+*under* the view. `backdrop: true` (new in NucleantUI with this
 example) seeds the effect's texture with everything painted earlier under
 the view's rect, so `layer(uv)` is backdrop plus view.
 

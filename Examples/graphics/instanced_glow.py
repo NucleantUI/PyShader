@@ -1,4 +1,4 @@
-"""One quad per touch, from a float array — NucleantSwiftUI's VertexShader.
+"""One quad per touch, from a float array — NucleantUI's VertexShader.
 
     pyshaderc instanced_glow.py --target graphics --arg touches:floatArray --arg glowSeconds:float
 
