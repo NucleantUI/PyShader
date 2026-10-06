@@ -229,3 +229,6 @@ Package.resolved
 # Docs: built site and the wasm modules scripts/build_wasm.py produces
 site/
 mkdocs-pyshader/mkdocs_pyshader/assets/*.wasm
+
+# macOS
+.DS_Store
