@@ -41,6 +41,16 @@ public enum ShaderTarget: Sendable {
         }
     }
 
+    /// Whether the content image is stored top-down, so `layer(p)` reads it
+    /// at `(p.x, 1 - p.y)`.
+    var contentIsTopDown: Bool {
+        switch self {
+        case .fragment: return false
+        case .computeImage(let i): return i.contentIsTopDown
+        case .graphics(let i): return i.contentIsTopDown
+        }
+    }
+
     /// Where the shader-argument buffer is bound, when the target has one.
     var argumentsBinding: (set: Int, binding: Int)? {
         switch self {
@@ -130,6 +140,10 @@ public struct ComputeImageInterface: Sendable {
     public var uniformBinding: Int
     /// `sampler2D` of the view the effect is applied to; enables `layer(uv)`.
     public var contentBinding: Int?
+    /// The content image is stored top-down — a ThorVG canvas's own image —
+    /// rather than y-up like shader space, so `layer(p)` reads it at
+    /// `(p.x, 1 - p.y)` and sees it upright.
+    public var contentIsTopDown: Bool
     /// `readonly buffer { float data[]; }` holding the shader arguments, with an
     /// (offset, count) float pair per argument at the front. Needed when `arguments` is non-empty.
     public var argumentsBinding: Int?
@@ -145,6 +159,7 @@ public struct ComputeImageInterface: Sendable {
         outputBinding: Int = 0,
         uniformBinding: Int = 1,
         contentBinding: Int? = nil,
+        contentIsTopDown: Bool = false,
         argumentsBinding: Int? = nil,
         arguments: [(name: String, kind: ShaderArgumentKind)] = [],
         inputs: [String: Input] = ComputeImageInterface.defaultInputs
@@ -155,6 +170,7 @@ public struct ComputeImageInterface: Sendable {
         self.outputBinding = outputBinding
         self.uniformBinding = uniformBinding
         self.contentBinding = contentBinding
+        self.contentIsTopDown = contentIsTopDown
         self.argumentsBinding = argumentsBinding
         self.arguments = arguments
         self.inputs = inputs
@@ -179,10 +195,12 @@ public struct ComputeImageInterface: Sendable {
 
     public static func nucleantUI(
         samplesContent: Bool,
+        contentIsTopDown: Bool = false,
         arguments: [(name: String, kind: ShaderArgumentKind)] = []
     ) -> ComputeImageInterface {
         ComputeImageInterface(
             contentBinding: samplesContent ? 2 : nil,
+            contentIsTopDown: contentIsTopDown,
             argumentsBinding: arguments.isEmpty ? nil : 3,
             arguments: arguments
         )

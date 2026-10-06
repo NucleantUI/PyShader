@@ -538,6 +538,13 @@ final class ShaderCompiler {
             builder.decorate(v, .binding, [UInt32(binding.binding)])
             contentImage = v
         }
+        var coordinate = coordinate
+        if program.target.contentIsTopDown {
+            // `(p.x, 1 - p.y)`: a top-down image read upright in y-up shader space.
+            let px = e.swizzle(coordinate, [0]), py = e.swizzle(coordinate, [1])
+            let fy = e.emit(.opFSub, type: .float, [e.builder.constant(float: 1), py.id])
+            coordinate = e.emit(.opCompositeConstruct, type: .float(2), [px.id, fy.id])
+        }
         let sampled = e.load(contentImage!, type: .sampledImage(.sampled2D))
         let lod = e.builder.constant(float: 0)
         return e.emit(.opImageSampleExplicitLod, type: .float(4), [sampled.id, coordinate.id, SpirvImageOperands.lod.rawValue, lod])

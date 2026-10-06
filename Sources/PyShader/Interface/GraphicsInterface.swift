@@ -90,6 +90,9 @@ public struct GraphicsInterface: Sendable {
     /// as in the compute target. Set for a `.shader(_:)` effect whose
     /// function is a vertex + fragment pair.
     public var contentBinding: Int?
+    /// The content image is stored top-down, so `layer(p)` reads it at
+    /// `(p.x, 1 - p.y)` — as in the compute target.
+    public var contentIsTopDown: Bool
     /// `readonly buffer { float data[]; }` holding the shader arguments, as the compute
     /// target has it. Needed when `arguments` is non-empty.
     public var argumentsBinding: Int?
@@ -104,6 +107,7 @@ public struct GraphicsInterface: Sendable {
         descriptorSet: Int = 0,
         uniformBinding: Int = 1,
         contentBinding: Int? = nil,
+        contentIsTopDown: Bool = false,
         argumentsBinding: Int? = nil,
         arguments: [(name: String, kind: ShaderArgumentKind)] = [],
         inputs: [String: Input] = GraphicsInterface.defaultInputs
@@ -113,6 +117,7 @@ public struct GraphicsInterface: Sendable {
         self.descriptorSet = descriptorSet
         self.uniformBinding = uniformBinding
         self.contentBinding = contentBinding
+        self.contentIsTopDown = contentIsTopDown
         self.argumentsBinding = argumentsBinding
         self.arguments = arguments
         self.inputs = inputs
@@ -140,10 +145,12 @@ public struct GraphicsInterface: Sendable {
 
     public static func nucleantUI(
         samplesContent: Bool = false,
+        contentIsTopDown: Bool = false,
         arguments: [(name: String, kind: ShaderArgumentKind)]
     ) -> GraphicsInterface {
         GraphicsInterface(
             contentBinding: samplesContent ? 2 : nil,
+            contentIsTopDown: contentIsTopDown,
             argumentsBinding: arguments.isEmpty ? nil : 3,
             arguments: arguments
         )
