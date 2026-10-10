@@ -339,10 +339,12 @@ final class ShaderProgram {
         case .name(let n):
             if let t = ShaderType.named(n.id) { return t }
             if let t = ShaderType.argumentArray(named: n.id) { return t }
+            if let t = ShaderType.texture(named: n.id) { return t }
             throw PyShaderError("unknown type `\(n.id)`", line: line)
         case .attribute(let a):
             if let t = ShaderType.named(a.attr) { return t }
             if let t = ShaderType.argumentArray(named: a.attr) { return t }
+            if let t = ShaderType.texture(named: a.attr) { return t }
             throw PyShaderError("unknown type `\(a.attr)`", line: line)
         case .constant(let c):
             if case .string(let s) = c.value, let t = ShaderType.named(s) { return t }

@@ -21,6 +21,8 @@ final class ShaderCompiler {
     /// Compute-target resources, created on first use.
     private var contentImage: SpirvId?
     private var argumentBuffer: SpirvId?
+    /// The named textures' sampler globals, by name, created on first use.
+    private var textureImages: [String: SpirvId] = [:]
 
     /// The module variables as `Private` globals, and the function that
     /// initializes them, which every entry-point wrapper calls first.
@@ -283,6 +285,10 @@ final class ShaderCompiler {
                     if let value = try self.argumentValue(interface.arguments[index], at: index, e, line: line) {
                         args.append(value.id)
                     }
+                } else if interface.textures.contains(where: { $0.name == param.name }) {
+                    // A handle, not a value: the sampler is a module-level
+                    // uniform the body reaches by name, as an array argument is.
+                    continue
                 } else {
                     throw PyShaderError("`\(param.name)` is not a shader input", line: line)
                 }
@@ -374,6 +380,8 @@ final class ShaderCompiler {
                     if let value = try self.argumentValue(interface.arguments[index], at: index, e, line: vertexLine) {
                         args.append(value.id)
                     }
+                } else if interface.textures.contains(where: { $0.name == param.name }) {
+                    continue   // a handle: the sampler is a module-level uniform
                 } else {
                     throw PyShaderError("`\(param.name)` is not a shader input", line: vertexLine)
                 }
@@ -465,6 +473,8 @@ final class ShaderCompiler {
                     if let value = try self.argumentValue(interface.arguments[index], at: index, e, line: fragmentLine) {
                         args.append(value.id)
                     }
+                } else if interface.textures.contains(where: { $0.name == param.name }) {
+                    continue   // a handle: the sampler is a module-level uniform
                 } else {
                     throw PyShaderError("`\(param.name)` is not a shader input", line: fragmentLine)
                 }
@@ -548,6 +558,67 @@ final class ShaderCompiler {
         let sampled = e.load(contentImage!, type: .sampledImage(.sampled2D))
         let lod = e.builder.constant(float: 0)
         return e.emit(.opImageSampleExplicitLod, type: .float(4), [sampled.id, coordinate.id, SpirvImageOperands.lod.rawValue, lod])
+    }
+
+    /// The texture this target declares under `name`, if any.
+    func texture(named name: String) -> ShaderTexture? {
+        program.target.textures.first { $0.name == name }
+    }
+
+    /// `a(p)`: one named texture, sampled with an explicit LOD like
+    /// `layer(p)` — compute has no derivatives, and a vertex stage has none
+    /// either.
+    func sampleTexture(
+        _ texture: ShaderTexture,
+        at coordinate: Value,
+        from e: FunctionEmitter,
+        line: Int
+    ) throws -> Value {
+        let image = textureGlobal(texture)
+        var coordinate = coordinate
+        if texture.isTopDown {
+            let px = e.swizzle(coordinate, [0]), py = e.swizzle(coordinate, [1])
+            let fy = e.emit(.opFSub, type: .float, [e.builder.constant(float: 1), py.id])
+            coordinate = e.emit(.opCompositeConstruct, type: .float(2), [px.id, fy.id])
+        }
+        let sampled = e.load(image, type: .sampledImage(.sampled2D))
+        let lod = e.builder.constant(float: 0)
+        return e.emit(
+            .opImageSampleExplicitLod, type: .float(4),
+            [sampled.id, coordinate.id, SpirvImageOperands.lod.rawValue, lod]
+        )
+    }
+
+    /// `a_size`: the texture's pixel size as an `int2`. A sampled image has
+    /// to be unwrapped (`OpImage`) and queried at a level
+    /// (`OpImageQuerySizeLod`), unlike the output storage image.
+    func textureSize(_ texture: ShaderTexture, from e: FunctionEmitter, line: Int) throws -> Value {
+        e.builder.require(.imageQuery)
+        let sampled = e.load(textureGlobal(texture), type: .sampledImage(.sampled2D))
+        let image = e.emit(.opImage, type: .image(.sampled2D), [sampled.id])
+        return e.emit(.opImageQuerySizeLod, type: .int(2), [image.id, e.builder.constant(int: 0)])
+    }
+
+    /// `name` read as `<texture>_size`, when it is one.
+    func textureSize(named name: String, from e: FunctionEmitter, line: Int) throws -> Value? {
+        guard name.hasSuffix("_size"),
+              let texture = self.texture(named: String(name.dropLast(5)))
+        else { return nil }
+        return try textureSize(texture, from: e, line: line)
+    }
+
+    /// The `sampler2D` global for `texture`, made once per module.
+    private func textureGlobal(_ texture: ShaderTexture) -> SpirvId {
+        if let existing = textureImages[texture.name] { return existing }
+        let v = builder.globalVariable(
+            type: .sampledImage(.sampled2D),
+            storage: .uniformConstant,
+            name: "uTex_" + texture.name
+        )
+        builder.decorate(v, .descriptorSet, [UInt32(program.target.textureSet)])
+        builder.decorate(v, .binding, [UInt32(texture.binding)])
+        textureImages[texture.name] = v
+        return v
     }
 
     /// `return` without a value in `main` forwards the incoming `color` when it is a parameter.

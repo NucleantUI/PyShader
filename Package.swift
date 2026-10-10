@@ -14,10 +14,6 @@ let package = Package(
             targets: ["PyShader"]
         ),
         .library(
-            name: "SpirvCore",
-            targets: ["SpirvCore"]
-        ),
-        .library(
             name: "Spirv2PyShader",
             targets: ["Spirv2PyShader"]
         ),
@@ -32,24 +28,23 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/Py-Swift/PySwiftAST.git", branch: "master"),
+        .package(url: "https://github.com/NucleantUI/SpirvCore.git", branch: "master"),
     ],
     targets: [
-        // The SPIR-V opcode tables, instruction encoding and a word-stream
-        // reader, shared by the compiler and the decompiler.
-        .target(
-            name: "SpirvCore"
-        ),
         .target(
             name: "PyShader",
             dependencies: [
-                "SpirvCore",
+                .product(name: "SpirvCore", package: "SpirvCore"),
                 .product(name: "PySwiftAST", package: "PySwiftAST"),
             ]
         ),
         // SPIR-V (a fragment stage) back to PyShader source.
         .target(
             name: "Spirv2PyShader",
-            dependencies: ["SpirvCore", "PyShader"]
+            dependencies: [
+                .product(name: "SpirvCore", package: "SpirvCore"),
+                "PyShader",
+            ]
         ),
         .executableTarget(
             name: "pyshaderc",

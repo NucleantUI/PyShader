@@ -311,10 +311,11 @@ swift test                          # every example through spirv-val; ShaderToy
 ./scripts/validate_examples.sh
 ```
 
-Targets: `SpirvCore` is the SPIR-V opcode and enum tables, the instruction
-encoding and a word-stream reader, shared by both directions; `PyShader` is
-the compiler; `Spirv2PyShader` the decompiler; `pyshaderc` and `spirv2py`
-their command lines.
+Targets: `PyShader` is the compiler; `Spirv2PyShader` the decompiler;
+`pyshaderc` and `spirv2py` their command lines. The SPIR-V opcode and enum
+tables, the instruction encoding and a word-stream reader, shared by both
+directions, live in [SpirvCore](https://github.com/NucleantUI/SpirvCore), a
+package of its own.
 
 Compiler sources: `Frontend/` validates the module and collects definitions,
 `Codegen/` lowers statements and expressions, `Builtins/` is the function

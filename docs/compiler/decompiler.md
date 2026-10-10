@@ -82,7 +82,7 @@ interface's parameter names, and helpers, tuple returns, lists and lambdas
 
 ## How it works
 
-`SpirvCore` reads the word stream; `ModuleIndex` turns types into
+[`SpirvCore`](https://github.com/NucleantUI/SpirvCore) reads the word stream; `ModuleIndex` turns types into
 `ShaderType`s and splits functions into blocks. `ModuleAnalysis` decides
 the module-wide things: which functions the entry point reaches, which
 pointer parameters are read back by a caller (out parameters), which
