@@ -232,3 +232,6 @@ mkdocs-pyshader/mkdocs_pyshader/assets/*.wasm
 
 # macOS
 .DS_Store
+
+# Swift compiler diagnostics
+*.dia
