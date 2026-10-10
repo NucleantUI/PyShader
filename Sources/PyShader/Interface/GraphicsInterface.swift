@@ -98,6 +98,10 @@ public struct GraphicsInterface: Sendable {
     public var argumentsBinding: Int?
     /// Values handed in from the host, in buffer order. Each may be a parameter of either stage.
     public var arguments: [(name: String, kind: ShaderArgumentKind)]
+    /// `sampler2D` per named texture, at its own binding, readable from
+    /// either stage — `a(uv)` and `a_size` in the body, as in the compute
+    /// target.
+    public var textures: [ShaderTexture]
     /// Parameter name -> source. Names that are also arguments, or varyings, are an error.
     public var inputs: [String: Input]
 
@@ -110,6 +114,7 @@ public struct GraphicsInterface: Sendable {
         contentIsTopDown: Bool = false,
         argumentsBinding: Int? = nil,
         arguments: [(name: String, kind: ShaderArgumentKind)] = [],
+        textures: [ShaderTexture] = [],
         inputs: [String: Input] = GraphicsInterface.defaultInputs
     ) {
         self.vertexEntryPoint = vertexEntryPoint
@@ -120,6 +125,7 @@ public struct GraphicsInterface: Sendable {
         self.contentIsTopDown = contentIsTopDown
         self.argumentsBinding = argumentsBinding
         self.arguments = arguments
+        self.textures = textures
         self.inputs = inputs
     }
 
@@ -146,18 +152,22 @@ public struct GraphicsInterface: Sendable {
     public static func nucleantUI(
         samplesContent: Bool = false,
         contentIsTopDown: Bool = false,
-        arguments: [(name: String, kind: ShaderArgumentKind)]
+        arguments: [(name: String, kind: ShaderArgumentKind)],
+        textures: [ShaderTexture] = []
     ) -> GraphicsInterface {
         GraphicsInterface(
             contentBinding: samplesContent ? 2 : nil,
             contentIsTopDown: contentIsTopDown,
             argumentsBinding: arguments.isEmpty ? nil : 3,
-            arguments: arguments
+            arguments: arguments,
+            textures: textures
         )
     }
 
+    /// Textures are in both stages' lists: the image is one module-level
+    /// uniform, and either entry point may declare it.
     func parameterNames(vertex: Bool) -> [String] {
         inputs.filter { vertex ? $0.value.inVertex : $0.value.inFragment }.keys.sorted()
-            + arguments.map(\.name)
+            + arguments.map(\.name) + textures.map(\.name)
     }
 }

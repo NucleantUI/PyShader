@@ -96,6 +96,9 @@ extension FunctionEmitter {
             return load(local.ptr, type: local.type)
         }
         if let handle = lookupHandle(n.id) {
+            if case .sampledImage = handle {
+                throw PyShaderError("`\(n.id)` is a texture; sample it as `\(n.id)(uv)`", line: n.lineno)
+            }
             return Value(id: 0, type: handle)
         }
         if let v = try lookupVariable(n.id, line: n.lineno) {
@@ -114,6 +117,13 @@ extension FunctionEmitter {
         }
         if let constant = BuiltinConstants.value(named: n.id) {
             return Value(id: builder.constant(float: constant), type: .float)
+        }
+        // `a_size` — the pixel size of the texture called `a`.
+        if let size = try compiler.textureSize(named: n.id, from: self, line: n.lineno) {
+            return size
+        }
+        if compiler.texture(named: n.id) != nil {
+            throw PyShaderError("`\(n.id)` is a texture; sample it as `\(n.id)(uv)`", line: n.lineno)
         }
         throw PyShaderError("`\(n.id)` is not defined", line: n.lineno)
     }
@@ -859,6 +869,13 @@ extension FunctionEmitter {
         }
         if let lambda = program.lambdas[name] {
             return try compiler.callLambda(lambda, args: args, from: self, line: c.lineno)
+        }
+        if let texture = compiler.texture(named: name) {
+            guard args.count == 1 else {
+                throw PyShaderError("`\(name)` is a texture: sample it with one `float2`, got \(args.count) argument(s)", line: c.lineno)
+            }
+            let p = try coerce(args[0], to: .float(2), line: c.lineno)
+            return try compiler.sampleTexture(texture, at: p, from: self, line: c.lineno)
         }
         if let v = try callBuiltin(name, args, line: c.lineno) {
             return v

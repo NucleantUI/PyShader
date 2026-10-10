@@ -109,6 +109,12 @@ final class FunctionEmitter {
                 handles[p.name] = p.type
                 continue
             }
+            // A texture parameter names a module-level sampler; there is no
+            // value to copy in, and SPIR-V cannot pass one as a parameter.
+            if case .sampledImage = p.type {
+                handles[p.name] = p.type
+                continue
+            }
             let pid = builder.allocate()
             paramIds.append((pid, p.type))
             let v = declareLocal(p.name, type: p.type)

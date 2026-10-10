@@ -51,6 +51,24 @@ public enum ShaderTarget: Sendable {
         }
     }
 
+    /// The named images the shader may sample, in binding order.
+    var textures: [ShaderTexture] {
+        switch self {
+        case .fragment: return []
+        case .computeImage(let i): return i.textures
+        case .graphics(let i): return i.textures
+        }
+    }
+
+    /// The descriptor set every texture of this target is bound in.
+    var textureSet: Int {
+        switch self {
+        case .fragment: return 0
+        case .computeImage(let i): return i.descriptorSet
+        case .graphics(let i): return i.descriptorSet
+        }
+    }
+
     /// Where the shader-argument buffer is bound, when the target has one.
     var argumentsBinding: (set: Int, binding: Int)? {
         switch self {
@@ -58,6 +76,31 @@ public enum ShaderTarget: Sendable {
         case .computeImage(let i): return i.argumentsBinding.map { (i.descriptorSet, $0) }
         case .graphics(let i): return i.argumentsBinding.map { (i.descriptorSet, $0) }
         }
+    }
+}
+
+/// One named image the shader samples, besides the content image `layer()`
+/// reads.
+///
+/// In the Python module it is a parameter of the entry point and a callable:
+/// a texture called `a` is sampled as `a(uv)` and measured as `a_size` (its
+/// pixel size, `int2`). Declaring it as a parameter is how the module says it
+/// wants it; the image itself is a module-level uniform, like an array
+/// argument, so nothing is passed at the call.
+public struct ShaderTexture: Sendable, Hashable {
+    public let name: String
+    /// Where the host binds it — 4 and up in NucleantUI's layout (0 output,
+    /// 1 uniforms, 2 content, 3 arguments).
+    public let binding: Int
+    /// The image is stored top-down rather than y-up like shader space, so
+    /// `a(p)` reads it at `(p.x, 1 - p.y)` and sees it upright. A
+    /// `RenderTexture`, like a ThorVG canvas's own image, is top-down.
+    public let isTopDown: Bool
+
+    public init(name: String, binding: Int, isTopDown: Bool = true) {
+        self.name = name
+        self.binding = binding
+        self.isTopDown = isTopDown
     }
 }
 
@@ -149,6 +192,10 @@ public struct ComputeImageInterface: Sendable {
     public var argumentsBinding: Int?
     /// Values handed in from the host, in buffer order. Each becomes a `main` parameter.
     public var arguments: [(name: String, kind: ShaderArgumentKind)]
+    /// `sampler2D` per named texture, at its own binding — `a(uv)` and
+    /// `a_size` in the body. Names that are also arguments or inputs are an
+    /// error.
+    public var textures: [ShaderTexture]
     /// Parameter name -> source. Names that are also arguments are an error.
     public var inputs: [String: Input]
 
@@ -162,6 +209,7 @@ public struct ComputeImageInterface: Sendable {
         contentIsTopDown: Bool = false,
         argumentsBinding: Int? = nil,
         arguments: [(name: String, kind: ShaderArgumentKind)] = [],
+        textures: [ShaderTexture] = [],
         inputs: [String: Input] = ComputeImageInterface.defaultInputs
     ) {
         self.entryPoint = entryPoint
@@ -173,6 +221,7 @@ public struct ComputeImageInterface: Sendable {
         self.contentIsTopDown = contentIsTopDown
         self.argumentsBinding = argumentsBinding
         self.arguments = arguments
+        self.textures = textures
         self.inputs = inputs
     }
 
@@ -196,18 +245,20 @@ public struct ComputeImageInterface: Sendable {
     public static func nucleantUI(
         samplesContent: Bool,
         contentIsTopDown: Bool = false,
-        arguments: [(name: String, kind: ShaderArgumentKind)] = []
+        arguments: [(name: String, kind: ShaderArgumentKind)] = [],
+        textures: [ShaderTexture] = []
     ) -> ComputeImageInterface {
         ComputeImageInterface(
             contentBinding: samplesContent ? 2 : nil,
             contentIsTopDown: contentIsTopDown,
             argumentsBinding: arguments.isEmpty ? nil : 3,
-            arguments: arguments
+            arguments: arguments,
+            textures: textures
         )
     }
 
     public var parameterNames: [String] {
-        inputs.keys.sorted() + arguments.map(\.name)
+        inputs.keys.sorted() + arguments.map(\.name) + textures.map(\.name)
     }
 }
 
@@ -247,6 +298,7 @@ struct EntrySignature {
             var types: [String: ShaderType] = [:]
             for (name, input) in i.inputs { types[name] = input.type }
             try addArguments(i.arguments, to: &types)
+            try addTextures(i.textures, to: &types)
             let entry = EntrySignature(
                 entryPoint: i.entryPoint, outputType: .float(4),
                 parameterTypes: types, parameterNames: i.parameterNames, forwardsColor: true
@@ -261,6 +313,8 @@ struct EntrySignature {
             }
             try addArguments(i.arguments, to: &vertexTypes)
             try addArguments(i.arguments, to: &fragmentTypes)
+            try addTextures(i.textures, to: &vertexTypes)
+            try addTextures(i.textures, to: &fragmentTypes)
             return [
                 i.vertexEntryPoint: EntrySignature(
                     entryPoint: i.vertexEntryPoint, outputType: nil,
@@ -271,6 +325,18 @@ struct EntrySignature {
                     parameterTypes: fragmentTypes, parameterNames: i.parameterNames(vertex: false), forwardsColor: true
                 ),
             ]
+        }
+    }
+
+    /// A texture parameter is a handle, not a value: the image is a
+    /// module-level uniform the wrapper never passes, exactly as an array
+    /// argument is.
+    private static func addTextures(_ textures: [ShaderTexture], to types: inout [String: ShaderType]) throws {
+        for texture in textures {
+            if types[texture.name] != nil {
+                throw PyShaderError("texture `\(texture.name)` clashes with a built-in input or argument name")
+            }
+            types[texture.name] = .sampledImage(.sampled2D)
         }
     }
 

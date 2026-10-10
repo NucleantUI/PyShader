@@ -186,6 +186,13 @@ public indirect enum ShaderType: Hashable, Sendable, CustomStringConvertible {
         argumentArrayNames.first { $0.name == name }.map { .floatArray(argument: -1, element: $0.element) }
     }
 
+    /// The Python-facing name of a named texture's type: `Texture`, as
+    /// `FloatArray` names an array argument's. Both are host resources the
+    /// module names rather than values it is handed.
+    public static func texture(named name: String) -> ShaderType? {
+        name == "Texture" ? .sampledImage(.sampled2D) : nil
+    }
+
     public var isFloat: Bool { scalarKind?.isFloat ?? false }
     public var isInt: Bool { scalarKind?.isInt ?? false }
     public var isBool: Bool { scalarKind?.isBool ?? false }
