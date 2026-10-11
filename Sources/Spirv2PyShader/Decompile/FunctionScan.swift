@@ -10,17 +10,6 @@
 import PyShader
 import SpirvCore
 
-/// Whether an instruction has a result id (and a result type in operand 0).
-func hasResult(_ op: SpirvOp) -> Bool {
-    switch op {
-    case .opStore, .opCopyMemory, .opBranch, .opBranchConditional, .opSwitch, .opReturn, .opReturnValue, .opKill,
-         .opUnreachable, .opLoopMerge, .opSelectionMerge, .opLabel, .opFunctionEnd, .opImageWrite, .opNop, .opLine, .opNoLine:
-        return false
-    default:
-        return true
-    }
-}
-
 /// The operands of an instruction that are ids of values or pointers (not
 /// the result type, the result, literals, or the callee of a call).
 func valueOperands(_ inst: Instruction) -> [SpirvId] {
@@ -54,7 +43,7 @@ func valueOperands(_ inst: Instruction) -> [SpirvId] {
          .opBranch, .opFunctionEnd, .opNop, .opLine, .opNoLine, .opUndef:
         return []
     default:
-        return hasResult(op) ? Array(ops.dropFirst(2)) : ops
+        return op.hasResultType ? Array(ops.dropFirst(2)) : ops
     }
 }
 
@@ -88,7 +77,7 @@ struct FunctionScan {
 
         for inst in function.allInstructions {
             guard let op = inst.op else { continue }
-            if hasResult(op), inst.operands.count >= 2 {
+            if op.hasResultType, inst.operands.count >= 2 {
                 defs[inst.operands[1]] = inst
                 if let t = module.types[inst.operands[0]] { resultTypes[inst.operands[1]] = t }
             }

@@ -1,5 +1,6 @@
 import Testing
 import PyShader
+import SpirvCore
 @testable import Spirv2PyShader
 
 /// PyShader -> SPIR-V -> PyShader -> SPIR-V: the decompiled source must be
@@ -130,6 +131,43 @@ struct RoundTripTests {
         } catch let error as Spirv2PyShaderError {
             #expect(error.message.contains("fragment"))
         }
+    }
+
+    @Test("the refusal names every stage SpirvCore knows, and the number of one it doesn't")
+    func stageNames() throws {
+        let compute = try PyShader.compile("def main(uv: float2) -> float4:\n    return float4(uv, 0.0, 1.0)\n", target: .nucleantUI).spirv
+        // The compute module with its entry point relabelled as another stage.
+        func refusal(model: UInt32) throws -> String? {
+            var words = compute
+            var i = 5
+            while words[i] & 0xFFFF != UInt32(SpirvOp.opEntryPoint.rawValue) { i += Int(words[i] >> 16) }
+            words[i + 1] = model
+            do {
+                _ = try Spirv2PyShader.decompile(words)
+            } catch let error as Spirv2PyShaderError {
+                return error.message
+            }
+            return nil
+        }
+        #expect(try refusal(model: SpirvExecutionModel.glCompute.rawValue)?.hasSuffix("(module has: compute)") == true)
+        #expect(try refusal(model: SpirvExecutionModel.vertex.rawValue)?.hasSuffix("(module has: vertex)") == true)
+        #expect(try refusal(model: SpirvExecutionModel.geometry.rawValue)?.hasSuffix("(module has: geometry)") == true)
+        #expect(try refusal(model: SpirvExecutionModel.taskEXT.rawValue)?.hasSuffix("(module has: taskEXT)") == true)
+        #expect(try refusal(model: 4242)?.hasSuffix("(module has: execution model 4242)") == true)
+    }
+
+    @Test("an instruction without a result is refused by name, not read as a value", arguments: [
+        (op: SpirvOp.opDemoteToHelperInvocation, operands: 0), (.opEmitVertex, 0), (.opMemoryBarrier, 2), (.opControlBarrier, 3),
+    ])
+    func noResult(_ instruction: (op: SpirvOp, operands: Int)) throws {
+        var words = try PyShader.compile("def main(uv: float2) -> float4:\n    return float4(uv, 0.0, 1.0)\n").spirv
+        // At the top of the first function's body.
+        var i = 5
+        while words[i] & 0xFFFF != UInt32(SpirvOp.opLabel.rawValue) { i += Int(words[i] >> 16) }
+        i += Int(words[i] >> 16)
+        words.insert(contentsOf: SpirvInstruction(instruction.op, Array(repeating: 1, count: instruction.operands)).words, at: i)
+        let error = #expect(throws: Spirv2PyShaderError.self) { try Spirv2PyShader.decompile(words) }
+        #expect(error?.message.contains("\(instruction.op) is not supported") == true, "\(error?.message ?? "")")
     }
 
     @Test("bytes decompile like words")

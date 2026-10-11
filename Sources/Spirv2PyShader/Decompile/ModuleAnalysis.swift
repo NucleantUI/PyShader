@@ -229,7 +229,7 @@ final class ModuleAnalysis {
             let scan = scan(id)
             visit(scan.function.functionType)
             for inst in scan.function.allInstructions {
-                guard let op = inst.op, hasResult(op), let t = module.types[inst.operands[0]] else { continue }
+                guard let op = inst.op, op.hasResultType, let t = module.types[inst.operands[0]] else { continue }
                 visit(t)
             }
         }
@@ -246,6 +246,7 @@ func modelName(_ model: UInt32) -> String {
     case .vertex: return "vertex"
     case .fragment: return "fragment"
     case .glCompute: return "compute"
+    case let other?: return "\(other)"
     case nil: return "execution model \(model)"
     }
 }

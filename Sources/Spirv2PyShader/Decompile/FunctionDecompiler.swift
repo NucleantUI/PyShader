@@ -750,7 +750,7 @@ final class FunctionDecompiler {
             break
 
         default:
-            guard hasResult(op) else { throw error("\(op) is not supported") }
+            guard op.hasResultType else { throw error("\(op) is not supported") }
             let id = inst.operands[1]
             guard let t = module.types[inst.operands[0]] else { throw error("%\(id) has a type PyShader cannot express") }
             if absorbedExtracts[id] != nil { return }
