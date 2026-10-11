@@ -448,7 +448,7 @@ final class FunctionEmitter {
         case .functionDef(let d):
             throw PyShaderError("nested functions are not supported; define `\(d.name)` at module level", line: d.lineno)
         case .classDef(let c):
-            throw PyShaderError("classes are not supported in shader code yet", line: c.lineno)
+            throw PyShaderError("nested classes are not supported; define `\(c.name)` at module level", line: c.lineno)
         case .importStmt(let i):
             throw PyShaderError("imports are not allowed inside functions", line: i.lineno)
         case .importFrom(let i):

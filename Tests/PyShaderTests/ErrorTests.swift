@@ -57,6 +57,8 @@ struct ErrorTests {
     @Test func classes() {
         compileError("class Foo:\n    pass\ndef main(uv: float2) -> float4:\n    return float4(1.0)\n", contains: "at least one field", line: 1)
         compileError("class Foo(Bar):\n    x: float\ndef main(uv: float2) -> float4:\n    return float4(1.0)\n", contains: "base classes", line: 1)
+        // Classes work at module level; only one inside a function is refused, and the message says where it goes.
+        compileError("def main(uv: float2) -> float4:\n    class Foo:\n        x: float\n    return float4(1.0)\n", contains: "define `Foo` at module level", line: 2)
     }
 
     @Test func imports() {
