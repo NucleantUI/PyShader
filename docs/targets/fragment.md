@@ -31,8 +31,12 @@ def main(color: float4, uv: float2):
 
 ## Fragment-only builtins
 
-`dfdx` / `dfdy` / `fwidth` and `discard()` exist only here, as in GLSL: a
-compute stage has no derivatives.
+`dfdx` / `dfdy` / `fwidth` and `discard()` exist only here. A compute stage
+has no derivatives, as in GLSL, and the [graphics](graphics.md) target's
+fragment stage does not offer them yet.
+
+This target has no textures: named [textures](compute.md#textures) are a
+compute and graphics feature.
 
 ## Your own layout
 

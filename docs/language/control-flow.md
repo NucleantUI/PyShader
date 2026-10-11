@@ -17,9 +17,10 @@ while x >= 0.0:             # float-stepped loops
 `break`, `continue`, `pass` and early `return` work anywhere, nested loops
 included. Every path of a function with a return type must return a value.
 
-There is no `for x in xs` over a list yet — index with `range(len(xs))` —
-and no `while … else`, `for … else`, `match`, comprehensions or f-strings:
-those are not shader-shaped.
+There is no `for x in xs` over a list yet; index with `range(len(xs))`.
+`match` is not supported yet either; use `if` / `elif`. A `match` on ints
+would map onto `OpSwitch`. There is no `while … else`, `for … else`,
+comprehension or f-string: those are not shader-shaped.
 
 Lowering: `if` becomes `OpSelectionMerge` + `OpBranchConditional`; loops
 become `OpLoopMerge` with a header, body and continue block; `break` and

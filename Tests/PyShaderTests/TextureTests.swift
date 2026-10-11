@@ -50,6 +50,21 @@ struct TextureTests {
         #expect(bindings(words) == [0, 1, 3, 4, 5])
     }
 
+    /// The example in the README's "Textures" and docs/targets/compute.md.
+    @Test("the documented texture example compiles")
+    func documentedExample() throws {
+        let words = try compileValid("""
+        def main(uv: float2, blend: float, a: Texture, b: Texture) -> float4:
+            s = float2(a_size)                     # pixel size, int2
+            return mix(a(uv), b(uv + float2(1.0 / s.x, 0.0)), blend)
+        """, target: Self.interface(
+            textures: [ShaderTexture(name: "a", binding: 4), ShaderTexture(name: "b", binding: 5)],
+            arguments: [("blend", .float)]
+        ))
+        #expect(words.count(.opImageSampleExplicitLod) == 2)
+        #expect(words.count(.opImageQuerySizeLod) == 1)
+    }
+
     @Test("a texture reads alongside layer()")
     func withContent() throws {
         let words = try compileValid("""

@@ -63,8 +63,12 @@ declared slot. Module constants may be tuples (`MISS = (False, -1.0, float3(0.0)
 `FloatArray` and `Float2Array`…`Float4Array` are the host-provided arrays: a
 `.floatArray` (`.float2Array` …) `ShaderArgument` handed to `main` on the
 compute and graphics targets — `a[i]` (a scalar or vector) and `len(a)` only,
-not storable or passable. There are no structs or textures beyond `layer()` yet
-(see `shader-api-status.md`).
+not storable or passable.
+
+Classes are structs: annotated fields only, constructed positionally or by
+keyword, read with `v.field`, and usable anywhere a value is (locals,
+parameters, returns, lists). A vertex stage returns one. Named textures are
+sampled as `a(uv)`; see `shader-api-status.md`.
 
 ## Declaring variables
 

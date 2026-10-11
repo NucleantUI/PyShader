@@ -1,10 +1,13 @@
 # Shader API status
 
-What the compiler accepts today, and what is still to do. All builtins map to
-GLSL.std.450 or core SPIR-V ops; Metal spellings are accepted as aliases.
-Integer arguments to float functions are promoted (`sin(1)` works).
-Scalars broadcast against vectors where GLSL allows it (`min(v, 0.5)`,
-`clamp(v, 0.0, 1.0)`, `pow(v, 2.0)`, `mix(a, b, 0.5)`, `step(0.5, v)`).
+What the compiler accepts today, and what is still to do. What could be added
+next, and the SPIR-V each item needs, is in [expand-api.md](expand-api.md).
+
+All builtins map to GLSL.std.450 or core SPIR-V ops; Metal spellings are
+accepted as aliases. Integer arguments to float functions are promoted
+(`sin(1)` works). Scalars broadcast against vectors where GLSL allows it:
+`min(v, 0.5)`, `clamp(v, 0.0, 1.0)`, `pow(v, 2.0)`, `mix(a, b, 0.5)`,
+`step(0.5, v)`.
 
 ## Implemented
 
@@ -31,40 +34,56 @@ Scalars broadcast against vectors where GLSL allows it (`min(v, 0.5)`,
 `any` `all` (on `boolN` from vector comparisons)
 
 ### Derivatives (fragment target only)
-`dfdx` / `dFdx` `dfdy` / `dFdy` `fwidth` — an error in the compute target,
-as in GLSL compute.
+`dfdx` / `dFdx`, `dfdy` / `dFdy`, `fwidth`. They are an error in the compute
+target, as in GLSL compute, and also in the graphics target's fragment stage
+(see Not yet).
 
 ### Fragment control (fragment target only)
-`discard()` -> `OpKill`
+`discard()` → `OpKill`
 
-### Host resources (compute target)
-`layer(p: float2) -> float4` — the view under a `.shader(_:)` effect, sampled
-with explicit LOD 0 (binding 2). `FloatArray` / `Float2Array` … `Float4Array`
-arguments: `a[i]` (clamped, zero when empty), `len(a)`.
+### Host resources (compute and graphics targets)
+- `layer(p: float2) -> float4`: the view under a `.shader(_:)` effect, sampled
+  with explicit LOD 0 (binding 2).
+- `FloatArray` / `Float2Array` … `Float4Array` arguments: `a[i]` (clamped,
+  zero when empty) and `len(a)`.
+
+### Textures (compute and graphics targets)
+A `main` parameter typed `Texture`, which the target declares as a
+`ShaderTexture` (binding 4 and up in NucleantUI's layout).
+- `a(p)` samples it at explicit LOD 0, flipped for a top-down image.
+- `a_size` is its size in pixels (`int2`).
 
 ### Conversions / constructors
 Every type name (`float`, `int`, `uint`, `half`, `short`, `ushort`, `bool`,
 `floatN`, `intN`, ...) — see `vector-types.md`.
 
 ### Language
-- global `def` functions with annotated parameters; return annotation
-  optional (`None` when omitted, except `main`)
-- module-level constants (`PI = 3.14`, `RED = float3(1, 0, 0)`), inlined at
-  each use
-- lambdas bound to a module-level name (`sq = lambda x: x * x`), instantiated
-  once per distinct argument-type signature; immediately-invoked lambdas
-- `if` / `elif` / `else`, `while`, `for i in range(stop | start, stop | start, stop, step)`,
-  `break`, `continue`, `return`, `pass`
-- tuple unpacking (`x, y = uv`, `a, b = 1, 2`), chained assignment, swaps
-- tuple returns (`-> tuple[float, float3]`), list literals / `[x] * n` as
-  fixed-size arrays with dynamic indexing, `len()` on any composite
-- matrices `float2x2` … `float4x4` with Metal/GLSL product semantics
-- `from pyshader import *` / `import pyshader` are accepted and ignored so
-  editors can be pointed at a stub; `pyshader.sin(x)` works
-- docstrings
+- Global `def` functions with annotated parameters. The return annotation is
+  optional: `None` when omitted, except for `main`.
+- Module-level constants (`PI = 3.14`, `RED = float3(1, 0, 0)`), inlined at
+  each use. `PI` is built in.
+- Module variables: a module-level name a function declares `global` is a
+  per-invocation `Private` variable, set from its initializer before the entry
+  point runs.
+- Classes: plain structs with annotated fields only, constructed positionally
+  or by keyword and read with `v.field`. A vertex stage returns one.
+- Lambdas bound to a module-level name (`sq = lambda x: x * x`), instantiated
+  once per distinct argument-type signature, and immediately-invoked lambdas.
+- Control flow: `if` / `elif` / `else`, `while`,
+  `for i in range(stop | start, stop | start, stop, step)`, `break`,
+  `continue`, `return`, `pass`.
+- Tuple unpacking (`x, y = uv`, `a, b = 1, 2`), chained assignment and swaps.
+- Tuple returns (`-> tuple[float, float3]`).
+- List literals and `[x] * n` as fixed-size arrays: dynamic indexing, nesting
+  (`g[i][j]`), and `len()` on any composite.
+- Matrices `float2x2` … `float4x4`, with Metal/GLSL product semantics.
+- `from pyshader import *` and `import pyshader` are accepted and ignored, so
+  editors can be pointed at the stub; `pyshader.sin(x)` works.
+- Docstrings.
 
 ### Entry point
-`def main(...) -> float4`. Parameters are matched by name against the target.
+`def main(...) -> float4`, or `vertex` and `fragment` in the graphics target.
+Parameters are matched by name against the target.
 
 Compute target (`.nucleantUI`, NucleantUI's `Shader` / `.shader(_:)`):
 
@@ -80,6 +99,7 @@ Compute target (`.nucleantUI`, NucleantUI's `Shader` / `.shader(_:)`):
 | `mouse`        | `float2` | `Uniforms.mouseInfo.xy`, y flipped |
 | `mouse_click`  | `float2` | `Uniforms.mouseInfo.zw`, y flipped |
 | *argument*     | `float` / `float2` / `float3` / `float4` / `FloatArray` / `Float2Array` … `Float4Array` | the `ShaderArgument` of that name, binding 3 |
+| *texture*      | `Texture` | the `ShaderTexture` of that name, binding 4 and up |
 
 Fragment target (`.nucleant`, NucleantVulkan's `NucleantShader` layout):
 
@@ -96,23 +116,35 @@ Fragment target (`.nucleant`, NucleantVulkan's `NucleantShader` layout):
 Output is `fragColor` at `location 0`. Returning nothing from `main` forwards
 `color` when it is a parameter; otherwise it is an error.
 
+Graphics target (`.nucleantUIGraphics`, NucleantUI's `VertexShader`):
+- `vertex` takes `vertex_index`, `instance_index`, the uniforms (`time` …
+  `mouse_click`), arguments and textures. It returns a class whose first field
+  is the `float4` position.
+- `fragment` takes the uniforms, arguments, textures, `uv`, `frag_coord`,
+  `pixel`, `front_facing`, and the varyings by name.
+- See [docs/targets/graphics.md](docs/targets/graphics.md).
+
 ## Not yet
 
 | Feature | Notes |
 |---------|-------|
-| textures / samplers beyond `layer()` | a general `sample(texture, uv)` with declared bindings |
-| list parameters, nested lists, `for x in xs` | a list's length is only known from its value today |
-| matrix kind conversion (`half3x3(float3x3)`) | column-wise `OpFConvert` |
-| `\` line continuation | PySwiftAST rejects it; wrap in parentheses |
-| classes -> structs | needs a pyclass -> `OpTypeStruct` design |
-| uniform buffers | only push constants today |
-| vertex / compute stages | only `Fragment` execution model |
-| `modf` `frexp` `ldexp` | multiple return values |
-| `roundEven` vs `round` | `round()` currently maps to `RoundEven` (deterministic); GLSL `round` is implementation-defined for .5 |
-| `select(a, b, c)` | use `b if c else a` |
-| bit ops: `bitcount`, `findLSB`, `reverse_bits` | `OpBitCount` etc. |
-| packing: `pack_half2x16` ... | GLSL.std.450 pack/unpack |
-| `while ... else`, `for ... else`, `match`, comprehensions, f-strings | not shader-shaped |
-| Python stub module (`pyshader/__init__.pyi`) | for editor type checking of shader files |
-| running the output on a GPU in tests | `Examples/NucleantUIExample` does it by hand; unit tests use `spirv-val` and `spirv-opt` |
-| constant folding beyond literals | drivers do it; `spirv-opt --target-env=vulkan1.0 -O` if wanted offline |
+| texture reads beyond `a(uv)` | Implicit LOD in a fragment stage, an explicit `lod` / `grad`, `fetch`, `gather`, `a_levels`, and cube, 3D and array images. See expand-api.md. |
+| textures in the fragment target | Only the compute and graphics targets declare them. |
+| derivatives and `discard()` in the graphics target's fragment stage | Refused today, with the compute target's message. |
+| list parameters, `for x in xs` | A list's length is only known from its value. A `list[...]` parameter currently crashes the compiler instead of reporting an error. Loop over `range(len(xs))` instead. |
+| matrix kind conversion (`half3x3(float3x3)`) | Column-wise `OpFConvert`. |
+| `\` line continuation | PySwiftAST rejects it; wrap the expression in parentheses. |
+| user-declared uniform blocks | A shader reads the target's own `Uniforms` block or push constants, and the argument buffer (`ShaderArgument`s). |
+| a general compute target | `.computeImage` runs one invocation per pixel. Writable buffers, shared memory, barriers and atomics are in expand-api.md. |
+| other stages | Geometry, tessellation, mesh and ray tracing. expand-api.md says which are realistic. |
+| `modf` `frexp` `ldexp` | Multiple return values; tuple returns exist to carry them. |
+| `roundEven` vs `round` | `round()` currently maps to `RoundEven` (deterministic); GLSL's `round` is implementation-defined at .5. |
+| `select(a, b, c)` | Use `b if c else a`. |
+| `bitCount`, `findLSB` / `findMSB`, `bitfieldReverse`, `bitfieldExtract` / `bitfieldInsert` | `OpBitCount` etc. The operators `&` `\|` `^` `~` `<<` `>>` are already there. |
+| packing: `packHalf2x16` … | GLSL.std.450 pack / unpack. |
+| `match` | Parsed, then refused with "use if/elif". It maps onto `OpSwitch`. |
+| decorators, default parameter values, keyword arguments in calls | Keyword arguments work only when constructing a class. |
+| `while ... else`, `for ... else`, comprehensions, f-strings | Not shader-shaped. |
+| `Texture` in the Python stub | `src/pyshader` has `FloatArray` … but no `Texture`, so an editor flags `a: Texture`. `scripts/generate_stub.py` doesn't know it yet. |
+| running the output on a GPU in tests | `Examples/NucleantUIExample` does it by hand; unit tests use `spirv-val` and `spirv-opt`. |
+| constant folding beyond literals | Drivers do it; use `spirv-opt --target-env=vulkan1.0 -O` to do it offline. |

@@ -237,13 +237,19 @@ its size.
 - **8-bit ints:** storage needs `SPV_KHR_8bit_storage`, for little gain.
 - **Kernel / OpenCL instructions:** Vulkan takes `Shader` modules only.
 
-## Docs that are out of date
+## Gaps found while checking the docs
 
-- **`shader-api-status.md`:** its "Not yet" table still lists textures beyond
-  `layer()`, classes → structs, and the vertex stage. All three are done: see
-  `ShaderTexture` and the README's "Vertex + fragment".
-- **README:** "no classes" under Functions contradicts "Classes are plain
-  structs" under Vertex + fragment.
+These are not SPIR-V additions, just things the docs now record as missing:
+
+- **A `list[...]` parameter crashes the compiler** ("Range requires lowerBound
+  <= upperBound") instead of reporting an error. List parameters aren't
+  supported, so the frontend should refuse them by name.
+- **No derivatives or `discard()` in the graphics target's fragment stage.**
+  `requireFragment` only accepts `.fragment`, so `fwidth` there gets the
+  compute target's "a compute shader has no derivatives" message. The stage
+  is a real fragment stage, so these could simply be allowed there.
+- **The editor stub has no `Texture`.** `scripts/generate_stub.py` doesn't
+  know the type, so an editor flags `a: Texture`.
 
 ## Suggested order
 

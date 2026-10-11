@@ -8,7 +8,12 @@ into a CPython-shaped AST. The compiler is four folders of Swift:
 | `Frontend/` | validates the module and collects definitions: functions, lambdas, constants, classes, the entry points a target wants |
 | `Codegen/` | lowers statements and expressions to SPIR-V, one `FunctionEmitter` per function, and generates the target's wrapper around `main` |
 | `Builtins/` | the function table — every builtin with its argument rules, promotion and the `GLSL.std.450` or core op it becomes |
-| `SPIR-V/` | encodes words: types, constants, decorations, instructions, the module layout |
+| `SPIRV/` | the module builder: id allocation, deduplicated types and constants, decorations and the module layout |
+
+Opcode and operand names (`SpirvOp`, `SpirvCapability`, `GLSLstd450`, …) and
+the instruction encoding come from
+[SpirvCore](https://github.com/NucleantUI/SpirvCore), whose tables are
+generated from the Khronos SPIR-V grammar.
 
 ## Lowering
 
@@ -27,7 +32,11 @@ into a CPython-shaped AST. The compiler is four folders of Swift:
   module variables (declared `global` somewhere) are `Private` variables
   set by `py_globals`, which every entry wrapper calls first.
 - Types are created on demand: `half` adds the `Float16` capability, `short`
-  / `ushort` add `Int16`, `layer()` adds `ImageQuery` for `imageSize`.
+  / `ushort` add `Int16`, and the compute wrapper's output-size query and
+  `a_size` add `ImageQuery`.
+- A texture is a module-level `UniformConstant` sampled image at its own
+  binding, not a function parameter: SPIR-V cannot pass a sampled image to a
+  function, so `a(p)` reads the global wherever it is called.
 - The wrapper is the only target-specific code: it declares the inputs
   (locations, built-ins, push constants or the `Uniforms` block), calls
   `main` with what it asked for by name and writes the result.

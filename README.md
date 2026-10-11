@@ -111,8 +111,10 @@ def march(p: float3) -> float:
     return length(p) - 1.0
 ```
 
-No recursion (SPIR-V forbids it), no classes, no imports besides `pyshader`,
-no keyword arguments.
+No recursion (SPIR-V forbids it), no imports besides `pyshader`, no
+decorators, no default parameter values, and keyword arguments only when
+constructing a class. Classes are plain structs (see
+[Vertex + fragment](#vertex--fragment)).
 
 ### Control flow
 
@@ -135,7 +137,7 @@ function must return.
 
 ### Lists
 
-Fixed-size arrays from list literals.
+Fixed-size arrays from list literals. They nest (`g[i][j]`).
 
 ```py
 colors = [float4(0.0)] * 3
@@ -155,10 +157,13 @@ GLSL 450 names, Metal spellings accepted; ints promote, scalars broadcast:
 `abs sign floor ceil round trunc fract mod min max clamp saturate mix lerp step smoothstep fma isnan isinf` ·
 `length distance dot cross normalize reflect refract faceforward` ·
 `transpose determinant inverse` · `any all` ·
-`dfdx dfdy fwidth discard` (fragment stage only) ·
-`layer(uv)` (the view under a `.shader` effect) · `len`
+`dfdx dfdy fwidth discard` (fragment target only) ·
+`layer(uv)` (the view under a `.shader` effect) · `a(uv)` / `a_size` (a
+[texture](#textures)) · `len`
 
 The full table, with what is still to do, is in [shader-api-status.md](shader-api-status.md).
+What could be added next, and the SPIR-V each item needs, is in
+[expand-api.md](expand-api.md).
 Types, promotion and operator rules in detail: [vector-types.md](vector-types.md).
 
 ### Entry point inputs
@@ -171,6 +176,25 @@ Types, promotion and operator rules in detail: [vector-types.md](vector-types.md
 | `time_delta` `frame` `pixel` `mouse_click` | | — | `Uniforms` / invocation id |
 | `color` | `float4` | vertex colour, forwarded by a bare `return` | — |
 | *ShaderArgument name* | `float`…`float4`, `FloatArray`, `Float2Array`…`Float4Array` | — | argument buffer |
+| *texture name* | `Texture` | — | a sampled image at its own binding |
+
+### Textures
+
+On the compute and graphics targets, a shader can sample images the host
+binds by name, beside the `layer(uv)` content image. A texture is a `main`
+parameter typed `Texture`, and the body uses it as a callable:
+
+```py
+def main(uv: float2, blend: float, a: Texture, b: Texture) -> float4:
+    s = float2(a_size)                     # pixel size, int2
+    return mix(a(uv), b(uv + float2(1.0 / s.x, 0.0)), blend)
+```
+
+`a(p)` samples at `p` in `uv` space with explicit LOD 0, like `layer(p)`, and
+`a_size` is the image's size in pixels. The target declares each texture as
+`ShaderTexture(name:binding:isTopDown:)` (4 and up in NucleantUI's layout);
+in NucleantUI, `Shader(fn, textures: [.init("a", renderTexture)])` and
+`.shader(fn, textures: …)` do it. The fragment target has no textures.
 
 ### Vertex + fragment
 
@@ -286,8 +310,10 @@ threaded in as parameters, `for (int i = 0; i < n; ++i)` comes back as
 [Examples/shadertoy/pyshader/](Examples/shadertoy/pyshader/) have. The tests
 send every ShaderToy example through glslang, the decompiler and the compiler.
 
-Only fragment stages are handled; textures and module-level (`Private`)
-variables are reported rather than translated.
+Only fragment stages are handled. Module-level (`Private`) variables come
+back as module variables with `global`. Textures are reported rather than
+translated, since the fragment target has none. An instruction with no
+PyShader spelling is refused with an error that names its opcode.
 
 ## Documentation
 
@@ -313,9 +339,10 @@ swift test                          # every example through spirv-val; ShaderToy
 
 Targets: `PyShader` is the compiler; `Spirv2PyShader` the decompiler;
 `pyshaderc` and `spirv2py` their command lines. The SPIR-V opcode and enum
-tables, the instruction encoding and a word-stream reader, shared by both
-directions, live in [SpirvCore](https://github.com/NucleantUI/SpirvCore), a
-package of its own.
+tables (generated from the Khronos grammar, so every instruction and operand
+value has a name), the instruction encoding and a word-stream reader, shared
+by both directions, live in
+[SpirvCore](https://github.com/NucleantUI/SpirvCore), a package of its own.
 
 Compiler sources: `Frontend/` validates the module and collects definitions,
 `Codegen/` lowers statements and expressions, `Builtins/` is the function

@@ -68,6 +68,20 @@ struct CompositeTests {
         #expect(words.has(.opAccessChain))
     }
 
+    @Test("lists nest: a list of lists indexes, assigns and counts at each level")
+    func nestedLists() throws {
+        let words = try compileValid("""
+        def main(uv: float2) -> float4:
+            g = [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]
+            i = int(uv.x * 2.0)
+            g[i][1] = 7.0
+            g[2] = [8.0, 9.0]
+            return float4(g[i][0], g[1][i], float(len(g)), float(len(g[0])))
+        """)
+        #expect(words.count(.opTypeArray) == 2, "float[2] and float[2][3]")
+        #expect(words.has(.opAccessChain))
+    }
+
     @Test("derivatives and discard are fragment-only")
     func fragmentOnly() {
         for call in ["fwidth(uv.x)", "dfdx(uv.x)"] {

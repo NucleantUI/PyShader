@@ -17,7 +17,9 @@ r.direction.z
 ```
 
 No methods, no inheritance, no defaults. Fields can be any shader type,
-including other structs.
+including other structs. A class is a value like any other: a local, a
+parameter, a return value or a list element. Define classes at module level;
+a class inside a function is an error.
 
 ## Varyings
 

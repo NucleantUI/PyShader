@@ -17,6 +17,7 @@
 | `mouse`        | `float2` | `Uniforms.mouseInfo.xy`, y flipped |
 | `mouse_click`  | `float2` | `Uniforms.mouseInfo.zw`, y flipped |
 | *argument*     | `float` / `float2` / `float3` / `float4` / `FloatArray` / `Float2Array` … `Float4Array` | the `ShaderArgument` of that name |
+| *texture*      | `Texture` | the `ShaderTexture` of that name — see [Textures](#textures) |
 
 ## Bindings
 
@@ -28,6 +29,7 @@ Descriptor set 0, local size 8 × 8:
 | 1 | `Uniforms { vec4 timeInfo; vec4 res; vec4 mouseInfo; }`, std140 |
 | 2 | `sampler2D` of the view under the effect — only with `samplesContent: true`; enables `layer()` |
 | 3 | `readonly buffer { float data[]; }` — only with arguments |
+| 4 and up | `sampler2D` per named texture, at the binding its `ShaderTexture` gives |
 
 The argument buffer starts with an `(offset, count)` float pair per argument,
 then the values, an array's elements packed one after another; `a[i]` on an
@@ -61,3 +63,46 @@ handed to `Shader(_:arguments:)`; `main` takes them by name:
 ```
 
 An argument name that is also a built-in input is an error.
+
+## Textures
+
+Besides the content image, a shader can sample images the host binds by name.
+A texture is a `main` parameter typed `Texture`, and the body uses it as a
+callable:
+
+```py
+def main(uv: float2, blend: float, a: Texture, b: Texture) -> float4:
+    s = float2(a_size)                     # pixel size, int2
+    return mix(a(uv), b(uv + float2(1.0 / s.x, 0.0)), blend)
+```
+
+`a(p)` samples at `p` in `uv` space with explicit LOD 0, as `layer(p)` does:
+a compute stage has no derivatives to choose a level from. `a_size` is the
+image's size in pixels. A texture is a handle, not a value: it cannot be
+stored, returned or passed to a helper, and reading `a` without calling it is
+an error that says how to sample it.
+
+The interface declares each texture with its binding and orientation:
+
+```swift
+let interface = ComputeImageInterface.nucleantUI(
+    samplesContent: false,
+    arguments: [("blend", .float)],
+    textures: [ShaderTexture(name: "a", binding: 4), ShaderTexture(name: "b", binding: 5)]
+)
+```
+
+`isTopDown` (default `true`) says the image is stored top-down, as a
+`RenderTexture` is, so `a(p)` reads it at `(p.x, 1 - p.y)` and sees it
+upright. A texture name that is also an input or an argument is an error.
+
+In NucleantUI the declaration comes from the `RenderTexture`s handed to the
+view or effect:
+
+```swift
+Shader(mix, arguments: [.float("blend", t)], textures: [.init("a", layerA), .init("b", layerB)])
+content.shader(effect, textures: [.init("noise", noise)])
+```
+
+The graphics target takes textures the same way, in either stage. The
+previews on this site have no textures to bind.

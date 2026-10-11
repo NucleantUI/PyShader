@@ -66,7 +66,7 @@ like
 ```py
 
 # we cant import other normal python libs, only maybe own internal lib for all shader api
-# for now classes is not allowed, until right solution is found in terms of pyclass -> struct
+# classes are plain structs (pyclass -> OpTypeStruct): annotated fields, no methods; a vertex shader returns one
 # but we can make as many functions we want in global space
 # kwargs is not allowed either..
 

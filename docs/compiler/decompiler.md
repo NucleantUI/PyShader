@@ -48,7 +48,8 @@ The body is rewritten into the shape the hand ports have:
   `void trace(vec3 ro, out Hit h)` is `def trace(ro: float3, h: Hit) -> Hit`,
   and the call `trace(p, h)` is `h = trace(p, Hit(0.0, float3(0.0)))`.
 - Uniforms a helper reads are threaded in as trailing parameters
-  (`def dTile(p: float2, time: float)`), since PyShader has no globals.
+  (`def dTile(p: float2, time: float)`), since in PyShader the interface's
+  values reach only `main`, as its parameters.
 - `for (int i = 0; i < n; ++i)` is `for i in range(n)`; other loops are
   `while`, with `break` / `continue`.
 - `a && b` and `a || b` are `a and b` / `a or b`; `c ? x : y` is
@@ -65,8 +66,11 @@ interface's parameter names, and helpers, tuple returns, lists and lambdas
 ## Limits
 
 - Fragment stages only; a compute or vertex module is refused.
-- Textures (`OpImageSample*`) have no PyShader equivalent and are reported.
-  `switch` becomes an `if`/`elif` chain.
+- Textures (`OpImageSample*`) are reported. The fragment target has no
+  textures; [named textures](../targets/compute.md#textures) are a compute
+  and graphics feature. `switch` becomes an `if`/`elif` chain.
+- An instruction with no PyShader spelling is refused with an error that names
+  it (`opDemoteToHelperInvocation is not supported`).
 - `Private` globals are module variables: `name = <initializer>` at module
   level and `global name` in every function that assigns them. glslang
   stores a non-constant initializer at the top of `main`; one that reads

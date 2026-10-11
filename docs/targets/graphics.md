@@ -38,11 +38,19 @@ but not an argument.
 | `vertex_index` `instance_index` (`int`) | ✓ | |
 | `time` `time_delta` `frame` `resolution` `mouse` `mouse_click` | ✓ | ✓ |
 | *arguments* | ✓ | ✓ |
+| *textures* (`Texture`) | ✓ | ✓ |
 | `uv` `frag_coord` `pixel` `front_facing` | | ✓ |
 | varyings, by name | | ✓ |
 
 Bindings match the compute target: `Uniforms` at set 0 binding 1, the
-argument buffer at binding 3.
+content image at binding 2 with `samplesContent`, the argument buffer at
+binding 3, and named [textures](compute.md#textures) at 4 and up. A texture
+is one uniform that either stage may declare, given as
+`GraphicsInterface.nucleantUI(arguments:textures:)`.
+
+The fragment stage has no derivatives (`dfdx`, `dfdy`, `fwidth`) and no
+`discard()` yet: those are refused in this target. Only the
+[fragment target](fragment.md) has them today.
 
 ## In Swift
 

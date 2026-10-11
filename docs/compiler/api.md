@@ -44,14 +44,20 @@ public enum ShaderTarget {
     static let nucleantUIGraphics: ShaderTarget  // .graphics(.nucleantUI)
 }
 
-public enum ShaderArgumentKind { case float, float2, float3, float4, floatArray }
+public enum ShaderArgumentKind { case float, float2, float3, float4, floatArray, float2Array, float3Array, float4Array }
+
+public struct ShaderTexture {
+    init(name: String, binding: Int, isTopDown: Bool = true)
+}
 ```
 
-`ComputeImageInterface.nucleantUI(samplesContent:arguments:)` and
-`GraphicsInterface.nucleantUI(arguments:)` build the NucleantUI
-layouts with a content sampler and an argument buffer; the structs' other
-properties (`entryPoint`, `localSize`, `descriptorSet`, bindings, `inputs`)
-are public for other pipelines. See [Targets](../targets/index.md).
+`ComputeImageInterface.nucleantUI(samplesContent:contentIsTopDown:arguments:textures:)`
+and `GraphicsInterface.nucleantUI(samplesContent:contentIsTopDown:arguments:textures:)`
+build the NucleantUI layouts: an optional content sampler, an argument
+buffer, and a sampler per [named texture](../targets/compute.md#textures).
+The structs' other properties (`entryPoint`, `localSize`, `descriptorSet`,
+bindings, `inputs`) are public for other pipelines. See
+[Targets](../targets/index.md).
 
 ## `pyshaderc`
 
@@ -74,8 +80,8 @@ spirv-val --target-env vulkan1.0 Examples/plasma.spv
 
 | where | what |
 |---|---|
-| `ShaderFunction(pyshader:)` | a `Shader(...)` view or a `.shader(_:)` effect; compiled for `.computeImage` with `samplesContent` set for effects and the view's `ShaderArgument`s declared |
-| `VertexShaderFunction(pyshader:)` | a `VertexShader(_:vertices:instances:arguments:)` view; compiled for `.graphics` |
+| `ShaderFunction(pyshader:)` | a `Shader(...)` view or a `.shader(_:)` effect; compiled for `.computeImage` with `samplesContent` set for effects and the view's `ShaderArgument`s and `textures:` declared |
+| `VertexShaderFunction(pyshader:)` | a `VertexShader(_:vertices:instances:arguments:textures:)` view; compiled for `.graphics` |
 
 A shader that fails to compile is reported on stderr as
 `shader node build … failed: PyShader: line N: …` and its rect stays empty.

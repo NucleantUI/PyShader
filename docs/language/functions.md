@@ -17,9 +17,10 @@ def checker(p: float2, size: float) -> bool:
 ```
 
 Arguments convert on the way in like assignments do (int → float, scalar →
-vector). There is no recursion (SPIR-V forbids it), no keyword arguments, no
-default values, and no globals inside functions — a helper that needs `time`
-takes it as a parameter.
+vector). There is no recursion (SPIR-V forbids it), no keyword arguments
+(except when [constructing a class](classes.md)), no default values and no
+decorators. The entry point's inputs are not globals: a helper that needs
+`time` takes it as a parameter.
 
 ## Several results
 
@@ -101,9 +102,8 @@ constant's job.
 
 `from pyshader import *` and `import pyshader` are accepted and ignored so an
 editor can be pointed at the stub package; `pyshader.sin(x)` works. Docstrings
-are allowed on the module and on functions. Nothing else can be imported and
-there are no classes except the plain structs described in
-[Classes](classes.md).
+are allowed on the module and on functions. Nothing else can be imported.
+Classes are plain structs, defined at module level; see [Classes](classes.md).
 
 ## In use
 

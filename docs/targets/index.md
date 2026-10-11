@@ -27,6 +27,7 @@ is available.
 | `front_facing` | `bool` | `gl_FrontFacing` | — | fragment stage |
 | `vertex_index` `instance_index` | `int` | — | — | vertex stage |
 | *ShaderArgument name* | `float` … `float4`, `FloatArray`, `Float2Array` … `Float4Array` | — | argument buffer | both stages |
+| *texture name* | `Texture` | — | sampled image, binding 4 and up ([Textures](compute.md#textures)) | both stages |
 
 Shader space is y-up with `(0, 0)` bottom-left, as ShaderToy has it; the
 wrapper flips what needs flipping so `uv`, `frag_coord` and `mouse` agree

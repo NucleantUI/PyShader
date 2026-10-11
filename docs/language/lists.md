@@ -15,7 +15,17 @@ colors[0], colors[1] = colors[1], colors[0]     # swap
 len(w)                                          # a constant
 ```
 
-Lists cannot be function parameters yet and cannot nest.
+Lists nest. A list of lists indexes, assigns and counts at each level:
+
+```py
+g = [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]
+g[i][1] = 7.0
+g[2] = [8.0, 9.0]
+len(g), len(g[0])                               # 3, 2
+```
+
+Lists cannot be function parameters yet, and there is no `for x in xs`:
+loop over `range(len(xs))`.
 
 ## Tuples
 
