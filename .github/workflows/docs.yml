@@ -60,16 +60,32 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Cache wasm build products
+      # Package.resolved is gitignored, so the branch dependencies (SpirvCore,
+      # PySwiftAST) are resolved to their tips here, before any cache is
+      # restored. A restored .build would otherwise keep the revisions it was
+      # built with.
+      - name: Resolve Swift packages
+        run: swift package --package-path PyShaderWasm resolve
+
+      # Keyed on the resolved revisions and the sources, and restored only on
+      # an exact match: objects built against other dependency revisions are
+      # never reused, since an incremental build across a dependency change
+      # can link stale code.
+      - name: Cache the Swift wasm build
+        uses: actions/cache@v4
+        with:
+          path: PyShaderWasm/.build
+          key: swift-wasm-build-${{ runner.os }}-${{ env.SWIFT_VERSION }}-${{ hashFiles('PyShaderWasm/Package.resolved', 'Package.swift', 'PyShaderWasm/Package.swift', 'Sources/**', 'PyShaderWasm/Sources/**') }}
+
+      - name: Cache the Rust wasm build
         uses: actions/cache@v4
         with:
           path: |
-            PyShaderWasm/.build
             NagaWasm/target
             ~/.cargo/registry
             ~/.cargo/git
-          key: wasm-${{ runner.os }}-${{ hashFiles('Package.resolved', 'PyShaderWasm/Package.swift', 'NagaWasm/Cargo.lock', 'Sources/**', 'PyShaderWasm/Sources/**', 'NagaWasm/src/**') }}
-          restore-keys: wasm-${{ runner.os }}-
+          key: naga-wasm-${{ runner.os }}-${{ hashFiles('NagaWasm/Cargo.lock', 'NagaWasm/src/**') }}
+          restore-keys: naga-wasm-${{ runner.os }}-
 
       - name: Build pyshader.wasm and naga.wasm
         run: python3 scripts/build_wasm.py
