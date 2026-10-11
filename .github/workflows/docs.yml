@@ -25,12 +25,12 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Swift via swiftly, plus the wasm SDK of the same version.
       - name: Cache Swift toolchain and wasm SDK
         id: swift-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.local/share/swiftly
@@ -72,13 +72,13 @@ jobs:
       # never reused, since an incremental build across a dependency change
       # can link stale code.
       - name: Cache the Swift wasm build
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: PyShaderWasm/.build
           key: swift-wasm-build-${{ runner.os }}-${{ env.SWIFT_VERSION }}-${{ hashFiles('PyShaderWasm/Package.resolved', 'Package.swift', 'PyShaderWasm/Package.swift', 'Sources/**', 'PyShaderWasm/Sources/**') }}
 
       - name: Cache the Rust wasm build
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             NagaWasm/target
@@ -90,22 +90,23 @@ jobs:
       - name: Build pyshader.wasm and naga.wasm
         run: python3 scripts/build_wasm.py
 
-      - uses: astral-sh/setup-uv@v5
+      # setup-uv publishes immutable releases without a moving major tag.
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
       - name: Build the site
         run: |
           uv sync --group docs
           uv run mkdocs build --strict
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
 
   deploy:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
