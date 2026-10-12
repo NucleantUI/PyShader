@@ -159,6 +159,7 @@ enum Peepholes {
         case .expr(let v) where v.reads(x) == 1: return .expr(sub(v))
         case .ret(let v?) where v.reads(x) == 1: return .ret(sub(v))
         case .ifStmt(let c, let t, let f) where c.reads(x) == 1: return .ifStmt(sub(c), t, f)
+        case .match(let c, let cases, let fallback) where c.reads(x) == 1: return .match(sub(c), cases: cases, fallback: fallback)
         case .forRange(let v, let args, let b) where args.reduce(0, { $0 + $1.reads(x) }) == 1:
             return .forRange(v, args.map(sub), b)
         default: return nil
@@ -289,6 +290,10 @@ enum Peepholes {
                     walk(body); walk(next)
                 case .ifStmt(let c, let t, let f):
                     read(c); walk(t); walk(f)
+                case .match(let c, let cases, let fallback):
+                    read(c)
+                    for arm in cases { walk(arm.body) }
+                    walk(fallback)
                 default:
                     for e in s.expressions { read(e) }
                 }

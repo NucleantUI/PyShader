@@ -23,8 +23,19 @@ enum PyNames {
         "abs", "sign", "floor", "ceil", "round", "trunc", "fract", "mod", "min", "max", "clamp", "saturate",
         "mix", "lerp", "step", "smoothstep", "fma", "isnan", "isinf",
         "length", "distance", "dot", "cross", "normalize", "reflect", "refract", "faceforward",
-        "transpose", "determinant", "inverse", "any", "all",
-        "dfdx", "dFdx", "dfdy", "dFdy", "fwidth", "discard", "layer", "len", "range", "pyshader",
+        "transpose", "determinant", "inverse", "outerProduct", "any", "all",
+        "modf", "frexp", "ldexp",
+        "packHalf2x16", "packUnorm2x16", "packSnorm2x16", "packUnorm4x8", "packSnorm4x8",
+        "unpackHalf2x16", "unpackUnorm2x16", "unpackSnorm2x16", "unpackUnorm4x8", "unpackSnorm4x8",
+        "pack_float_to_unorm2x16", "pack_float_to_snorm2x16", "pack_float_to_unorm4x8", "pack_float_to_snorm4x8",
+        "unpack_unorm2x16_to_float", "unpack_snorm2x16_to_float", "unpack_unorm4x8_to_float", "unpack_snorm4x8_to_float",
+        "bitCount", "popcount", "bitfieldReverse", "reverse_bits", "bitfieldExtract", "extract_bits",
+        "bitfieldInsert", "insert_bits", "findLSB", "findMSB",
+        "floatBitsToInt", "floatBitsToUint", "intBitsToFloat", "uintBitsToFloat",
+        "dfdx", "dFdx", "dfdy", "dFdy", "fwidth",
+        "dFdxFine", "dfdx_fine", "dFdyFine", "dfdy_fine", "fwidthFine", "fwidth_fine",
+        "dFdxCoarse", "dfdx_coarse", "dFdyCoarse", "dfdy_coarse", "fwidthCoarse", "fwidth_coarse",
+        "discard", "layer", "len", "range", "unroll", "dont_unroll", "pyshader",
     ]
 
     static func isReserved(_ name: String) -> Bool {

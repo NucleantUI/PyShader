@@ -8,8 +8,8 @@ import PyShader
 public enum PyShader {
     /// A fragment stage; `interface` defaults to NucleantVulkan's `NucleantShader` layout.
     static func compile(_ source: String, interface: FragmentInterface = .nucleant) throws -> CompiledShader
-    /// Any target.
-    static func compile(_ source: String, target: ShaderTarget) throws -> CompiledShader
+    /// Any target. `sourceFile` adds the `.py` file's name and every statement's line.
+    static func compile(_ source: String, target: ShaderTarget, sourceFile: String? = nil) throws -> CompiledShader
 }
 
 public struct CompiledShader: Sendable {
@@ -21,7 +21,12 @@ public struct CompiledShader: Sendable {
 ```
 
 The source may be indented as a block (as in a Swift multi-line string);
-the shared indentation is stripped. Errors are `PyShaderError` values:
+the shared indentation is stripped.
+
+With `sourceFile`, the module carries the file's name (`OpString`, which
+`OpSource` points at) and an `OpLine` before each statement, so `spirv-val`,
+RenderDoc and naga report Python lines. Without it the module has no line
+information and is the same as before the option existed. Errors are `PyShaderError` values:
 
 ```swift
 public struct PyShaderError: Error, CustomStringConvertible {
@@ -66,7 +71,8 @@ swift run pyshaderc <input.py> [-o output.spv] [--target fragment|compute|graphi
 ```
 
 Writes `<input>.spv` next to the input unless `-o` is given and prints the
-word count. Exit status 1 with the error on stderr when compilation fails,
+word count. The module carries the input's file name and source lines (see
+`sourceFile` above). Exit status 1 with the error on stderr when compilation fails,
 2 for a usage error.
 
 ```sh

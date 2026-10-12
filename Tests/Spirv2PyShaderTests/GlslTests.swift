@@ -171,4 +171,59 @@ struct GlslTests {
         #expect(renamed.source.contains("def main(uv: float2, color3: float3, rate: float) -> float4:"))
         #expect(renamed.source.contains("return float4(uv * rate, color3.x, 1.0)"))
     }
+
+    @Test("modf / frexp out parameters, packing, bit ops and derivative control come back as PyShader builtins")
+    func library() throws {
+        let glsl = wrapShaderToy("""
+        void mainImage(out vec4 col, in vec2 fc) {
+            vec2 uv = fc / iResolution.xy;
+            float w; vec2 wv; int e;
+            float f = modf(uv.x * 3.5, w);
+            vec2 fv = modf(uv * 3.5, wv);
+            float m = frexp(uv.y * 100.0, e);
+            uint u = packUnorm4x8(vec4(uv, 0.0, 1.0)) ^ packHalf2x16(uv);
+            int i = int(fc.x);
+            int bits = bitCount(u) + bitfieldExtract(i, 1, 2) + findMSB(u) + findLSB(i);
+            uint ub = bitfieldReverse(u) ^ bitfieldInsert(u, 7u, 4, 3);
+            col = vec4(f + w + fv.x + wv.y, ldexp(m, e), float(bits) + float(ub % 5u), unpackUnorm4x8(u).x);
+            col.x += outerProduct(vec3(uv, 1.0), uv)[1].z + dFdxFine(uv.x) + fwidthCoarse(uv.y);
+        }
+        """)
+        guard let words = try Tools.compileGLSL(glsl) else { return }
+        let s = try decompileAndRecompile(words, interface: .shaderToy).source
+        #expect(!s.contains("class ResType"), "modf/frexp results are tuples")
+        #expect(s.contains("f, w = modf("))
+        #expect(s.contains("fv, wv = modf("))
+        #expect(s.contains("m, e = frexp("))
+        #expect(s.contains("ldexp(m, e)"))
+        for name in ["packUnorm4x8(", "packHalf2x16(", "unpackUnorm4x8(", "bitCount(", "bitfieldExtract(", "findMSB(", "findLSB(",
+                     "bitfieldReverse(", "bitfieldInsert(", "outerProduct(", "dFdxFine(", "fwidthCoarse("] {
+            #expect(s.contains(name), "\(name)")
+        }
+    }
+
+    @Test("switch becomes match: shared labels as `|`, default as `case _`, fallthrough repeated")
+    func switchToMatch() throws {
+        let glsl = wrapShaderToy("""
+        void mainImage(out vec4 col, in vec2 fc) {
+            int k = int(fc.x) % 5;
+            col = vec4(0.0);
+            switch (k) {
+                case 0: col.r = 1.0; break;
+                case 1:
+                case 2: col.g = 1.0; break;
+                case 3: col.b = 0.5;
+                case 4: col.a = 1.0; break;
+                default: col = vec4(0.25);
+            }
+        }
+        """)
+        guard let words = try Tools.compileGLSL(glsl) else { return }
+        let s = try decompileAndRecompile(words, interface: .shaderToy).source
+        #expect(s.contains("match "))
+        #expect(s.contains("        case 0:\n            col.x = 1.0"))
+        #expect(s.contains("        case 1 | 2:\n            col.y = 1.0"))
+        #expect(s.contains("        case 3:\n            col.z = 0.5\n            col.w = 1.0"), "case 3 falls through into case 4")
+        #expect(s.contains("        case _:\n            col = float4(0.25)"))
+    }
 }

@@ -23,18 +23,38 @@ accepted as aliases. Integer arguments to float functions are promoted
 `fract` `mod` `min` `max` (n-ary like Python, int and float) `clamp`
 `saturate` `mix` / `lerp` `step` `smoothstep` `fma` `isnan` `isinf`
 
+### Split and scale
+`modf(x) -> (fraction, whole)`, `frexp(x) -> (mantissa, exponent)` (Python's
+`math` order), `ldexp(x, e)`. `modf` and `frexp` are built from core ops,
+not GLSL.std.450's `ModfStruct` / `FrexpStruct`, whose result type naga (the
+web build) cannot resolve; `frexp` reads the float's bits, so it is exact.
+
+### Packing
+`packUnorm4x8` `packSnorm4x8` `packUnorm2x16` `packSnorm2x16` `packHalf2x16`
+and the `unpack…` of each; Metal's `pack_float_to_unorm4x8` /
+`unpack_unorm4x8_to_float` spellings for the norm ones.
+
+### Bits
+`bitCount` (int) / `popcount` (the argument's type), `bitfieldReverse` /
+`reverse_bits`, `bitfieldExtract` / `extract_bits`, `bitfieldInsert` /
+`insert_bits`, `findLSB`, `findMSB` (int, -1 for no set bit),
+`floatBitsToInt` `floatBitsToUint` `intBitsToFloat` `uintBitsToFloat`. On
+32-bit integers, as Vulkan requires; `short` / `ushort` widen first.
+
 ### Geometric
 `length` `distance` `dot` `cross` `normalize` `faceforward` `reflect` `refract`
 
 ### Matrices
-`transpose` `determinant` `inverse`; `*` / `@` products, `m[i]`, `m[i][j]`
+`transpose` `determinant` `inverse` `outerProduct(c, r)`; `*` / `@` products, `m[i]`, `m[i][j]`
 (see `vector-types.md`)
 
 ### Vector relational
 `any` `all` (on `boolN` from vector comparisons)
 
 ### Derivatives (fragment target only)
-`dfdx` / `dFdx`, `dfdy` / `dFdy`, `fwidth`. They are an error in the compute
+`dfdx` / `dFdx`, `dfdy` / `dFdy`, `fwidth`, and the fine and coarse ones
+(`dFdxFine` / `dfdx_fine`, `dFdyCoarse`, `fwidthFine`, …, capability
+`DerivativeControl`). They are an error in the compute
 target, as in GLSL compute, and also in the graphics target's fragment stage
 (see Not yet).
 
@@ -71,7 +91,10 @@ Every type name (`float`, `int`, `uint`, `half`, `short`, `ushort`, `bool`,
   once per distinct argument-type signature, and immediately-invoked lambdas.
 - Control flow: `if` / `elif` / `else`, `while`,
   `for i in range(stop | start, stop | start, stop, step)`, `break`,
-  `continue`, `return`, `pass`.
+  `continue`, `return`, `pass`, and `match` on an int or uint with int
+  literal cases, `|` and `_` (→ `OpSwitch`).
+- Driver hints: `@inline` / `@noinline` on a function, `for i in
+  unroll(range(...))` / `dont_unroll(range(...))`. The decompiler drops them.
 - Tuple unpacking (`x, y = uv`, `a, b = 1, 2`), chained assignment and swaps.
 - Tuple returns (`-> tuple[float, float3]`).
 - List literals and `[x] * n` as fixed-size arrays: dynamic indexing, nesting
@@ -137,13 +160,10 @@ Graphics target (`.nucleantUIGraphics`, NucleantUI's `VertexShader`):
 | user-declared uniform blocks | A shader reads the target's own `Uniforms` block or push constants, and the argument buffer (`ShaderArgument`s). |
 | a general compute target | `.computeImage` runs one invocation per pixel. Writable buffers, shared memory, barriers and atomics are in expand-api.md. |
 | other stages | Geometry, tessellation, mesh and ray tracing. expand-api.md says which are realistic. |
-| `modf` `frexp` `ldexp` | Multiple return values; tuple returns exist to carry them. |
 | `roundEven` vs `round` | `round()` currently maps to `RoundEven` (deterministic); GLSL's `round` is implementation-defined at .5. |
 | `select(a, b, c)` | Use `b if c else a`. |
-| `bitCount`, `findLSB` / `findMSB`, `bitfieldReverse`, `bitfieldExtract` / `bitfieldInsert` | `OpBitCount` etc. The operators `&` `\|` `^` `~` `<<` `>>` are already there. |
-| packing: `packHalf2x16` … | GLSL.std.450 pack / unpack. |
-| `match` | Parsed, then refused with "use if/elif". It maps onto `OpSwitch`. |
-| decorators, default parameter values, keyword arguments in calls | Keyword arguments work only when constructing a class. |
+| `match` beyond int literals | Capture, class, sequence and mapping patterns, and guards (which PySwiftAST cannot parse yet). |
+| decorators besides `@inline` / `@noinline`, default parameter values, keyword arguments in calls | Keyword arguments work only when constructing a class. |
 | `while ... else`, `for ... else`, comprehensions, f-strings | Not shader-shaped. |
 | `Texture` in the Python stub | `src/pyshader` has `FloatArray` … but no `Texture`, so an editor flags `a: Texture`. `scripts/generate_stub.py` doesn't know it yet. |
 | running the output on a GPU in tests | `Examples/NucleantUIExample` does it by hand; unit tests use `spirv-val` and `spirv-opt`. |

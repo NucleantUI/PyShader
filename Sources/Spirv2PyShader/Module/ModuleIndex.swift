@@ -106,6 +106,9 @@ final class ModuleIndex {
     private(set) var functions: [FunctionDef] = []
     private(set) var functionIndex: [SpirvId: Int] = [:]
     private(set) var sourceLanguage: UInt32?
+    /// Struct types that are the result of GLSL.std.450 `ModfStruct` / `FrexpStruct`
+    /// (glslang's `ResType`): PyShader's `modf` / `frexp` return them as tuples.
+    private var splitResults: Set<SpirvId> = []
 
     init(reader: SpirvModuleReader) throws {
         self.reader = reader
@@ -151,6 +154,15 @@ final class ModuleIndex {
         func finishBlock() {
             if let b = open { blocks.append(b) }
             open = nil
+        }
+
+        var glslImports: Set<SpirvId> = []
+        for inst in reader.instructions {
+            if inst.op == .opExtInstImport, inst.string(at: 1).string == "GLSL.std.450" { glslImports.insert(inst.operands[0]) }
+            if inst.op == .opExtInst, glslImports.contains(inst.operands[2]),
+               inst.operands[3] == GLSLstd450.modfStruct.rawValue || inst.operands[3] == GLSLstd450.frexpStruct.rawValue {
+                splitResults.insert(inst.operands[0])
+            }
         }
 
         for inst in reader.instructions {
@@ -272,7 +284,7 @@ final class ModuleIndex {
                 (memberNames[id]?[i] ?? "m\(i)", try type(m))
             }
             let name = names[id]
-            if name == "tuple" {
+            if name == "tuple" || splitResults.contains(id) {
                 t = .tuple(members.map(\.1))
             } else {
                 t = .structure(name: name ?? "Struct\(id)", members: members)

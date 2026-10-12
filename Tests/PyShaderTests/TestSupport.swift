@@ -39,6 +39,10 @@ struct SpirvWords {
     func extInstCount(_ inst: GLSLstd450) -> Int {
         instructions.filter { $0.opcode == SpirvOp.opExtInst.rawValue && $0.operands.count > 3 && $0.operands[3] == inst.rawValue }.count
     }
+
+    func requires(_ capability: SpirvCapability) -> Bool {
+        instructions.contains { $0.opcode == SpirvOp.opCapability.rawValue && $0.operands == [capability.rawValue] }
+    }
 }
 
 enum Tools {
@@ -48,6 +52,32 @@ enum Tools {
         }
         return nil
     }()
+
+    static let spirvOpt: String? = {
+        for p in ["/usr/local/bin/spirv-opt", "/opt/homebrew/bin/spirv-opt"] where FileManager.default.isExecutableFile(atPath: p) {
+            return p
+        }
+        return nil
+    }()
+
+    /// `spirv-opt -O` on the shader, which folds a computation on constants down to
+    /// its result; nil when the tool is unavailable.
+    static func optimize(_ shader: CompiledShader) throws -> SpirvWords? {
+        guard let tool = spirvOpt else { return nil }
+        let dir = FileManager.default.temporaryDirectory
+        let input = dir.appendingPathComponent("pyshader-\(UUID().uuidString).spv")
+        let output = dir.appendingPathComponent("pyshader-\(UUID().uuidString).spv")
+        try shader.bytes.write(to: input)
+        defer { try? FileManager.default.removeItem(at: input); try? FileManager.default.removeItem(at: output) }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: tool)
+        p.arguments = ["--target-env=vulkan1.0", "-O", input.path, "-o", output.path]
+        try p.run()
+        p.waitUntilExit()
+        guard p.terminationStatus == 0 else { return nil }
+        let data = try Data(contentsOf: output)
+        return SpirvWords(words: data.withUnsafeBytes { Array($0.bindMemory(to: UInt32.self)) })
+    }
 
     /// Runs spirv-val on the shader; returns nil when the tool is unavailable.
     static func validate(_ shader: CompiledShader) throws -> String? {

@@ -36,9 +36,7 @@ extension FunctionDecompiler {
             return .call("mod", [try a(2), try a(3)])
         case .opFNegate, .opSNegate: return .unary("-", try a(2))
         case .opDot: return .call("dot", [try a(2), try a(3)])
-        case .opOuterProduct:
-            warn("OpOuterProduct has no PyShader builtin")
-            return .call("outer_product", [try a(2), try a(3)])
+        case .opOuterProduct: return .call("outerProduct", [try a(2), try a(3)])
         case .opTranspose: return .call("transpose", [try a(2)])
 
         // MARK: Bits
@@ -48,6 +46,12 @@ extension FunctionDecompiler {
         case .opShiftLeftLogical: return try binary("<<", ops[2], ops[3])
         case .opShiftRightLogical, .opShiftRightArithmetic: return try binary(">>", ops[2], ops[3])
         case .opNot: return .unary("~", try a(2))
+        case .opBitCount:
+            // GLSL's bitCount returns int; Metal's popcount keeps the argument's type.
+            return .call(t == .int(t.componentCount) ? "bitCount" : "popcount", [try a(2)])
+        case .opBitReverse: return .call("bitfieldReverse", [try a(2)])
+        case .opBitFieldSExtract, .opBitFieldUExtract: return .call("bitfieldExtract", [try a(2), try a(3), try a(4)])
+        case .opBitFieldInsert: return .call("bitfieldInsert", [try a(2), try a(3), try a(4), try a(5)])
 
         // MARK: Logic & comparison
         case .opLogicalAnd: return .boolOp("and", try a(2), try a(3))
@@ -83,13 +87,23 @@ extension FunctionDecompiler {
             if from.isInt, t.isInt {
                 return .call(t.description, [try a(2)])
             }
+            if from.scalarKind == .float(bits: 32), t.scalarKind == .int(bits: 32, signed: true) { return .call("floatBitsToInt", [try a(2)]) }
+            if from.scalarKind == .float(bits: 32), t.scalarKind == .int(bits: 32, signed: false) { return .call("floatBitsToUint", [try a(2)]) }
+            if from.scalarKind == .int(bits: 32, signed: true), t.scalarKind == .float(bits: 32) { return .call("intBitsToFloat", [try a(2)]) }
+            if from.scalarKind == .int(bits: 32, signed: false), t.scalarKind == .float(bits: 32) { return .call("uintBitsToFloat", [try a(2)]) }
             warn("OpBitcast between `\(from)` and `\(t)` has no PyShader spelling")
             return .call("bitcast_\(t.description)", [try a(2)])
 
         // MARK: Derivatives
-        case .opDPdx, .opDPdxFine, .opDPdxCoarse: return .call("dfdx", [try a(2)])
-        case .opDPdy, .opDPdyFine, .opDPdyCoarse: return .call("dfdy", [try a(2)])
-        case .opFwidth, .opFwidthFine, .opFwidthCoarse: return .call("fwidth", [try a(2)])
+        case .opDPdx: return .call("dfdx", [try a(2)])
+        case .opDPdy: return .call("dfdy", [try a(2)])
+        case .opFwidth: return .call("fwidth", [try a(2)])
+        case .opDPdxFine: return .call("dFdxFine", [try a(2)])
+        case .opDPdyFine: return .call("dFdyFine", [try a(2)])
+        case .opFwidthFine: return .call("fwidthFine", [try a(2)])
+        case .opDPdxCoarse: return .call("dFdxCoarse", [try a(2)])
+        case .opDPdyCoarse: return .call("dFdyCoarse", [try a(2)])
+        case .opFwidthCoarse: return .call("fwidthCoarse", [try a(2)])
 
         // MARK: Composites
         case .opCompositeConstruct:
@@ -346,6 +360,21 @@ extension FunctionDecompiler {
         case .faceForward: name = "faceforward"
         case .reflect: name = "reflect"
         case .refract: name = "refract"
+        case .modfStruct: name = "modf"
+        case .frexpStruct: name = "frexp"
+        case .ldexp: name = "ldexp"
+        case .packHalf2x16: name = "packHalf2x16"
+        case .packUnorm2x16: name = "packUnorm2x16"
+        case .packSnorm2x16: name = "packSnorm2x16"
+        case .packUnorm4x8: name = "packUnorm4x8"
+        case .packSnorm4x8: name = "packSnorm4x8"
+        case .unpackHalf2x16: name = "unpackHalf2x16"
+        case .unpackUnorm2x16: name = "unpackUnorm2x16"
+        case .unpackSnorm2x16: name = "unpackSnorm2x16"
+        case .unpackUnorm4x8: name = "unpackUnorm4x8"
+        case .unpackSnorm4x8: name = "unpackSnorm4x8"
+        case .findILsb: name = "findLSB"
+        case .findSMsb, .findUMsb: name = "findMSB"
         default:
             warn("GLSL.std.450 \(inst) has no PyShader builtin; written as `glsl_\(inst)()`")
             name = "glsl_\(inst)"

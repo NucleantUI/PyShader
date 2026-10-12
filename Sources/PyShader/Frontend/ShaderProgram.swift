@@ -15,6 +15,8 @@ struct ShaderFunctionSignature {
     let params: [(name: String, type: ShaderType)]
     let returnType: ShaderType
     let def: FunctionDef
+    /// `@inline` / `@noinline`.
+    let control: SpirvFunctionControl
     var id: SpirvId = 0
 
 }
@@ -245,13 +247,28 @@ final class ShaderProgram {
         structs[c.name] = .structure(name: c.name, members: members)
     }
 
+    /// `@inline` / `@noinline` on a function: hints to the driver, `OpFunction`'s control.
+    private static func functionControl(_ def: FunctionDef) throws -> SpirvFunctionControl {
+        var control: SpirvFunctionControl = []
+        for decorator in def.decoratorList {
+            switch decorator {
+            case .name(let n) where n.id == "inline": control.insert(.inline)
+            case .name(let n) where n.id == "noinline": control.insert(.dontInline)
+            default:
+                throw PyShaderError("`\(def.name)`: the only decorators are `@inline` and `@noinline`", line: def.lineno)
+            }
+        }
+        if control.contains(.inline), control.contains(.dontInline) {
+            throw PyShaderError("`\(def.name)` cannot be both `@inline` and `@noinline`", line: def.lineno)
+        }
+        return control
+    }
+
     private func declare(_ def: FunctionDef) throws {
         if functions[def.name] != nil || globals[def.name] != nil || lambdas[def.name] != nil || structs[def.name] != nil {
             throw PyShaderError("`\(def.name)` is already defined at module level", line: def.lineno)
         }
-        if !def.decoratorList.isEmpty {
-            throw PyShaderError("decorators are not supported", line: def.lineno)
-        }
+        let control = try Self.functionControl(def)
         try Self.validateArguments(def.args, owner: "`\(def.name)`", line: def.lineno)
 
         let entry = entries[def.name]
@@ -299,7 +316,7 @@ final class ShaderProgram {
             }
         }
 
-        functions[def.name] = ShaderFunctionSignature(name: def.name, params: params, returnType: returnType, def: def)
+        functions[def.name] = ShaderFunctionSignature(name: def.name, params: params, returnType: returnType, def: def, control: control)
         functionOrder.append(def.name)
     }
 

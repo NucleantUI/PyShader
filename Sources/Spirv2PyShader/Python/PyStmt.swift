@@ -18,6 +18,8 @@ indirect enum PyStmt {
     /// `while cond:` (nil = `while True:`); `next` runs after the body and before every `continue`.
     case loop(cond: PyExpr?, body: [PyStmt], next: [PyStmt])
     case forRange(String, [PyExpr], [PyStmt])
+    /// `match subject:` with `case a | b:` arms, then `case _:` when `fallback` is not empty.
+    case match(PyExpr, cases: [(values: [PyExpr], body: [PyStmt])], fallback: [PyStmt])
     case breakStmt
     case continueStmt
     case comment(String)
@@ -68,6 +70,16 @@ indirect enum PyStmt {
             case .forRange(let v, let args, let body):
                 lines.append("\(pad)for \(v) in range(\(args.map(\.rendered).joined(separator: ", "))):")
                 renderInto(&lines, body, indent: indent + 1)
+            case .match(let subject, let cases, let fallback):
+                lines.append("\(pad)match \(subject.rendered):")
+                for c in cases {
+                    lines.append("\(pad)    case \(c.values.map(\.rendered).joined(separator: " | ")):")
+                    renderInto(&lines, c.body, indent: indent + 2)
+                }
+                if !fallback.isEmpty {
+                    lines.append("\(pad)    case _:")
+                    renderInto(&lines, fallback, indent: indent + 2)
+                }
             case .breakStmt:
                 lines.append("\(pad)break")
             case .continueStmt:
@@ -96,6 +108,7 @@ indirect enum PyStmt {
             switch s {
             case .continueStmt: return next + [.continueStmt]
             case .ifStmt(let c, let t, let e): return [.ifStmt(c, spliceContinues(t, next), spliceContinues(e, next))]
+            case .match: return [s.withNested { spliceContinues($0, next) }]
             default: return [s]
             }
         }
@@ -113,6 +126,7 @@ indirect enum PyStmt {
         case .ifStmt(let c, _, _): return [c]
         case .loop(let c, _, _): return c.map { [$0] } ?? []
         case .forRange(_, let args, _): return args
+        case .match(let subject, _, _): return [subject]
         case .declare, .breakStmt, .continueStmt, .comment: return []
         }
     }
@@ -122,6 +136,7 @@ indirect enum PyStmt {
         case .ifStmt(_, let t, let e): return [t, e]
         case .loop(_, let b, let n): return [b, n]
         case .forRange(_, _, let b): return [b]
+        case .match(_, let cases, let fallback): return cases.map(\.body) + [fallback]
         default: return []
         }
     }
@@ -131,6 +146,7 @@ indirect enum PyStmt {
         case .ifStmt(let c, let t, let e): return .ifStmt(c, f(t), f(e))
         case .loop(let c, let b, let n): return .loop(cond: c, body: f(b), next: f(n))
         case .forRange(let v, let a, let b): return .forRange(v, a, f(b))
+        case .match(let subject, let cases, let fallback): return .match(subject, cases: cases.map { ($0.values, f($0.body)) }, fallback: f(fallback))
         default: return self
         }
     }
@@ -144,6 +160,7 @@ indirect enum PyStmt {
         case .ifStmt(let c, let t, let e): return .ifStmt(f(c), t, e)
         case .loop(let c, let b, let n): return .loop(cond: c.map(f), body: b, next: n)
         case .forRange(let v, let a, let b): return .forRange(v, a.map(f), b)
+        case .match(let subject, let cases, let fallback): return .match(f(subject), cases: cases, fallback: fallback)
         default: return self
         }
     }

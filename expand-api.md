@@ -15,7 +15,8 @@ sometimes a target or interface change, and sometimes something from the host
   an `rgba8` storage image) and `.graphics` (vertex + fragment in one module,
   no vertex buffers).
 - **Module:** a SPIR-V 1.0 header and the `Logical` / `GLSL450` memory model.
-  Capabilities are `Shader`, plus `Float16`, `Int16` and `ImageQuery` when used.
+  Capabilities are `Shader`, plus `Float16`, `Int16`, `ImageQuery` and
+  `DerivativeControl` when used.
   GLSL.std.450 is the only extended set.
 - **What gets emitted:**
   - Execution modes: `OriginUpperLeft`, `LocalSize`.
@@ -26,7 +27,8 @@ sometimes a target or interface change, and sometimes something from the host
     `VertexIndex`, `InstanceIndex`, `GlobalInvocationId`.
 - **Images:** 2D sampled images read at explicit LOD 0 (`layer(p)`, `a(uv)`,
   `a_size`), and the `rgba8` output.
-- **Library:** 53 of GLSL.std.450's 81 instructions are reachable from Python.
+- **Library:** 67 of GLSL.std.450's 81 instructions are reachable from Python
+  (`modf` / `frexp` are built from core ops, see Done below).
 
 ## Constraints on everything below
 
@@ -38,22 +40,46 @@ sometimes a target or interface change, and sometimes something from the host
   run it refuses it with a clear error. Run each new feature's example through
   NagaWasm as well as `spirv-val`.
 
-## Small: library functions
+## Done: tier 1
 
-No new types, no host change and no version bump. The names follow PyShader's
-rule: GLSL 450 spelling, with the Metal one as an alias where the semantics
-match.
+Landed with tests (`LibraryTests`, `MatchTests`, `HintTests`, `SourceLineTests`,
+plus glslang and round-trip cases in Spirv2PyShaderTests), `spirv-val`, and a
+pass through NagaWasm for each:
 
-| Python (suggested) | SPIR-V | Notes |
-|---|---|---|
-| `modf(x) -> tuple[float, float]` | `GLSLstd450.modfStruct` | The struct result maps onto PyShader's existing tuple returns. |
-| `frexp(x) -> tuple[float, int]`, `ldexp(x, e)` | `.frexpStruct`, `.ldexp` | |
-| `packHalf2x16` / `unpackHalf2x16`, plus the `Unorm4x8`, `Snorm4x8`, `Unorm2x16`, `Snorm2x16` pairs | `.packHalf2x16` … `.unpackUnorm4x8` | Packs colours or normals into `uint`s, e.g. for argument buffers and hashes. |
-| `findLSB(x)`, `findMSB(x)` | `.findILsb`, `.findSMsb` / `.findUMsb` | Signed and unsigned are split the way `abs` is. |
-| `bitCount` / `popcount`, `bitfieldReverse` / `reverse_bits` | `SpirvOp.opBitCount`, `.opBitReverse` | Core ops, on int and uint scalars and vectors. |
-| `bitfieldExtract` / `extract_bits`, `bitfieldInsert` / `insert_bits` | `.opBitFieldSExtract` / `.opBitFieldUExtract`, `.opBitFieldInsert` | |
-| `outerProduct(a, b)` | `.opOuterProduct` | Spirv2PyShader already reads it. |
-| `dFdxFine` / `dfdx_fine`, `…Coarse`, and the same for `dfdy` and `fwidth` | `.opDPdxFine` … `.opFwidthCoarse` | Needs `SpirvCapability.derivativeControl`. Spirv2PyShader already reads these, but folds them into plain `dfdx`. |
+- **Library:** `modf`, `frexp`, `ldexp`; the ten pack / unpack functions
+  (Metal spellings for the norm ones); `bitCount` / `popcount`,
+  `bitfieldReverse`, `bitfieldExtract`, `bitfieldInsert`, `findLSB`,
+  `findMSB`; `floatBitsToInt` / `…Uint` / `intBitsToFloat` / `uintBitsToFloat`;
+  `outerProduct`; fine and coarse derivatives (`DerivativeControl`).
+  Spirv2PyShader maps each back, and reads glslang's `ResType` structs from
+  `ModfStruct` / `FrexpStruct` as tuples.
+- **`match` → `OpSwitch`** on int / uint, with literals, `|` and `_`.
+  Spirv2PyShader writes `OpSwitch` as `match` instead of an `if` chain.
+- **Hints:** `@inline` / `@noinline`, `unroll(range(...))` /
+  `dont_unroll(range(...))`. Spirv2PyShader drops them.
+- **Source lines:** `PyShader.compile(..., sourceFile:)` and `pyshaderc` add
+  `OpString` + `OpLine` per statement. Without a file name the output is
+  unchanged.
+
+### naga (30) quirks found on the way
+
+Each one is worked around in the SPIR-V PyShader emits, so both NagaWasm and
+NucleantVulkan's NagaWebGPU take it without a patch:
+
+- `ModfStruct` / `FrexpStruct`: the frontend maps them but never registers the
+  result type ("Special type is not registered"). `modf` is `trunc` and a
+  subtraction; `frexp` reads the float's bits.
+- `OpOuterProduct`: typed transposed, and WGSL has no outer product.
+  `outerProduct` builds the columns `c * r[j]`.
+- `FindUMsb` / `FindILsb` / `OpBitCount` with a result type of other
+  signedness than the argument: naga types the result as the argument. They
+  are emitted in the argument's type and bitcast to int.
+- `OpLogicalOr` / `OpLogicalAnd` on bool vectors: refused (WGSL's `||` is
+  scalar). Chain `OpSelect`s instead.
+- A branch from a switch case to an enclosing loop's merge becomes a WGSL
+  `break`, which only leaves the switch. A `break` in a `match` sets a flag;
+  the loop is left after the switch.
+- Already known: `isnan` / `isinf` and 16-bit types have no WGSL spelling.
 
 ## Fragment stage
 
@@ -161,15 +187,9 @@ its size.
 
 ## Language features over existing SPIR-V
 
-- **`match` on ints → `OpSwitch`.** `case 1 | 2:` becomes two literals and
-  `case _:` the default. PySwiftAST already parses `match`; `FunctionEmitter`
-  currently rejects it with "match is not supported yet; use if/elif".
-- **Control hints.** `SpirvLoopControl` (`.unroll`, `.dontUnroll`),
-  `SpirvSelectionControl` (`.flatten`, `.dontFlatten`) and
-  `SpirvFunctionControl` (`.inline`, `.dontInline`) are `OptionSet`s now.
-  PyShader emits `.none` everywhere. A decorator on `def` (`@inline`,
-  `@noinline`) and a wrapper on `range` (`for i in unroll(range(4))`) would
-  expose them.
+- **More of `match`.** Guards (`case 1 if c:`) need PySwiftAST to parse them;
+  it reads the pattern as an expression today. Selection hints (`.flatten`,
+  `.dontFlatten`) have no Python spelling yet.
 - **Specialization constants.** A module constant the host may override when
   it creates the pipeline, e.g. `STEPS: Spec[int] = 64`.
   - SPIR-V: `OpSpecConstant` / `OpSpecConstantTrue` / `OpSpecConstantFalse` /
@@ -193,11 +213,6 @@ its size.
   - Make the version a target option, raised only when a feature needs it, so
     today's output stays byte-identical. SpirvCore's planned `SpirvVersion`
     (its API shape 5) would replace the magic words.
-- **Source lines.**
-  - `OpString` with the `.py` file name, then `OpLine` before instructions.
-    `spirv-val`, RenderDoc and Naga then point at Python lines.
-  - PyShader already tracks `line:` for its own errors, and Spirv2PyShader
-    already skips `OpLine`. Small.
 - **`print()` via `NonSemantic.DebugPrintf`.**
   - SPIR-V: `OpExtInstImport "NonSemantic.DebugPrintf"`, instruction 1, and
     `OpExtension "SPV_KHR_non_semantic_info"`.
@@ -253,11 +268,11 @@ These are not SPIR-V additions, just things the docs now record as missing:
 
 ## Suggested order
 
-1. The library functions and source lines. Small, with no host change and no
-   version bump.
+1. ~~The library functions and source lines. Small, with no host change and no
+   version bump.~~ Done.
 2. Texture variants: `fetch`, `sample_lod`, `a_levels`, and implicit LOD in
    the fragment stage.
-3. `match` → `OpSwitch`, and the control hints.
+3. ~~`match` → `OpSwitch`, and the control hints.~~ Done.
 4. The general compute target: buffers, shared memory, barriers, atomics. The
    biggest item, but the host parts exist.
 5. The version option, then subgroups and `demote()`.

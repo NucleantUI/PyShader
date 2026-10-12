@@ -10,10 +10,13 @@ vectors where GLSL allows it: `min(v, 0.5)`, `clamp(v, 0.0, 1.0)`,
 | Trigonometry | `sin` `cos` `tan` `asin` `acos` `atan(x)` `atan(y, x)` `atan2` `sinh` `cosh` `tanh` `asinh` `acosh` `atanh` `radians` `degrees` |
 | Exponential | `pow` `exp` `exp2` `log` `log2` `sqrt` `inversesqrt` / `rsqrt` |
 | Common | `abs` `sign` (float and signed int) `floor` `ceil` `round` (to even) `trunc` `fract` `mod` `min` `max` (n-ary like Python, int and float) `clamp` `saturate` `mix` / `lerp` `step` `smoothstep` `fma` `isnan` `isinf` |
+| Split and scale | `modf(x) -> (fraction, whole)` and `frexp(x) -> (mantissa, exponent)` as Python's `math` returns them; `ldexp(x, e)` |
+| Packing | `packUnorm4x8` `packSnorm4x8` `packUnorm2x16` `packSnorm2x16` `packHalf2x16` (`floatN` → `uint`) and the matching `unpack…` (`uint` → `floatN`); Metal's `pack_float_to_unorm4x8` / `unpack_unorm4x8_to_float` spellings for the norm ones |
+| Bits | `bitCount` (int result, as GLSL) / `popcount` (the argument's type, as Metal) `bitfieldReverse` / `reverse_bits` `bitfieldExtract` / `extract_bits` `bitfieldInsert` / `insert_bits` `findLSB` `findMSB` (an int index, -1 for no set bit); `floatBitsToInt` `floatBitsToUint` `intBitsToFloat` `uintBitsToFloat` — on 32-bit ints, `short` / `ushort` widen first |
 | Geometric | `length` `distance` `dot` `cross` `normalize` `faceforward` `reflect` `refract` |
-| Matrices | `transpose` `determinant` `inverse` |
+| Matrices | `transpose` `determinant` `inverse` `outerProduct(c, r)` (`len(r)` columns of `len(c)` rows) |
 | Vector relational | `any` `all` — on a `boolN` from a vector comparison |
-| Derivatives | `dfdx` / `dFdx` `dfdy` / `dFdy` `fwidth` — [fragment target](../targets/fragment.md) only: an error in compute as in GLSL, and in the graphics target's fragment stage |
+| Derivatives | `dfdx` / `dFdx` `dfdy` / `dFdy` `fwidth`, and the fine and coarse ones: `dFdxFine` / `dfdx_fine` `dFdyFine` `fwidthFine` `dFdxCoarse` `dFdyCoarse` `fwidthCoarse` — [fragment target](../targets/fragment.md) only: an error in compute as in GLSL, and in the graphics target's fragment stage |
 | Fragment control | `discard()` — fragment target only |
 | Host resources | `layer(p: float2) -> float4` — the view under a `.shader(_:)` effect ([compute](../targets/compute.md) and [graphics](../targets/graphics.md) targets); `len(a)` on an array argument (`FloatArray` … `Float4Array`), a list, a tuple or a vector |
 | Textures | `a(p: float2) -> float4` and `a_size` (`int2`) for a `Texture` parameter `a` — compute and graphics targets, see [Textures](../targets/compute.md#textures) |
@@ -40,10 +43,7 @@ A module that binds the name itself wins, so a shader carrying its own
 | Feature | Notes |
 |---|---|
 | texture reads beyond `a(uv)` | implicit LOD, an explicit `lod` / `grad`, `fetch`, `gather`; cube, 3D and array images |
-| `modf` `frexp` `ldexp` | multiple return values |
 | `select(a, b, c)` | use `b if c else a` |
-| `bitCount` `findLSB` / `findMSB` `bitfieldReverse` `bitfieldExtract` / `bitfieldInsert` | `OpBitCount` etc.; the operators `&` `\|` `^` `~` `<<` `>>` are there |
-| packing `packHalf2x16` … | GLSL.std.450 pack / unpack |
 | `roundEven` vs `round` | `round()` maps to `RoundEven` (deterministic); GLSL's `round` is implementation-defined at .5 |
 
 ## In use

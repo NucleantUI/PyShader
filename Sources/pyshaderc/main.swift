@@ -73,7 +73,7 @@ default: usage()
 
 do {
     let source = try String(contentsOfFile: input, encoding: .utf8)
-    let shader = try PyShader.compile(source, target: target)
+    let shader = try PyShader.compile(source, target: target, sourceFile: (input as NSString).lastPathComponent)
     let outPath = output ?? (input as NSString).deletingPathExtension + ".spv"
     try shader.bytes.write(to: URL(fileURLWithPath: outPath))
     print("\(outPath): \(shader.spirv.count) words")

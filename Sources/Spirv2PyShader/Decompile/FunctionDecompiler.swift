@@ -543,15 +543,16 @@ final class FunctionDecompiler {
         throw error("an early exit crosses more than one construct; decompile unoptimised SPIR-V")
     }
 
-    /// `switch` as an `if`/`elif` chain on the selector; a case falling
-    /// through into the next one repeats that case's statements.
+    /// `switch` as a `match` on the selector; a case falling through into the
+    /// next one repeats that case's statements.
     private func emitSwitch(_ term: Instruction, merge: SpirvId, from label: SpirvId, stop: SpirvId?) throws -> Flow {
         var selector = try use(term.operands[0])
+        let unsigned = (try type(of: term.operands[0])).scalarKind?.isSigned == false
         let defaultLabel = term.operands[1]
         var cases: [(labels: [PyExpr], target: SpirvId)] = []
         var i = 2
         while i + 1 < term.operands.count {
-            let literal = PyExpr.number("\(Int32(bitPattern: term.operands[i]))")
+            let literal = PyExpr.number(unsigned ? "\(term.operands[i])" : "\(Int32(bitPattern: term.operands[i]))")
             let target = term.operands[i + 1]
             if let k = cases.firstIndex(where: { $0.target == target }) {
                 cases[k].labels.append(literal)
@@ -568,16 +569,23 @@ final class FunctionDecompiler {
         try phiCopies(from: label, to: defaultLabel)
         for c in cases { try phiCopies(from: label, to: c.target) }
 
-        var chain = try nested { try self.branchArm(defaultLabel, merge: merge, stop: stop) }
-        guard case .done = chain.flow else { throw error("a switch case leaves the construct") }
-        for c in cases.reversed() {
-            let cond = c.labels.map { PyExpr.compare("==", selector, $0) }.reduce(nil as PyExpr?) { acc, e in acc.map { .boolOp("or", $0, e) } ?? e }!
+        let fallback = try nested { try self.branchArm(defaultLabel, merge: merge, stop: stop) }
+        guard case .done = fallback.flow else { throw error("a switch case leaves the construct") }
+        var arms: [(values: [PyExpr], body: [PyStmt])] = []
+        for c in cases {
             let arm = try nested { try self.branchArm(c.target, merge: merge, stop: stop) }
             guard case .done = arm.flow else { throw error("a switch case leaves the construct") }
-            if arm.stmts.isEmpty, chain.stmts.isEmpty { continue }
-            chain.stmts = [.ifStmt(cond, arm.stmts, chain.stmts)]
+            arms.append((c.labels, arm.stmts))
         }
-        for s in chain.stmts { emit(s) }
+        // With nothing in `case _`, trailing cases that do nothing say nothing.
+        if fallback.stmts.isEmpty {
+            while let last = arms.last, last.body.isEmpty { arms.removeLast() }
+        }
+        if arms.isEmpty {
+            for s in fallback.stmts { emit(s) }
+        } else {
+            emit(.match(selector, cases: arms, fallback: fallback.stmts))
+        }
         return merge == stop ? .done : .next(merge)
     }
 
