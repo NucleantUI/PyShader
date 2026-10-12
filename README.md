@@ -112,8 +112,8 @@ def march(p: float3) -> float:
 ```
 
 No recursion (SPIR-V forbids it), no imports besides `pyshader`, no
-decorators, no default parameter values, and keyword arguments only when
-constructing a class. Classes are plain structs (see
+decorators besides the `@inline` / `@noinline` hints, no default parameter
+values, and keyword arguments only when constructing a class. Classes are plain structs (see
 [Vertex + fragment](#vertex--fragment)).
 
 ### Control flow
@@ -130,6 +130,14 @@ for i in range(64):         # ints; range(start, stop, step) too
     ...
 while x >= 0.0:             # float-stepped loops
     x -= 6.67
+
+match band:                 # int / uint; literals, `|`, `_`
+    case 0:
+        color = red
+    case 1 | 2:
+        color = green
+    case _:
+        color = blue
 ```
 
 `break`, `continue`, early `return` anywhere. Every path of a non-`None`
@@ -155,9 +163,11 @@ GLSL 450 names, Metal spellings accepted; ints promote, scalars broadcast:
 `sin cos tan asin acos atan atan2 sinh cosh tanh radians degrees` ·
 `pow exp exp2 log log2 sqrt rsqrt` ·
 `abs sign floor ceil round trunc fract mod min max clamp saturate mix lerp step smoothstep fma isnan isinf` ·
+`modf frexp ldexp` · `packUnorm4x8 packHalf2x16 …` and `unpack…` ·
+`bitCount findLSB findMSB bitfieldExtract bitfieldInsert bitfieldReverse floatBitsToUint uintBitsToFloat …` ·
 `length distance dot cross normalize reflect refract faceforward` ·
-`transpose determinant inverse` · `any all` ·
-`dfdx dfdy fwidth discard` (fragment target only) ·
+`transpose determinant inverse outerProduct` · `any all` ·
+`dfdx dfdy fwidth`, their `…Fine` / `…Coarse` forms, `discard` (fragment target only) ·
 `layer(uv)` (the view under a `.shader` effect) · `a(uv)` / `a_size` (a
 [texture](#textures)) · `len`
 

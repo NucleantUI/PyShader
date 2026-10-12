@@ -10,22 +10,44 @@ else:
 
 for i in range(64):         # ints; range(start, stop, step) too
     ...
+for i in unroll(range(4)):  # a hint; dont_unroll(range(n)) is the other one
+    ...
 while x >= 0.0:             # float-stepped loops
     x -= 6.67
+
+match band:                 # an int or uint
+    case 0:
+        color = red
+    case 1 | 2:
+        color = green
+    case _:
+        color = blue
 ```
 
 `break`, `continue`, `pass` and early `return` work anywhere, nested loops
 included. Every path of a function with a return type must return a value.
 
+`match` takes an `int` or `uint` subject (a `short` / `ushort` widens).
+A case is int literals joined by `|`, or `_`, which must come last. Cases
+don't fall through, as in Python, and a value repeated in a later case
+belongs to the first one. There are no capture (`case n:`), class or
+sequence patterns, and no guards (`case 1 if c:`, which the parser does not
+read yet). `break` and `continue` in a case act on the enclosing loop.
+
 There is no `for x in xs` over a list yet; index with `range(len(xs))`.
-`match` is not supported yet either; use `if` / `elif`. A `match` on ints
-would map onto `OpSwitch`. There is no `while … else`, `for … else`,
-comprehension or f-string: those are not shader-shaped.
+There is no `while … else`, `for … else`, comprehension or f-string: those
+are not shader-shaped.
 
 Lowering: `if` becomes `OpSelectionMerge` + `OpBranchConditional`; loops
 become `OpLoopMerge` with a header, body and continue block; `break` and
 `continue` branch to the merge / continue blocks, and an early `return` inside
 a loop is a plain `OpReturnValue` in a block that never reaches the merge.
+`unroll()` / `dont_unroll()` set the loop's `Unroll` / `DontUnroll` control,
+hints that change nothing the loop computes.
+`match` becomes `OpSelectionMerge` + `OpSwitch`, `case _` its default. A
+`break` in a case sets a flag and leaves the switch, and the loop is left
+right after it: naga (the web build) would turn a branch from a case straight
+to the loop's merge into a WGSL `break`, which only leaves the switch.
 
 ## In use
 

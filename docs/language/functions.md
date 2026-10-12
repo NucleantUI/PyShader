@@ -18,8 +18,10 @@ def checker(p: float2, size: float) -> bool:
 
 Arguments convert on the way in like assignments do (int → float, scalar →
 vector). There is no recursion (SPIR-V forbids it), no keyword arguments
-(except when [constructing a class](classes.md)), no default values and no
-decorators. The entry point's inputs are not globals: a helper that needs
+(except when [constructing a class](classes.md)) and no default values. The
+only decorators are `@inline` and `@noinline`, hints to the driver
+(`OpFunction`'s `Inline` / `DontInline`) that change nothing a shader
+computes. The entry point's inputs are not globals: a helper that needs
 `time` takes it as a parameter.
 
 ## Several results

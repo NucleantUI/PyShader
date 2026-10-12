@@ -18,8 +18,25 @@ def main(uv: float2, time: float, frag_coord: float4) -> float4:
     n = normalize(cross(v, float3(0.0, 1.0, 0.0)))
     n = reflect(n, float3(0.0, 0.0, 1.0)) + refract(n, float3(0.0, 0.0, 1.0), 0.9) + faceforward(n, v, n)
 
+    fr, whole = modf(p.x * 3.5)
+    mant, ex = frexp(p.y * 100.0)
+    a += fr + whole + ldexp(mant, ex)
+    m = outerProduct(v, float2(p.y, 1.0))
+    a += m[1].z
+
+    word = packUnorm4x8(float4(v, 1.0)) ^ packSnorm4x8(float4(-v, 0.5)) ^ packHalf2x16(p)
+    word ^= packUnorm2x16(p) ^ packSnorm2x16(p)
+    a += unpackUnorm4x8(word).x + unpackSnorm4x8(word).y + unpackHalf2x16(word).x
+    a += unpackUnorm2x16(word).y + unpackSnorm2x16(word).x
+
+    i = int(frag_coord.x)
+    bits = bitCount(i) + findLSB(i) + findMSB(i) + bitfieldExtract(i, 2, 3)
+    ubits = popcount(word) + bitfieldReverse(word) + bitfieldInsert(word, 5, 0, 4)
+    a += float(bits) + float(ubits % 7)
+
     b = any(v > 0.5) or all(v < 2.0)
     d = dfdx(p.x) + dfdy(p.y) + fwidth(p.x) + dFdx(p.y) + dFdy(p.x)
+    d += dFdxFine(p.x) + dFdyFine(p.y) + fwidthFine(p.x) + dFdxCoarse(p.y) + dFdyCoarse(p.x) + fwidthCoarse(p.y)
 
     vm = min(v, 0.5) + max(v, float3(0.1)) + clamp(v, 0.0, 1.0) + smoothstep(0.0, 1.0, v) + pow(v, 2.0) + abs(v)
 

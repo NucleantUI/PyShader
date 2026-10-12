@@ -29,8 +29,9 @@ final class ShaderCompiler {
     private(set) var variables: [String: LocalVariable] = [:]
     private(set) var globalsInit: SpirvId?
 
-    init(program: ShaderProgram) {
+    init(program: ShaderProgram, sourceFile: String? = nil) {
         self.program = program
+        if let sourceFile { builder.setSourceFile(sourceFile) }
     }
 
     func compile() throws -> [UInt32] {
@@ -52,7 +53,7 @@ final class ShaderCompiler {
                 returnType: fn.returnType,
                 implicitReturn: forwards ? { try Self.forwardColor($0, entry: name, line: fn.def.lineno) } : nil
             )
-            try emitter.emitFunction(id: fn.id, params: fn.params, body: fn.def.body, line: fn.def.lineno)
+            try emitter.emitFunction(id: fn.id, params: fn.params, body: fn.def.body, control: fn.control, line: fn.def.lineno)
         }
 
         try checkRecursion()

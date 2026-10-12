@@ -31,7 +31,8 @@ def main(color: float4, uv: float2):
 
 ## Fragment-only builtins
 
-`dfdx` / `dfdy` / `fwidth` and `discard()` exist only here. A compute stage
+`dfdx` / `dfdy` / `fwidth` (and their `…Fine` / `…Coarse` forms) and
+`discard()` exist only here. A compute stage
 has no derivatives, as in GLSL, and the [graphics](graphics.md) target's
 fragment stage does not offer them yet.
 

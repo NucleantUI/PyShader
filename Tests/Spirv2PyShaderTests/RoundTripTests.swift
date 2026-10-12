@@ -52,6 +52,35 @@ struct RoundTripTests {
         #expect(!s.contains("py_globals") && !s.contains("globals()"))
     }
 
+    @Test("match comes back as match; a break in a case comes back through its flag")
+    func match() throws {
+        let words = try PyShader.compile("""
+        def shade(k: int) -> float3:
+            match k:
+                case 0:
+                    return float3(1.0, 0.0, 0.0)
+                case 1 | 2:
+                    return float3(0.0, 1.0, 0.0)
+                case _:
+                    return float3(0.5)
+
+        def main(uv: float2) -> float4:
+            total = 0.0
+            for i in range(6):
+                match i:
+                    case 1:
+                        continue
+                    case 4:
+                        break
+                total += 0.25
+            return float4(shade(int(uv.x * 4.0)) * total, 1.0)
+        """).spirv
+        let s = try decompileAndRecompile(words).source
+        #expect(s.contains("def shade(k: int) -> float3:\n    match k:\n        case 0:\n            return float3(1.0, 0.0, 0.0)\n        case 1 | 2:\n            return float3(0.0, 1.0, 0.0)\n        case _:\n            return float3(0.5)"))
+        #expect(s.contains("        match i:\n            case 1:\n                continue\n            case 4:\n"))
+        #expect(s.contains("break"))
+    }
+
     @Test("helpers, loops, swizzle stores and augmented assignment come back as written")
     func statements() throws {
         let source = """

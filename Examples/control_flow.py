@@ -1,6 +1,7 @@
-"""if/elif/else, while, for-range, break/continue, early return, nested loops."""
+"""if/elif/else, match, while, for-range, break/continue, early return, nested loops, hints."""
 
 
+@inline
 def checker(p: float2, size: float) -> bool:
     ix = int(floor(p.x / size))
     iy = int(floor(p.y / size))
@@ -22,6 +23,17 @@ def main(uv: float2, time: float, mouse: float2, resolution: float2) -> float4:
     if checker(uv, 0.1):
         color.rgb *= 0.8
 
+    # horizontal bands, picked by index
+    match int(uv.y * 5.0):
+        case 0:
+            color.rgb *= float3(1.0, 0.6, 0.6)
+        case 1 | 3:
+            color.rgb *= 0.9
+        case -1:
+            pass
+        case _:
+            color.rgb += 0.05
+
     # accumulate rings
     acc = 0.0
     i = 0
@@ -34,8 +46,14 @@ def main(uv: float2, time: float, mouse: float2, resolution: float2) -> float4:
         acc += sin(length(uv - 0.5) * 20.0 - time + float(i))
 
     for k in range(4):
-        for j in range(1, 3):
+        for j in unroll(range(1, 3)):
             acc += 0.01 * float(k * j)
+        match k:
+            case 2:
+                continue
+            case 3:
+                break
+        acc += 0.002
 
     for n in range(10, 0, -2):
         acc += 0.001 * float(n)

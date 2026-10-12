@@ -28,6 +28,9 @@ final class SpirvModuleBuilder {
     private var literalFloats: [SpirvId: Double] = [:]
 
     private(set) var glslExtId: SpirvId = 0
+    /// The `OpString` naming the `.py` file, when the module carries source lines.
+    private(set) var sourceFileId: SpirvId?
+    private var sourceFileName = ""
 
     private struct ConstantKey: Hashable {
         let type: ShaderType
@@ -58,6 +61,17 @@ final class SpirvModuleBuilder {
     }
 
     // MARK: Debug & annotations
+
+    func setSourceFile(_ name: String) {
+        sourceFileId = allocate()
+        sourceFileName = name
+    }
+
+    /// `OpLine` for a statement on `line` of the source file; nil when the module has none.
+    func line(_ line: Int) -> SpirvInstruction? {
+        guard let sourceFileId, line > 0 else { return nil }
+        return .init(.opLine, [sourceFileId, UInt32(line), 0])
+    }
 
     func name(_ id: SpirvId, _ name: String) {
         debug.append(.init(.opName, [id] + SpirvInstruction.encode(string: name)))
@@ -264,7 +278,12 @@ final class SpirvModuleBuilder {
         words += SpirvInstruction(.opMemoryModel, [SpirvAddressingModel.logical.rawValue, SpirvMemoryModel.glsl450.rawValue]).words
         for i in entryPoints { words += i.words }
         for i in executionModes { words += i.words }
-        words += SpirvInstruction(.opSource, [SpirvSourceLanguage.unknown.rawValue, 0]).words
+        if let sourceFileId {
+            words += SpirvInstruction(.opString, [sourceFileId] + SpirvInstruction.encode(string: sourceFileName)).words
+            words += SpirvInstruction(.opSource, [SpirvSourceLanguage.unknown.rawValue, 0, sourceFileId]).words
+        } else {
+            words += SpirvInstruction(.opSource, [SpirvSourceLanguage.unknown.rawValue, 0]).words
+        }
         for i in debug { words += i.words }
         for i in annotations { words += i.words }
         for i in declarations { words += i.words }

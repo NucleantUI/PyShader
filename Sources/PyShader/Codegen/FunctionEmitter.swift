@@ -36,6 +36,11 @@ final class FunctionEmitter {
     /// False when the current block can never execute (code after `return`/`break`).
     private var reachable = true
     private var loops: [(continueLabel: SpirvId, mergeLabel: SpirvId)] = []
+    /// The `match` statements being emitted inside a loop, innermost last. A `break` in
+    /// one sets its flag and leaves the switch; the loop is left after the switch. naga
+    /// (the web build) turns a branch from a switch case to the loop's merge into a WGSL
+    /// `break`, which only leaves the switch.
+    private var matchBreaks: [(loopDepth: Int, merge: SpirvId, flag: LocalVariable?)] = []
 
     init(compiler: ShaderCompiler, name: String, returnType: ShaderType, implicitReturn: ((FunctionEmitter) throws -> Value)? = nil) {
         self.compiler = compiler
@@ -47,7 +52,7 @@ final class FunctionEmitter {
     // MARK: Driving
 
     /// Emits a complete function from Python statements and hands it to the module builder.
-    func emitFunction(id: SpirvId, params: [(name: String, type: ShaderType)], body statements: [Statement], line: Int) throws {
+    func emitFunction(id: SpirvId, params: [(name: String, type: ShaderType)], body statements: [Statement], control: SpirvFunctionControl = [], line: Int) throws {
         let paramIds = beginFunction(params)
         try emitBlock(statements)
 
@@ -63,7 +68,7 @@ final class FunctionEmitter {
                 throw PyShaderError("`\(functionName)` must return a `\(returnType)` on every path", line: line)
             }
         }
-        finishFunction(id: id, paramIds: paramIds, returnType: returnType)
+        finishFunction(id: id, paramIds: paramIds, returnType: returnType, control: control)
     }
 
     /// Emits a parameterless void function whose body is built in Swift (the entry-point wrappers).
@@ -124,10 +129,10 @@ final class FunctionEmitter {
     }
 
     /// Assembles header + entry label + OpVariables + body and adds it to the module.
-    private func finishFunction(id: SpirvId, paramIds: [(SpirvId, ShaderType)], returnType: ShaderType) {
+    private func finishFunction(id: SpirvId, paramIds: [(SpirvId, ShaderType)], returnType: ShaderType, control: SpirvFunctionControl = []) {
         let fnType = ShaderType.function(returns: returnType, params: paramIds.map(\.1))
         var out: [SpirvInstruction] = [
-            .init(.opFunction, [builder.type(returnType), id, SpirvFunctionControl.none.rawValue, builder.type(fnType)])
+            .init(.opFunction, [builder.type(returnType), id, control.rawValue, builder.type(fnType)])
         ]
         for (pid, type) in paramIds {
             out.append(.init(.opFunctionParameter, [builder.type(type), pid]))
@@ -399,6 +404,7 @@ final class FunctionEmitter {
     func emitBlock(_ statements: [Statement]) throws {
         for s in statements {
             ensureOpen()
+            if let line = builder.line(s.lineno) { emit(line) }
             try emitStatement(s)
         }
     }
@@ -438,8 +444,8 @@ final class FunctionEmitter {
             try emitFor(f)
 
         case .breakStmt(let b):
-            guard let loop = loops.last else { throw PyShaderError("`break` outside loop", line: b.lineno) }
-            terminate(.init(.opBranch, [loop.mergeLabel]))
+            guard !loops.isEmpty else { throw PyShaderError("`break` outside loop", line: b.lineno) }
+            emitBreak()
 
         case .continueStmt(let c):
             guard let loop = loops.last else { throw PyShaderError("`continue` outside loop", line: c.lineno) }
@@ -462,7 +468,7 @@ final class FunctionEmitter {
         case .withStmt(let w):
             throw PyShaderError("with is not available in shader code", line: w.lineno)
         case .match(let m):
-            throw PyShaderError("match is not supported yet; use if/elif", line: m.lineno)
+            try emitMatch(m)
         case .delete(let d):
             throw PyShaderError("del is not available in shader code", line: d.lineno)
         case .global(let g):
@@ -649,6 +655,134 @@ final class FunctionEmitter {
         label(mergeLabel, reachable: thenFallsThrough || elseFallsThrough)
     }
 
+    /// Leaves the innermost loop, through the flag of a `match` between here and the loop.
+    private func emitBreak() {
+        if let m = matchBreaks.last, m.loopDepth == loops.count {
+            let flag = m.flag ?? declareTemp(type: .bool)
+            matchBreaks[matchBreaks.count - 1].flag = flag
+            store(flag.ptr, builder.constant(bool: true))
+            terminate(.init(.opBranch, [m.merge]))
+        } else {
+            terminate(.init(.opBranch, [loops.last!.mergeLabel]))
+        }
+    }
+
+    /// `match` on an int or uint: an `OpSwitch` whose cases each end at the merge, as
+    /// Python's have no fallthrough. A case is int literals joined by `|`, or `_`.
+    private func emitMatch(_ m: Match) throws {
+        let subject = try emitExpression(m.subject)
+        guard subject.type.isScalar, case .int(_, let signed) = subject.type.scalarKind else {
+            throw PyShaderError("match needs an int or uint subject, got `\(subject.type)`", line: m.lineno)
+        }
+        let selector = try coerce(subject, to: .scalar(.int(bits: 32, signed: signed)), line: m.lineno)
+        let range = signed ? Int(Int32.min)...Int(Int32.max) : 0...Int(UInt32.max)
+
+        let mergeLabel = builder.allocate()
+        var defaultArm: (label: SpirvId, body: [Statement])?
+        var arms: [(label: SpirvId, body: [Statement])] = []
+        var targets: [UInt32] = []
+        var seen: Swift.Set<Int> = []
+        for c in m.cases {
+            let line = caseLine(c) ?? m.lineno
+            if defaultArm != nil {
+                throw PyShaderError("`case _` must be the last case; the ones after it can never match", line: line)
+            }
+            if c.guardExpr != nil {
+                throw PyShaderError("a case guard (`case ... if ...`) is not supported; test the condition inside the case", line: line)
+            }
+            guard let literals = try caseLiterals(c.pattern, line: line) else {
+                defaultArm = (builder.allocate(), c.body)
+                continue
+            }
+            // Python tries the cases in order, so a value repeated later never reaches that case.
+            let fresh = literals.filter { seen.insert($0).inserted }
+            guard !fresh.isEmpty else { continue }
+            if let bad = fresh.first(where: { !range.contains($0) }) {
+                throw PyShaderError("case \(bad) is out of range for a `\(selector.type)` subject", line: line)
+            }
+            let label = builder.allocate()
+            arms.append((label, c.body))
+            for k in fresh { targets += [UInt32(truncatingIfNeeded: k), label] }
+        }
+
+        let entryReachable = reachable
+        let header = body.count
+        emit(.init(.opSelectionMerge, [mergeLabel, SpirvSelectionControl.none.rawValue]))
+        terminate(.init(.opSwitch, [selector.id, defaultArm?.label ?? mergeLabel] + targets))
+        var mergeReachable = defaultArm == nil && entryReachable
+        if !loops.isEmpty { matchBreaks.append((loops.count, mergeLabel, nil)) }
+        for arm in arms + (defaultArm.map { [$0] } ?? []) {
+            label(arm.label, reachable: entryReachable)
+            try emitBlock(arm.body)
+            if !terminated && reachable { mergeReachable = true }
+            if !terminated { terminate(.init(.opBranch, [mergeLabel])) }
+        }
+        let flag = loops.isEmpty ? nil : matchBreaks.removeLast().flag
+        guard let flag else {
+            label(mergeLabel, reachable: mergeReachable)
+            return
+        }
+        // A case said `break`: clear the flag before the switch, test it after.
+        body.insert(.init(.opStore, [flag.ptr, builder.constant(bool: false)]), at: header)
+        label(mergeLabel, reachable: entryReachable)
+        let broke = load(flag.ptr, type: .bool)
+        let breakLabel = builder.allocate()
+        let afterLabel = builder.allocate()
+        emit(.init(.opSelectionMerge, [afterLabel, SpirvSelectionControl.none.rawValue]))
+        terminate(.init(.opBranchConditional, [broke.id, breakLabel, afterLabel]))
+        label(breakLabel, reachable: entryReachable)
+        emitBreak()
+        label(afterLabel, reachable: mergeReachable)
+    }
+
+    /// A case's line: its pattern's, else its body's (PySwiftAST keeps none for `_`).
+    private func caseLine(_ c: MatchCase) -> Int? {
+        if case .matchValue(let v) = c.pattern {
+            switch v.value {
+            case .constant(let x): return x.lineno
+            case .name(let x): return x.lineno
+            case .binOp(let x): return x.lineno
+            case .unaryOp(let x): return x.lineno
+            default: break
+            }
+        }
+        return c.body.first?.lineno
+    }
+
+    /// The values a case pattern matches, or nil for `_`. PySwiftAST reads a pattern as an
+    /// expression, so `1 | 2` arrives as a bitwise or.
+    private func caseLiterals(_ pattern: Pattern, line: Int) throws -> [Int]? {
+        switch pattern {
+        case .matchAs(let a) where a.pattern == nil && (a.name == nil || a.name == "_"):
+            return nil
+        case .matchValue(let v):
+            return try caseLiterals(v.value, line: line)
+        case .matchOr(let o):
+            return try o.patterns.flatMap { p -> [Int] in
+                guard let values = try caseLiterals(p, line: line) else {
+                    throw PyShaderError("`_` cannot be one of the alternatives in a case; make it a `case _:` of its own", line: line)
+                }
+                return values
+            }
+        default:
+            throw PyShaderError("a case is int literals joined by `|`, or `_`", line: line)
+        }
+    }
+
+    private func caseLiterals(_ e: Expression, line: Int) throws -> [Int] {
+        if let k = constantIndex(e) { return [k] }
+        switch e {
+        case .binOp(let b) where b.op == .bitOr:
+            return try caseLiterals(b.left, line: line) + caseLiterals(b.right, line: line)
+        case .name(let n) where n.id == "_":
+            throw PyShaderError("`_` cannot be one of the alternatives in a case; make it a `case _:` of its own", line: line)
+        case .name(let n):
+            throw PyShaderError("`case \(n.id):` would bind a new name, not compare against one; a case is int literals joined by `|`, or `_`", line: n.lineno)
+        default:
+            throw PyShaderError("a case is int literals joined by `|`, or `_`", line: line)
+        }
+    }
+
     private func emitWhile(_ w: While) throws {
         guard w.orElse.isEmpty else {
             throw PyShaderError("`while ... else` is not supported", line: w.lineno)
@@ -688,8 +822,18 @@ final class FunctionEmitter {
         guard case .name(let target) = f.target else {
             throw PyShaderError("for-loop target must be a single variable", line: f.lineno)
         }
-        guard case .call(let call) = f.iter, case .name(let fn) = call.fun, fn.id == "range" else {
-            throw PyShaderError("for-loops can only iterate `range(...)`", line: f.lineno)
+        // `unroll(range(...))` / `dont_unroll(range(...))`: a hint to the driver, the loop's control.
+        var iter = f.iter
+        var loopControl: SpirvLoopControl = []
+        if case .call(let hint) = iter, case .name(let h) = hint.fun, h.id == "unroll" || h.id == "dont_unroll" {
+            guard hint.args.count == 1, hint.keywords.isEmpty else {
+                throw PyShaderError("\(h.id)() wraps one `range(...)`", line: f.lineno)
+            }
+            loopControl = h.id == "unroll" ? .unroll : .dontUnroll
+            iter = hint.args[0]
+        }
+        guard case .call(let call) = iter, case .name(let fn) = call.fun, fn.id == "range" else {
+            throw PyShaderError(loopControl.isEmpty ? "for-loops can only iterate `range(...)`" : "unroll() and dont_unroll() wrap a `range(...)`", line: f.lineno)
         }
         guard call.keywords.isEmpty, (1...3).contains(call.args.count) else {
             throw PyShaderError("range() takes 1 to 3 positional arguments", line: f.lineno)
@@ -743,7 +887,7 @@ final class FunctionEmitter {
 
         terminate(.init(.opBranch, [header]))
         label(header, reachable: entryReachable)
-        emit(.init(.opLoopMerge, [mergeLabel, continueLabel, SpirvLoopControl.none.rawValue]))
+        emit(.init(.opLoopMerge, [mergeLabel, continueLabel, loopControl.rawValue]))
         terminate(.init(.opBranch, [condLabel]))
 
         label(condLabel, reachable: entryReachable)

@@ -43,7 +43,11 @@ public enum PyShader {
 
     /// Compiles Python shader source for the given target: a fragment stage, a
     /// compute-into-image stage, or a vertex + fragment pair in one module.
-    public static func compile(_ source: String, target: ShaderTarget) throws -> CompiledShader {
+    /// - Parameter sourceFile: The `.py` file's name. When given, the module names it
+    ///   (`OpString`) and marks every statement with its line (`OpLine`), so
+    ///   `spirv-val`, RenderDoc and naga point at the Python source. Without it the
+    ///   module carries no line information.
+    public static func compile(_ source: String, target: ShaderTarget, sourceFile: String? = nil) throws -> CompiledShader {
         let module: Module
         do {
             module = try parsePython(normalize(source))
@@ -53,7 +57,7 @@ public enum PyShader {
             throw PyShaderError("syntax error: \(error)")
         }
         let program = try ShaderProgram(module: module, target: target)
-        let compiler = ShaderCompiler(program: program)
+        let compiler = ShaderCompiler(program: program, sourceFile: sourceFile)
         let words = try compiler.compile()
         var vertexEntryPoint: String?
         if case .graphics(let i) = target { vertexEntryPoint = i.vertexEntryPoint }
