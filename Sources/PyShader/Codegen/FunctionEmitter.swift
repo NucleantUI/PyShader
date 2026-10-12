@@ -675,7 +675,8 @@ final class FunctionEmitter {
             throw PyShaderError("match needs an int or uint subject, got `\(subject.type)`", line: m.lineno)
         }
         let selector = try coerce(subject, to: .scalar(.int(bits: 32, signed: signed)), line: m.lineno)
-        let range = signed ? Int(Int32.min)...Int(Int32.max) : 0...Int(UInt32.max)
+        // Int64 bounds: UInt32.max does not fit an Int on wasm32.
+        let range: ClosedRange<Int64> = signed ? Int64(Int32.min)...Int64(Int32.max) : 0...Int64(UInt32.max)
 
         let mergeLabel = builder.allocate()
         var defaultArm: (label: SpirvId, body: [Statement])?
@@ -697,7 +698,7 @@ final class FunctionEmitter {
             // Python tries the cases in order, so a value repeated later never reaches that case.
             let fresh = literals.filter { seen.insert($0).inserted }
             guard !fresh.isEmpty else { continue }
-            if let bad = fresh.first(where: { !range.contains($0) }) {
+            if let bad = fresh.first(where: { !range.contains(Int64($0)) }) {
                 throw PyShaderError("case \(bad) is out of range for a `\(selector.type)` subject", line: line)
             }
             let label = builder.allocate()

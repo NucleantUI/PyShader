@@ -378,7 +378,8 @@ extension FunctionEmitter {
         let bias = emit(.opSelect, type: i, [subnormal.id, splatConstant(i, int: 126 + 24), splatConstant(i, int: 126)])
         let exponent = emit(.opISub, type: i, [emit(.opBitcast, type: i, [field.id]).id, bias.id])
         // Keep sign and fraction bits, set the exponent field to 126: a magnitude in [0.5, 1).
-        let signAndFraction = emit(.opBitwiseAnd, type: u, [bits.id, splatConstant(u, int: 0x807F_FFFF)])
+        // The mask is spelled as its Int32 bit pattern: Int is 32 bits on wasm32.
+        let signAndFraction = emit(.opBitwiseAnd, type: u, [bits.id, splatConstant(u, int: Int(Int32(bitPattern: 0x807F_FFFF)))])
         let mantissaBits = emit(.opBitwiseOr, type: u, [signAndFraction.id, splatConstant(u, int: 0x3F00_0000)])
         let mantissa = emit(.opBitcast, type: x.type, [mantissaBits.id])
         // Two selects rather than one on `zero or infOrNaN`: naga takes `or` on scalars only.
