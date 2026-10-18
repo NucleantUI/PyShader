@@ -27,8 +27,8 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(url: "https://github.com/Py-Swift/PySwiftAST.git", branch: "master"),
-        .package(url: "https://github.com/NucleantUI/SpirvCore.git", branch: "master"),
+        .package(url: "https://github.com/Py-Swift/PySwiftAST.git", .upToNextMinor(from: "0.0.1")),
+        .package(url: "https://github.com/NucleantUI/SpirvCore.git", .upToNextMinor(from: "0.0.1")),
     ],
     targets: [
         .target(
