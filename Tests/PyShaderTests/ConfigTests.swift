@@ -107,4 +107,12 @@ struct ConfigTests {
             ], "\(text)")
         }
     }
+
+    @Test("the .venv search stops at the root when there is none above")
+    func noVenv() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("pyshader-config-novenv-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        #expect(PyShaderConfig.nearestVenv(from: root) == nil)
+    }
 }

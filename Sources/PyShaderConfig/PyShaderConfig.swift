@@ -287,9 +287,11 @@ struct PyShaderConfig: Equatable {
             let venv = dir.appendingPathComponent(".venv")
             var isDir: ObjCBool = false
             if FileManager.default.fileExists(atPath: venv.path, isDirectory: &isDir), isDir.boolValue { return venv }
-            let parent = dir.deletingLastPathComponent()
-            if parent.path == dir.path { return nil }
-            dir = parent
+            // Stop at the root by its path: the parent of a folder URL
+            // `file:///` is `file:///../`, so comparing parent and child
+            // never ends.
+            if dir.path == "/" { return nil }
+            dir = dir.deletingLastPathComponent()
         }
     }
 
