@@ -6,7 +6,7 @@
 //  how. Read by `pyshaderc --config` and by the package plugins, which find
 //  it at the root of the package.
 //
-//      site-packages = ".venv/lib/python3.12/site-packages"   # optional, for every section
+//      site-packages = ".venv/lib/python3.13/site-packages"   # optional, for every section
 //
 //      [clouds]
 //      source = "Shaders/clouds.py"

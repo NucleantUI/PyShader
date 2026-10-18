@@ -14,7 +14,7 @@ root of the package and run [`pyshaderc`](api.md#pyshaderc) once per section.
 ```toml title="pyshader.toml"
 # Where imported shader libraries are installed, for every section (optional;
 # by default the site-packages of the nearest .venv above each source).
-site-packages = ".venv/lib/python3.12/site-packages"
+site-packages = ".venv/lib/python3.13/site-packages"
 
 [clouds]
 source = "Shaders/clouds.py"

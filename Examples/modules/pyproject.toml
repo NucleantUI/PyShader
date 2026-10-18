@@ -3,7 +3,7 @@
 [project]
 name = "pyshader-modules-example"
 version = "0.1.0"
-requires-python = ">=3.10"
+requires-python = ">=3.13"
 dependencies = ["pyshader", "pyshader-noise"]
 
 [tool.uv]

@@ -284,7 +284,7 @@ struct ModuleDiscoveryTests {
             try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try text.write(to: url, atomically: true, encoding: .utf8)
         }
-        let site = ".venv/lib/python3.12/site-packages"
+        let site = ".venv/lib/python3.13/site-packages"
         try write("\(site)/noise/__init__.py", "def fbm(p: float2) -> float:\n    return p.x\n")
         try write("\(site)/pyshader_noise-0.1.0.dist-info/entry_points.txt", "[console_scripts]\nx = y:z\n\n[pyshader.modules]\nnoise = noise\n")
         try write("\(site)/numpy/__init__.py", "import sys\n")
@@ -331,7 +331,7 @@ struct ModuleDiscoveryTests {
     func sitePackagesArgument() throws {
         let (root, shader) = try project()
         defer { try? FileManager.default.removeItem(at: root) }
-        let site = root.appendingPathComponent(".venv/lib/python3.12/site-packages")
+        let site = root.appendingPathComponent(".venv/lib/python3.13/site-packages")
         let source = "from noise import fbm\nfrom colors import RED\ndef main(uv: float2) -> float4:\n    return float4(RED * fbm(uv), 1.0)\n"
         let byURL = try PyShader.compile(source, target: .nucleant, modules: site)
         let byPath = try PyShader.compile(source, target: .nucleant, modules: site.path)

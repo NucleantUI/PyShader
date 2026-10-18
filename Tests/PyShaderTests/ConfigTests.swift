@@ -8,7 +8,7 @@ struct ConfigTests {
     func parse() throws {
         let config = try PyShaderConfig(parsing: """
             # shaders of this package
-            site-packages = ".venv/lib/python3.12/site-packages"
+            site-packages = ".venv/lib/python3.13/site-packages"
 
             [clouds]
             source = "Shaders/clouds.py"   # a comment
@@ -23,7 +23,7 @@ struct ConfigTests {
             ["plain.name"]
             source = "Shaders/#plasma.py"
             """)
-        #expect(config.sitePackages == ".venv/lib/python3.12/site-packages")
+        #expect(config.sitePackages == ".venv/lib/python3.13/site-packages")
         #expect(config.sections == [
             .init(name: "clouds", source: "Shaders/clouds.py", output: "Resources/clouds.spv", target: "compute", content: true, arguments: ["gain:float", "tint:float4"]),
             .init(name: "plain.name", source: "Shaders/#plasma.py", output: "plain.name.spv", target: "fragment", content: false, arguments: []),
@@ -78,7 +78,7 @@ struct ConfigTests {
         try write("Shaders/main.py")
         try write("Shaders/lib/shapes.py")
         try write("Shaders/notes.txt")
-        let site = ".venv/lib/python3.12/site-packages"
+        let site = ".venv/lib/python3.13/site-packages"
         try write("\(site)/noise/__init__.py")
         try write("\(site)/numpy/__init__.py")
         try write("editable/src/colors/palette.py")
@@ -91,7 +91,7 @@ struct ConfigTests {
             let config = try PyShaderConfig(parsing: text)
             let inputs = config.inputFiles(for: config.sections[0], root: root, configFile: configFile).map { $0.path.replacingOccurrences(of: root.path + "/", with: "") }
             #expect(inputs.sorted() == [
-                ".venv/lib/python3.12/site-packages/noise/__init__.py",
+                ".venv/lib/python3.13/site-packages/noise/__init__.py",
                 "Shaders/lib/shapes.py",
                 "Shaders/main.py",
                 "editable/src/colors/palette.py",

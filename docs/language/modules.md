@@ -130,7 +130,7 @@ let shader = try PyShader.compile(contentsOf: url, target: .nucleantUI)
 
 // Source in memory, its modules from a site-packages folder (a URL or a path):
 let shader = try PyShader.compile(source, target: .nucleantUI, modules: sitePackagesURL)
-let shader = try PyShader.compile(source, target: .nucleantUI, modules: ".venv/lib/python3.12/site-packages")
+let shader = try PyShader.compile(source, target: .nucleantUI, modules: ".venv/lib/python3.13/site-packages")
 ```
 
 Without `modules:`, a source string can import nothing besides `pyshader`.

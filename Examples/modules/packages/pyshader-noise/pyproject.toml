@@ -2,7 +2,7 @@
 name = "pyshader-noise"
 version = "0.1.0"
 description = "Value noise and fBm for PyShader shaders"
-requires-python = ">=3.10"
+requires-python = ">=3.13"
 dependencies = ["pyshader"]
 
 # Declares `noise` a PyShader module: the compiler imports from an
