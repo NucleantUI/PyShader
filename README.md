@@ -251,8 +251,8 @@ import palettes                # palettes.py next to the shader
 from shaderlib.sdf import *    # only the names the code uses
 ```
 
-Modules are found next to the shader, in `-I` folders and `PYSHADER_PATH`,
-and in the nearest uv `.venv`: a library is a normal package with a
+Modules are found next to the shader and in a site-packages folder —
+`modules:` / `--site-packages`, by default the nearest uv `.venv`'s: a library is a normal package with a
 `pyproject.toml` that declares itself under the `pyshader.modules` entry
 point, so `uv add pyshader-noise` is all a shader project needs. See
 [Modules](https://nucleantui.github.io/PyShader/language/modules/) and
@@ -296,7 +296,7 @@ shader.spirv        // [UInt32] for vkCreateShaderModule
 Or from the command line:
 
 ```sh
-swift run pyshaderc shader.py -o shader.spv [--target compute --content --arg name:float4] [-I modules/]
+swift run pyshaderc shader.py -o shader.spv [--target compute --content --arg name:float4] [--site-packages dir]
 ```
 
 Three targets, same Python: `.fragment(FragmentInterface)` for a fragment stage

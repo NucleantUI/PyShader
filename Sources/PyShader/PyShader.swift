@@ -47,10 +47,34 @@ public enum PyShader {
     ///   (`OpString`) and marks every statement with its line (`OpLine`), so
     ///   `spirv-val`, RenderDoc and naga point at the Python source. Without it the
     ///   module carries no line information.
-    /// - Parameter modules: Where the shader's imports of other PyShader modules
-    ///   are found. What the shader uses from them is compiled in as if written
-    ///   in it; with `.none`, importing anything besides `pyshader` is an error.
-    public static func compile(_ source: String, target: ShaderTarget, sourceFile: String? = nil, modules: ShaderModules = .none) throws -> CompiledShader {
+    /// - Parameter modules: The site-packages folder the shader's imports of other
+    ///   PyShader modules are installed in; only packages declaring a
+    ///   `pyshader.modules` entry point can be imported from it. What the shader
+    ///   uses from them is compiled in as if written in it. Without it, importing
+    ///   anything besides `pyshader` is an error.
+    public static func compile(_ source: String, target: ShaderTarget, sourceFile: String? = nil, modules: URL? = nil) throws -> CompiledShader {
+        try compile(source, target: target, sourceFile: sourceFile, searching: modules.map(ShaderModules.init(sitePackages:)) ?? .none)
+    }
+
+    /// `compile(_:target:sourceFile:modules:)` with the site-packages folder as a path.
+    public static func compile(_ source: String, target: ShaderTarget, sourceFile: String? = nil, modules: String?) throws -> CompiledShader {
+        try compile(source, target: target, sourceFile: sourceFile, modules: modules.map { URL(fileURLWithPath: $0) })
+    }
+
+    /// Compiles a `.py` file, its name and lines carried into the module. Its
+    /// imports are found in its own folder, then in `modules` — a site-packages
+    /// folder, by default the one of the nearest uv `.venv` above the file.
+    public static func compile(contentsOf file: URL, target: ShaderTarget, modules: URL? = nil) throws -> CompiledShader {
+        let source = try String(contentsOf: file, encoding: .utf8)
+        return try compile(source, target: target, sourceFile: file.lastPathComponent, searching: .discover(near: file, sitePackages: modules))
+    }
+
+    /// `compile(contentsOf:target:modules:)` with the site-packages folder as a path.
+    public static func compile(contentsOf file: URL, target: ShaderTarget, modules: String?) throws -> CompiledShader {
+        try compile(contentsOf: file, target: target, modules: modules.map { URL(fileURLWithPath: $0) })
+    }
+
+    static func compile(_ source: String, target: ShaderTarget, sourceFile: String?, searching modules: ShaderModules) throws -> CompiledShader {
         let linker = ModuleLinker(modules: modules)
         let module = try linker.link(parse(source))
         let program = try ShaderProgram(module: module, target: target, origins: linker.origins)
@@ -59,15 +83,6 @@ public enum PyShader {
         var vertexEntryPoint: String?
         if case .graphics(let i) = target { vertexEntryPoint = i.vertexEntryPoint }
         return CompiledShader(spirv: words, entryPoint: target.entryPoint, vertexEntryPoint: vertexEntryPoint)
-    }
-
-    /// Compiles a `.py` file, its name and lines carried into the module. Its
-    /// imports are found by `ShaderModules.discover(near:)` — the file's
-    /// folder, `PYSHADER_PATH`, and the nearest uv `.venv` — unless `modules`
-    /// says otherwise.
-    public static func compile(contentsOf file: URL, target: ShaderTarget, modules: ShaderModules? = nil) throws -> CompiledShader {
-        let source = try String(contentsOf: file, encoding: .utf8)
-        return try compile(source, target: target, sourceFile: file.lastPathComponent, modules: modules ?? .discover(near: file))
     }
 
     /// Parses PyShader source, after `normalize`.

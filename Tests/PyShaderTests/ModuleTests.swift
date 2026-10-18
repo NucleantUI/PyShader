@@ -26,7 +26,7 @@ private func string(_ operands: [UInt32]) -> String {
 
 @discardableResult
 private func compileModules(_ source: String, _ sources: [String: String], sourceFile: String? = nil, sourceLocation: SourceLocation = #_sourceLocation) throws -> SpirvWords {
-    let shader = try PyShader.compile(source, target: .nucleant, sourceFile: sourceFile, modules: ShaderModules(sources: sources))
+    let shader = try PyShader.compile(source, target: .nucleant, sourceFile: sourceFile, searching: ShaderModules(sources: sources))
     if let result = try Tools.validate(shader) {
         #expect(result.isEmpty, "spirv-val: \(result)", sourceLocation: sourceLocation)
     }
@@ -35,7 +35,7 @@ private func compileModules(_ source: String, _ sources: [String: String], sourc
 
 private func moduleError(_ source: String, _ sources: [String: String], contains needle: String, line: Int? = nil, file: String? = nil, sourceLocation: SourceLocation = #_sourceLocation) {
     do {
-        _ = try PyShader.compile(source, target: .nucleant, modules: ShaderModules(sources: sources))
+        _ = try PyShader.compile(source, target: .nucleant, sourceFile: nil, searching: ShaderModules(sources: sources))
         Issue.record("expected an error containing \"\(needle)\"", sourceLocation: sourceLocation)
     } catch let error as PyShaderError {
         #expect(error.message.contains(needle), "got: \(error)", sourceLocation: sourceLocation)
@@ -258,7 +258,8 @@ struct ModuleTests {
             .init(directory: folder),
             .init(directory: folder.appendingPathComponent("packages/pyshader-noise/src")),
         ])
-        let shader = try PyShader.compile(contentsOf: folder.appendingPathComponent("clouds.py"), target: .nucleant, modules: modules)
+        let file = folder.appendingPathComponent("clouds.py")
+        let shader = try PyShader.compile(String(contentsOf: file, encoding: .utf8), target: .nucleant, sourceFile: "clouds.py", searching: modules)
         if let result = try Tools.validate(shader) { #expect(result.isEmpty, "spirv-val: \(result)") }
         let words = SpirvWords(words: shader.spirv)
         let n = names(words)
@@ -318,7 +319,7 @@ struct ModuleDiscoveryTests {
         defer { try? FileManager.default.removeItem(at: root) }
         try "import numpy\ndef main(uv: float2) -> float4:\n    return float4(1.0)\n".write(to: shader, atomically: true, encoding: .utf8)
         do {
-            _ = try PyShader.compile(contentsOf: shader, target: .nucleant, modules: .discover(near: shader, environment: [:]))
+            _ = try PyShader.compile(contentsOf: shader, target: .nucleant)
             Issue.record("expected an error")
         } catch let error as PyShaderError {
             #expect(error.message.contains("`numpy/__init__.py` is installed but is not a PyShader module"), "got: \(error)")
@@ -326,12 +327,25 @@ struct ModuleDiscoveryTests {
         }
     }
 
-    @Test("PYSHADER_PATH and extra paths are searched without an entry point")
-    func searchPaths() throws {
+    @Test("modules: names the site-packages folder, as a URL or a path")
+    func sitePackagesArgument() throws {
         let (root, shader) = try project()
         defer { try? FileManager.default.removeItem(at: root) }
-        let modules = ShaderModules.discover(near: shader, extraPaths: [root.appendingPathComponent("a")], environment: ["PYSHADER_PATH": "/b:/c"])
-        #expect(modules.paths.prefix(4).map(\.directory.path) == [root.appendingPathComponent("shaders").standardizedFileURL.path, root.appendingPathComponent("a").path, "/b", "/c"])
-        #expect(modules.paths.prefix(4).allSatisfy { $0.allowed == nil })
+        let site = root.appendingPathComponent(".venv/lib/python3.12/site-packages")
+        let source = "from noise import fbm\nfrom colors import RED\ndef main(uv: float2) -> float4:\n    return float4(RED * fbm(uv), 1.0)\n"
+        let byURL = try PyShader.compile(source, target: .nucleant, modules: site)
+        let byPath = try PyShader.compile(source, target: .nucleant, modules: site.path)
+        #expect(byURL.spirv == byPath.spirv)
+        #expect(names(SpirvWords(words: byURL.spirv)).contains("noise.fbm"))
+
+        // Without it, only `pyshader` can be imported.
+        #expect(throws: PyShaderError.self) { try PyShader.compile(source, target: .nucleant) }
+
+        // A file takes the given folder instead of its nearest .venv; its own folder still comes first.
+        try "import local\n\(source)".write(to: shader, atomically: true, encoding: .utf8)
+        let other = root.appendingPathComponent("empty-site")
+        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+        #expect(throws: PyShaderError.self) { try PyShader.compile(contentsOf: shader, target: .nucleant, modules: other.path) }
+        _ = try PyShader.compile(contentsOf: shader, target: .nucleant, modules: site)
     }
 }

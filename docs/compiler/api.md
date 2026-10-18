@@ -9,11 +9,13 @@ public enum PyShader {
     /// A fragment stage; `interface` defaults to NucleantVulkan's `NucleantShader` layout.
     static func compile(_ source: String, interface: FragmentInterface = .nucleant) throws -> CompiledShader
     /// Any target. `sourceFile` adds the `.py` file's name and every statement's line;
-    /// `modules` is where its imports of other PyShader modules are found.
-    static func compile(_ source: String, target: ShaderTarget, sourceFile: String? = nil, modules: ShaderModules = .none) throws -> CompiledShader
-    /// A `.py` file: its name and lines carried along, its imports found by
-    /// `ShaderModules.discover(near:)` unless `modules` is given.
-    static func compile(contentsOf file: URL, target: ShaderTarget, modules: ShaderModules? = nil) throws -> CompiledShader
+    /// `modules` is the site-packages folder its imports of other PyShader modules are in.
+    static func compile(_ source: String, target: ShaderTarget, sourceFile: String? = nil, modules: URL? = nil) throws -> CompiledShader
+    static func compile(_ source: String, target: ShaderTarget, sourceFile: String? = nil, modules: String?) throws -> CompiledShader
+    /// A `.py` file: its name and lines carried along, its imports found in its
+    /// folder, then in `modules` — by default the nearest `.venv`'s site-packages.
+    static func compile(contentsOf file: URL, target: ShaderTarget, modules: URL? = nil) throws -> CompiledShader
+    static func compile(contentsOf file: URL, target: ShaderTarget, modules: String?) throws -> CompiledShader
 }
 
 public struct CompiledShader: Sendable {
@@ -44,28 +46,13 @@ public struct PyShaderError: Error, CustomStringConvertible {
 }
 ```
 
-## `ShaderModules`
+## `modules:`
 
-Where a shader's imports are found; see [Modules](../language/modules.md).
-
-```swift
-public struct ShaderModules {
-    var sources: [String: String]  // dotted module name -> source, looked up first
-    var paths: [SearchPath]        // folders, in order
-
-    struct SearchPath {
-        init(directory: URL, allowed: Set<String>? = nil)  // allowed: importable top-level packages; nil for all
-    }
-
-    static let none: ShaderModules  // only `pyshader` can be imported
-    /// The file's folder, `extraPaths`, `PYSHADER_PATH`, then the nearest `.venv`'s
-    /// site-packages (its `pyshader.modules` entry points only).
-    static func discover(near file: URL, extraPaths: [URL] = [], environment: [String: String] = …) -> ShaderModules
-    /// A site-packages folder and the folders its `.pth` files add, gated by its entry points.
-    static func searchPaths(forSitePackages site: URL) -> [SearchPath]
-}
-```
-
+The site-packages folder a shader's imports of other PyShader modules are
+installed in — a `URL` or a path. Only the packages whose distribution
+declares a `pyshader.modules` entry point can be imported from it, and the
+folders its `.pth` files add (editable installs) are searched too; see
+[Modules](../language/modules.md).
 ## `ShaderTarget`
 
 ```swift
@@ -97,12 +84,13 @@ bindings, `inputs`) are public for other pipelines. See
 ## `pyshaderc`
 
 ```sh
-swift run pyshaderc <input.py> [-o output.spv] [--target fragment|compute|graphics] [--content] [--arg name:kind]... [-I dir]...
+swift run pyshaderc <input.py> [-o output.spv] [--target fragment|compute|graphics] [--content] [--arg name:kind]... [--site-packages dir]
 ```
 
 Writes `<input>.spv` next to the input unless `-o` is given and prints the
-word count. Imports are found as `ShaderModules.discover(near:)` finds them,
-with each `-I` / `--module-path` folder searched after the input's own. The module carries the input's file name and source lines (see
+word count. Imports are found in the input's folder, then in
+`--site-packages` — by default the site-packages of the nearest `.venv`
+above the input. The module carries the input's file name and source lines (see
 `sourceFile` above). Exit status 1 with the error on stderr when compilation fails,
 2 for a usage error.
 

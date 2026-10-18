@@ -2,26 +2,25 @@
 //  ShaderModules.swift
 //  PyShader
 //
-//  Where `import` finds PyShader modules: sources handed over in memory,
-//  plain folders (the shader's own, `--module-path`, `PYSHADER_PATH`), and a
-//  uv environment's site-packages, where only the packages that declare a
-//  `pyshader.modules` entry point count.
+//  Where `import` finds PyShader modules: the shader's own folder and a
+//  site-packages folder, where only the packages that declare a
+//  `pyshader.modules` entry point count. Tests hand sources over in memory.
 //
 
 import Foundation
 
 /// The places a shader's imports are looked up, in order.
-public struct ShaderModules: Sendable {
+struct ShaderModules: Sendable {
     /// One folder modules are looked up in, like an entry of Python's `sys.path`.
-    public struct SearchPath: Sendable, Equatable {
-        public let directory: URL
+    struct SearchPath: Sendable, Equatable {
+        let directory: URL
         /// The top-level packages importable from here; nil for any. A
         /// site-packages folder holds every Python package of the
         /// environment, so only the ones whose distribution declares a
         /// `pyshader.modules` entry point are let through.
-        public let allowed: Swift.Set<String>?
+        let allowed: Swift.Set<String>?
 
-        public init(directory: URL, allowed: Swift.Set<String>? = nil) {
+        init(directory: URL, allowed: Swift.Set<String>? = nil) {
             self.directory = directory
             self.allowed = allowed
         }
@@ -29,32 +28,33 @@ public struct ShaderModules: Sendable {
 
     /// Module sources by dotted name (`"noise"`, `"shaderlib.noise"`); a
     /// package's own source is its `__init__.py`. Looked up before `paths`.
-    public var sources: [String: String]
-    public var paths: [SearchPath]
+    var sources: [String: String]
+    var paths: [SearchPath]
 
-    public init(sources: [String: String] = [:], paths: [SearchPath] = []) {
+    init(sources: [String: String] = [:], paths: [SearchPath] = []) {
         self.sources = sources
         self.paths = paths
     }
 
     /// Nothing to import from: any import besides `pyshader` is an error.
-    public static let none = ShaderModules()
+    static let none = ShaderModules()
 
-    /// What a shader file on disk imports from, like Python's `sys.path`:
-    /// the file's own folder, `extraPaths`, each folder of `PYSHADER_PATH`,
-    /// and the site-packages of the nearest `.venv` above the file (or of
-    /// `VIRTUAL_ENV` when there is none) — where `uv add` installs a
-    /// shader library.
-    public static func discover(near file: URL, extraPaths: [URL] = [], environment: [String: String] = ProcessInfo.processInfo.environment) -> ShaderModules {
+    /// The PyShader modules installed in a site-packages folder.
+    init(sitePackages: URL) {
+        self.init(paths: Self.searchPaths(forSitePackages: sitePackages.standardizedFileURL))
+    }
+
+    /// What a shader file on disk imports from: its own folder, then
+    /// `sitePackages` — by default the site-packages of the nearest `.venv`
+    /// above the file (or of `VIRTUAL_ENV` when there is none), where
+    /// `uv add` installs a shader library.
+    static func discover(near file: URL, sitePackages: URL? = nil, environment: [String: String] = ProcessInfo.processInfo.environment) -> ShaderModules {
         let folder = file.deletingLastPathComponent().standardizedFileURL
         var paths = [SearchPath(directory: folder)]
-        paths += extraPaths.map { SearchPath(directory: $0.standardizedFileURL) }
-        if let list = environment["PYSHADER_PATH"] {
-            paths += list.split(separator: ":").map { SearchPath(directory: URL(fileURLWithPath: String($0)).standardizedFileURL) }
-        }
-        let venv = nearestVenv(from: folder) ?? environment["VIRTUAL_ENV"].map { URL(fileURLWithPath: $0) }
-        if let venv {
-            for site in sitePackages(in: venv) { paths += searchPaths(forSitePackages: site) }
+        if let sitePackages {
+            paths += searchPaths(forSitePackages: sitePackages.standardizedFileURL)
+        } else if let venv = nearestVenv(from: folder) ?? environment["VIRTUAL_ENV"].map({ URL(fileURLWithPath: $0) }) {
+            for site in Self.sitePackages(in: venv) { paths += searchPaths(forSitePackages: site) }
         }
         return ShaderModules(paths: paths)
     }
@@ -90,7 +90,7 @@ public struct ShaderModules: Sendable {
     /// editable install, `uv add --editable`, leaves its source where it is
     /// and points there), each letting through only the packages the
     /// environment's distributions declare as PyShader modules.
-    public static func searchPaths(forSitePackages site: URL) -> [SearchPath] {
+    static func searchPaths(forSitePackages site: URL) -> [SearchPath] {
         let fm = FileManager.default
         let entries = ((try? fm.contentsOfDirectory(atPath: site.path)) ?? []).sorted()
         var allowed: Swift.Set<String> = []

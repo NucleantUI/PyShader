@@ -17,11 +17,7 @@ swift run --package-path ../.. pyshaderc clouds.py
 spirv-val --target-env vulkan1.0 clouds.spv
 ```
 
-Without a `.venv`, point the compiler at the library's source instead:
-
-```sh
-swift run --package-path ../.. pyshaderc clouds.py -I packages/pyshader-noise/src
-```
+A site-packages folder elsewhere is passed with `--site-packages <dir>`.
 
 Only what `clouds.py` reaches is compiled: `hash22` in the library and
 `unused_debug` in `palettes.py` are not in the SPIR-V. Each definition keeps

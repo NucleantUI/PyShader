@@ -56,15 +56,14 @@ valid for the targets the shader is built for.
 
 ## Where modules are found
 
-In order, like Python's `sys.path`:
+In order:
 
-1. the folder of the shader being compiled — a module next to it imports by its file name;
-2. each `-I` / `--module-path` folder given to `pyshaderc` (`extraPaths` in Swift);
-3. each folder in `PYSHADER_PATH` (`:`-separated);
-4. the site-packages of the nearest `.venv` above the shader (or of
-   `VIRTUAL_ENV` when there is none), where `uv add` installs libraries —
-   including editable installs (`uv add --editable`), which it follows
-   through their `.pth` file.
+1. the folder of the shader file being compiled — a module next to it imports by its file name;
+2. a site-packages folder: the one given (`modules:` in Swift,
+   `--site-packages` to `pyshaderc`), or else the one of the nearest `.venv`
+   above the shader (or of `VIRTUAL_ENV` when there is none) — where
+   `uv add` installs libraries, editable installs (`uv add --editable`)
+   included, which it follows through their `.pth` file.
 
 An environment holds every kind of Python package, so from site-packages
 only the packages that declare themselves PyShader modules can be imported;
@@ -126,15 +125,15 @@ statements' `OpLine`s point there.
 ## From Swift
 
 ```swift
-// A file on disk: its imports are found as above.
+// A file on disk: its folder, then the nearest .venv's site-packages.
 let shader = try PyShader.compile(contentsOf: url, target: .nucleantUI)
 
-// Source in memory, its modules too (dotted name -> source):
-let shader = try PyShader.compile(source, target: .nucleantUI, modules: ShaderModules(sources: [
-    "noise": noiseSource,
-    "shaderlib.sdf": sdfSource,
-]))
+// Source in memory, its modules from a site-packages folder (a URL or a path):
+let shader = try PyShader.compile(source, target: .nucleantUI, modules: sitePackagesURL)
+let shader = try PyShader.compile(source, target: .nucleantUI, modules: ".venv/lib/python3.12/site-packages")
 ```
+
+Without `modules:`, a source string can import nothing besides `pyshader`.
 
 The web previews on this site compile a single source with no modules, so
 the examples on this page are not live.
