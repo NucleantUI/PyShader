@@ -94,6 +94,7 @@ nav:
   - GLSL to PyShader: convert.md
   - Compiler:
       - Swift API & CLI: compiler/api.md
+      - Package plugins: compiler/plugins.md
       - How it works: compiler/internals.md
       - Decompiling SPIR-V: compiler/decompiler.md
   - Docs plugin: plugin.md

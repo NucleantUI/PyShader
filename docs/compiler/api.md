@@ -88,7 +88,8 @@ swift run pyshaderc <input.py> [-o output.spv] [--target fragment|compute|graphi
 ```
 
 Writes `<input>.spv` next to the input unless `-o` is given and prints the
-word count. Imports are found in the input's folder, then in
+word count. An error is printed as `<input>:<line>: error: …`. The
+[package plugins](plugins.md) run it for each section of a `pyshader.toml`. Imports are found in the input's folder, then in
 `--site-packages` — by default the site-packages of the nearest `.venv`
 above the input. The module carries the input's file name and source lines (see
 `sourceFile` above). Exit status 1 with the error on stderr when compilation fails,

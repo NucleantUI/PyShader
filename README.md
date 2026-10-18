@@ -263,6 +263,7 @@ point, so `uv add pyshader-noise` is all a shader project needs. See
 - [Examples/](Examples/) — one file per feature, all validated with `spirv-val` in the tests.
 - [Examples/graphics/](Examples/graphics/) — a vertex + fragment module: Baby Lights' instanced glows.
 - [Examples/modules/](Examples/modules/) — a uv shader project importing a local module and a shader library.
+- [Examples/precompiled/](Examples/precompiled/) — a package whose shaders the build plugin compiles from `pyshader.toml`.
 - [Examples/shadertoy/](Examples/shadertoy/) — four ShaderToy shaders in GLSL
   and PyShader side by side, plus an app that runs each pair next to each
   other. [Its README](Examples/shadertoy/README.md) lists what porting needed.
@@ -310,6 +311,19 @@ argument declarations are properties of the interface structs.
 In NucleantUI, `ShaderFunction(pyshader: source)` goes wherever a
 `ShaderFunction` goes — `Shader(...)`, `.shader(_:)`, `arguments:` — and
 `VertexShaderFunction(pyshader: source)` into a `VertexShader(...)`.
+
+Or ahead of time, from a `pyshader.toml` at the root of a package that lists
+each shader and the `.spv` it becomes: `PyShaderBuildPlugin` compiles them
+on every build into the target's resources, and
+`swift package pyshader-compile` writes them into the package. See
+[Package plugins](https://nucleantui.github.io/PyShader/compiler/plugins/).
+
+```toml
+[clouds]
+source = "Shaders/clouds.py"
+output = "Resources/clouds.spv"
+target = "compute"
+```
 
 ## Decompiling
 

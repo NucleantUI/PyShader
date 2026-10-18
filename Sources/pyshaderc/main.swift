@@ -83,7 +83,11 @@ do {
     let outPath = output ?? (input as NSString).deletingPathExtension + ".spv"
     try shader.bytes.write(to: URL(fileURLWithPath: outPath))
     print("\(outPath): \(shader.spirv.count) words")
+} catch let error as PyShaderError where error.file == nil && error.line != nil {
+    // `file:line: error:` — what editors and build logs link to the source.
+    FileHandle.standardError.write("\(input):\(error.line!): error: \(error.message)\n".data(using: .utf8)!)
+    exit(1)
 } catch {
-    FileHandle.standardError.write("\(input): \(error)\n".data(using: .utf8)!)
+    FileHandle.standardError.write("\(input): error: \(error)\n".data(using: .utf8)!)
     exit(1)
 }
