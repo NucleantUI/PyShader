@@ -17,6 +17,10 @@ final class ShaderCompiler {
     private var inlining: [String] = []
     private var lambdaInstances: [String: (id: SpirvId, returnType: ShaderType)] = [:]
     private var lambdaCounter = 0
+    /// Instances of the functions taking lists of any length or array
+    /// arguments, by name and parameter types; and how many each has.
+    private var genericInstances: [GenericKey: SpirvId] = [:]
+    private var genericCounts: [String: Int] = [:]
 
     /// Compute-target resources, created on first use.
     private var contentImage: SpirvId?
@@ -36,7 +40,7 @@ final class ShaderCompiler {
 
     func compile() throws -> [UInt32] {
         // Ids first so calls can reference functions defined later in the file.
-        for name in program.functionOrder {
+        for name in program.functionOrder where !program.functions[name]!.isGeneric {
             let id = builder.allocate()
             program.assignFunctionId(name, id)
             builder.name(id, program.isEntry(name) ? "py_\(name)" : name)
@@ -44,16 +48,20 @@ final class ShaderCompiler {
 
         try emitGlobalsInit()
 
-        for name in program.functionOrder {
+        for name in program.functionOrder where !program.functions[name]!.isGeneric {
             let fn = program.functions[name]!
             let forwards = program.entry(named: name)?.forwardsColor ?? false
+            let file = program.origin(of: name)
             let emitter = FunctionEmitter(
                 compiler: self,
                 name: name,
                 returnType: fn.returnType,
-                implicitReturn: forwards ? { try Self.forwardColor($0, entry: name, line: fn.def.lineno) } : nil
+                implicitReturn: forwards ? { try Self.forwardColor($0, entry: name, line: fn.def.lineno) } : nil,
+                sourceFile: file
             )
-            try emitter.emitFunction(id: fn.id, params: fn.params, body: fn.def.body, control: fn.control, line: fn.def.lineno)
+            try PyShaderError.attributing(to: file) {
+                try emitter.emitFunction(id: fn.id, params: fn.params, body: fn.def.body, control: fn.control, line: fn.def.lineno)
+            }
         }
 
         try checkRecursion()
@@ -81,13 +89,16 @@ final class ShaderCompiler {
         try emitter.emitWrapper(id: id) { e in
             for name in self.program.variableOrder {
                 let g = self.program.variables[name]!
-                var value = try e.emitExpression(g.expr)
-                if let annotation = g.annotation {
-                    let type = try self.program.resolveType(annotation, line: g.line)
-                    value = try e.coerce(value, to: type, line: g.line)
-                }
-                guard value.type.isStorable else {
-                    throw PyShaderError("cannot store a `\(value.type)` in the module variable `\(name)`", line: g.line)
+                let value = try PyShaderError.attributing(to: self.program.origin(of: name)) {
+                    var value = try e.emitExpression(g.expr)
+                    if let annotation = g.annotation {
+                        let type = try self.program.resolveType(annotation, line: g.line)
+                        value = try e.coerce(value, to: type, line: g.line)
+                    }
+                    guard value.type.isStorable else {
+                        throw PyShaderError("cannot store a `\(value.type)` in the module variable `\(name)`", line: g.line)
+                    }
+                    return value
                 }
                 let ptr = self.builder.globalVariable(type: value.type, storage: .private, name: name)
                 e.store(ptr, value.id)
@@ -650,12 +661,42 @@ final class ShaderCompiler {
             builder.name(id, internalName)
             let emitter = FunctionEmitter(compiler: self, name: internalName, returnType: .void)
             let paramList = zip(params, args).map { (name: $0.arg, type: $1.type) }
-            let typed = try emitter.emitLambda(id: id, params: paramList, body: template.lambda.body, line: template.line)
+            let typed = try PyShaderError.attributing(to: program.origin(of: template.name)) {
+                try emitter.emitLambda(id: id, params: paramList, body: template.lambda.body, line: template.line)
+            }
             instance = (id, typed)
             lambdaInstances[key] = instance
         }
         let ids = args.map(\.id)
         return caller.emit(.opFunctionCall, type: instance.returnType, [instance.id] + ids)
+    }
+
+    // MARK: Functions taking lists
+
+    /// `fn` compiled for `params` (its parameters with the lengths and arrays
+    /// of one call's arguments), once per distinct set. Registered before its
+    /// body is emitted, so functions calling each other do not instantiate
+    /// forever; the recursion check reports them.
+    func instantiate(_ fn: ShaderFunctionSignature, params: [(name: String, type: ShaderType)]) throws -> SpirvId {
+        // By the types themselves: two array arguments print alike but are different arrays.
+        let key = GenericKey(name: fn.name, types: params.map(\.type))
+        if let id = genericInstances[key] { return id }
+        let id = builder.allocate()
+        let count = (genericCounts[fn.name] ?? 0) + 1
+        genericCounts[fn.name] = count
+        builder.name(id, count == 1 ? fn.name : "\(fn.name)_\(count)")
+        genericInstances[key] = id
+        let file = program.origin(of: fn.name)
+        let emitter = FunctionEmitter(compiler: self, name: fn.name, returnType: fn.returnType, sourceFile: file)
+        try PyShaderError.attributing(to: file) {
+            try emitter.emitFunction(id: id, params: params, body: fn.def.body, control: fn.control, line: fn.def.lineno)
+        }
+        return id
+    }
+
+    private struct GenericKey: Hashable {
+        let name: String
+        let types: [ShaderType]
     }
 
     // MARK: Globals
@@ -683,7 +724,7 @@ final class ShaderCompiler {
             if done.contains(n) { return }
             if visiting.contains(n) {
                 let cycle = (path.drop(while: { $0 != n }) + [n]).joined(separator: " -> ")
-                throw PyShaderError("recursion is not allowed in shader code: \(cycle)", line: program.functions[n]?.def.lineno)
+                throw PyShaderError("recursion is not allowed in shader code: \(cycle)", line: program.functions[n]?.def.lineno, file: program.origin(of: n))
             }
             visiting.insert(n)
             for m in callGraph[n] ?? [] { try visit(m, path: path + [n]) }

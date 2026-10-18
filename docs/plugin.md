@@ -21,6 +21,7 @@ def main(uv: float2) -> float4:
 | ```` ```pyshader ```` | the highlighted code, then the live preview under it |
 | ```` ```pyshader-preview ```` | the preview only |
 | ```` ```pyshader-edit ```` | a Monaco editor beside the preview, recompiling as you type |
+| ```` ```pyshader-api ```` | not a preview: a table of one installed PyShader module's public functions and constants, with signatures and the first paragraph of each docstring, read from its source at build time. `module="pyshader.stdlib.fragment.sdf"` names it; the [standard library](stdlib/index.md) pages are made of them |
 | ```` ```pyshader-convert ```` | a GLSL editor beside the PyShader it decompiles to, as on [GLSL to PyShader](convert.md); the body is GLSL. Its toolbar pastes the clipboard into the GLSL editor and copies the PyShader out; `pyshader-edit` blocks have the same pair for their editor, so a conversion can be carried to the [Playground](playground.md) in two clicks |
 
 Options go on the fence line as `key="value"`:
@@ -28,6 +29,7 @@ Options go on the fence line as `key="value"`:
 | option | meaning |
 |---|---|
 | `file="Examples/plasma.py"` | take the source from a file (relative to `mkdocs.yml`) instead of the fence body |
+| `modules="Examples/imports"` | a folder whose `.py` files the source can import, as the modules beside a shader file (`palette.py` is `palette`, `shapes/star.py` is `shapes.star`); see [Modules in previews](#modules-in-previews) |
 | `examples="Examples/shadertoy/opengl"` | `pyshader-convert` only: a folder whose `.glsl` files fill a picker; the first one is the initial source when the body is empty |
 | `args="gain:float=1.5, tint:float4=1 0.6 0.2 1, mins:floatArray=0.2 0.5"` | `ShaderArgument`s: name, kind (`float` … `float4`, `floatArray`, `float2Array` … `float4Array`) and the values to pass, an array's one element after another. Without it the preview declares them off the entry points' parameters — everything that is not a built-in input or a varying — and passes 1s; a `pyshader-edit` block's toolbar has a field per argument, taking its values as they are written here |
 | `content="img/card.png"` | the image `layer()` reads, relative to the site root; a test card when omitted |
@@ -58,6 +60,25 @@ The plugin adds `pymdownx.superfences` if missing, copies its assets to
 deploy is not served from a browser's cache) and injects a
 `window.PyShaderConfig` with the paths; `assets_dir`, `monaco_url` and
 `glslang_url` are its settings.
+
+## Modules in previews
+
+A preview can import two kinds of modules:
+
+- **Libraries installed where MkDocs runs.** At build time the plugin finds
+  every package declared under the `pyshader.modules` entry point in its own
+  environment, as `pyshaderc` finds them in a site-packages folder, and
+  writes their sources to `assets/pyshader/modules.json`. Every preview,
+  `pyshader-edit` blocks and the [Playground](playground.md) included, can
+  import them. This site's docs dependency group installs
+  [pyshader-stdlib](stdlib/index.md), so `from pyshader.stdlib… import`
+  works in any block.
+- **A fence's own modules**, from the folder its `modules=` option names,
+  carried in that block alone.
+
+Before each compile, the runtime hands both sets to `pyshader.wasm`
+(`pyshader_clear_modules`, then `pyshader_add_module` per module), and the
+compiler links what the source uses, as it does on disk.
 
 ## How a preview runs
 

@@ -19,6 +19,10 @@ struct ShaderFunctionSignature {
     let control: SpirvFunctionControl
     var id: SpirvId = 0
 
+    /// Takes a list of any length (`list[float2]`) or an array argument
+    /// (`Float2Array`): compiled once per argument types it is called with,
+    /// as the lengths and arrays come from the call, not from the `def`.
+    var isGeneric: Bool { params.contains { ShaderProgram.isOpen($0.type) } }
 }
 
 struct LambdaTemplate {
@@ -45,9 +49,16 @@ final class ShaderProgram {
     private(set) var lambdas: [String: LambdaTemplate] = [:]
     /// `class` declarations: plain structs of annotated fields.
     private(set) var structs: [String: ShaderType] = [:]
+    /// Module-level names in the order they are declared, which is the order
+    /// module variables are initialized in.
+    private var declarationOrder: [String] = []
+    /// The imported module each definition pulled in from one came from, by
+    /// its qualified name (`noise.fbm`); the shader's own are absent.
+    private let origins: [String: String]
 
-    init(module: Module, target: ShaderTarget) throws {
+    init(module: Module, target: ShaderTarget, origins: [String: String] = [:]) throws {
         self.target = target
+        self.origins = origins
         self.entries = try EntrySignature.all(for: target)
         // Classes first, so a function may return one declared below it;
         // then the vertex stage, whose varyings become the fragment stage's
@@ -57,21 +68,36 @@ final class ShaderProgram {
             if case .functionDef(let def) = stmt {
                 defs.append(def)
             } else {
-                try collect(stmt)
+                try PyShaderError.attributing(to: origin(of: stmt)) { try collect(stmt) }
             }
         }
         if case .graphics(let i) = target, let vertex = defs.first(where: { $0.name == i.vertexEntryPoint }) {
-            try declare(vertex)
+            try PyShaderError.attributing(to: origin(of: vertex.name)) { try declare(vertex) }
             try addVaryings(from: vertex, to: i.fragmentEntryPoint, arguments: i.arguments.map(\.name))
         }
         for def in defs where functions[def.name] == nil {
-            try declare(def)
+            try PyShaderError.attributing(to: origin(of: def.name)) { try declare(def) }
         }
         try promoteVariables(defs)
         for entry in entries.values.sorted(by: { $0.entryPoint < $1.entryPoint }) where functions[entry.entryPoint] == nil {
             let returns = entry.outputType.map { "\($0)" } ?? "Varyings"
             throw PyShaderError("shader needs a global `def \(entry.entryPoint)(...) -> \(returns):` entry point")
         }
+    }
+
+    /// The file an imported definition came from; nil for the shader's own.
+    func origin(of name: String) -> String? { origins[name] }
+
+    private func origin(of stmt: Statement) -> String? {
+        switch stmt {
+        case .classDef(let c): return origin(of: c.name)
+        case .assign(let a):
+            if a.targets.count == 1, case .name(let n) = a.targets[0] { return origin(of: n.id) }
+        case .annAssign(let a):
+            if case .name(let n) = a.target { return origin(of: n.id) }
+        default: break
+        }
+        return nil
     }
 
     /// The single-stage entry point; the fragment one for `.graphics`.
@@ -151,8 +177,10 @@ final class ShaderProgram {
         }
     }
 
+    /// The builtin module. What is installed under it (`pyshader.stdlib`) is
+    /// PyShader modules, imported like any other.
     static func isShaderModule(_ name: String) -> Bool {
-        name == "pyshader" || name.hasPrefix("pyshader.")
+        name == "pyshader"
     }
 
     private func bindGlobal(name: String, value: Expression, line: Int) throws {
@@ -165,6 +193,7 @@ final class ShaderProgram {
         } else {
             globals[name] = (value, line)
         }
+        declarationOrder.append(name)
     }
 
     /// A global a function declares `global` is assigned somewhere, so it is a
@@ -193,8 +222,10 @@ final class ShaderProgram {
                 }
             }
         }
-        for def in defs { try walk(def.body) }
-        variableOrder = variables.keys.sorted { variables[$0]!.line < variables[$1]!.line }
+        for def in defs {
+            try PyShaderError.attributing(to: origin(of: def.name)) { try walk(def.body) }
+        }
+        variableOrder = declarationOrder.filter { variables[$0] != nil }
     }
 
     /// `class Name:` with one annotated field per line — a struct. No
@@ -304,6 +335,9 @@ final class ShaderProgram {
         } else {
             returnType = entry?.outputType ?? .void
         }
+        if Self.isOpen(returnType) {
+            throw PyShaderError("`\(def.name)` cannot return a `\(returnType)`: a returned list needs a length the `def` itself fixes", line: def.lineno)
+        }
         if let entry {
             if let expected = entry.outputType {
                 if returnType != expected {
@@ -341,6 +375,46 @@ final class ShaderProgram {
     func resolveType(_ expr: Expression, line: Int) throws -> ShaderType {
         if case .name(let n) = expr, let s = structs[n.id] { return s }
         return try Self.resolveType(expr, line: line)
+    }
+
+    /// A parameter type whose length (or array) comes from the argument:
+    /// `list[T]`, at any depth, and the array argument types (`Float2Array`).
+    static func isOpen(_ type: ShaderType) -> Bool {
+        switch type {
+        case .array(let e, let n): return n < 0 || isOpen(e)
+        case .floatArray(let argument, _): return argument < 0
+        case .tuple(let members): return members.contains(where: isOpen)
+        default: return false
+        }
+    }
+
+    /// The type a parameter declared `declared` takes for an argument of type
+    /// `actual`; nil when the argument does not fit. A `list[T]` takes the
+    /// length of the list handed to it, or is that array argument when handed
+    /// one of `T`s; an array argument type is the argument handed to it, or
+    /// takes a list of its elements. A closed type stays as declared; the
+    /// argument is converted to it at the call.
+    static func bind(_ declared: ShaderType, to actual: ShaderType) -> ShaderType? {
+        guard isOpen(declared) else { return declared }
+        switch (declared, actual) {
+        case (.array(let e, let n), .array(let a, let m)) where n < 0 || n == m:
+            return bind(e, to: a).map { .array($0, m) }
+        case (.array(let e, let n), .floatArray(let argument, let a)) where n < 0 && e == a && argument >= 0:
+            return actual
+        case (.floatArray(_, let e), .floatArray(let argument, let a)) where e == a && argument >= 0:
+            return actual
+        case (.floatArray(_, let e), .array(let a, let m)) where bind(e, to: a) != nil:
+            return .array(e, m)
+        case (.tuple(let ds), .tuple(let as_)) where ds.count == as_.count:
+            var bound: [ShaderType] = []
+            for (d, a) in zip(ds, as_) {
+                guard let b = bind(d, to: a) else { return nil }
+                bound.append(b)
+            }
+            return .tuple(bound)
+        default:
+            return nil
+        }
     }
 
     /// An annotation's array type (bound to no argument) against the input's

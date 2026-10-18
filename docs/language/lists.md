@@ -24,8 +24,44 @@ g[2] = [8.0, 9.0]
 len(g), len(g[0])                               # 3, 2
 ```
 
-Lists cannot be function parameters yet, and there is no `for x in xs`:
-loop over `range(len(xs))`.
+There is no `for x in xs`: loop over `range(len(xs))`. A list a module
+constant holds indexes like any other, by a value only known at run time
+too (`QUAD[vertex_index % 6]`).
+
+## Lists as parameters
+
+A parameter annotated `list[T]` takes a list of any length. The function is
+compiled once for each length it is called with, so `len(xs)` is a constant
+inside it, as in the caller. The distance to a polygon, after Inigo Quilez's
+([2D distance functions](https://iquilezles.org/articles/distfunctions2d/)):
+
+```py
+def sd_polygon(v: list[float2], p: float2) -> float:
+    d = dot(p - v[0], p - v[0])
+    s = 1.0
+    j = len(v) - 1
+    for i in range(len(v)):
+        e = v[j] - v[i]
+        w = p - v[i]
+        b = w - e * clamp(dot(w, e) / dot(e, e), 0.0, 1.0)
+        d = min(d, dot(b, b))
+        c = bool3(p.y >= v[i].y, p.y < v[j].y, e.x * w.y > e.y * w.x)
+        if all(c) or not any(c):
+            s = -s
+        j = i
+    return s * sqrt(d)
+
+sd_polygon([float2(0.1), float2(0.9, 0.2), float2(0.5, 0.9)], uv)   # 3 corners
+sd_polygon(PENTAGON, uv)                                             # 5
+```
+
+The list is passed by value: the function works on its own copy, and
+assigning one of its elements changes that copy, not the caller's list.
+Elements convert on the way in as other arguments do (`[1, 2, 3]` to a
+`list[float]`). A function cannot return a `list[T]` of no fixed length.
+
+The same parameter takes an array argument (`Float2Array` for a
+`list[float2]`); see below.
 
 ## Tuples
 
@@ -53,7 +89,26 @@ These are the host-provided arrays: a `.floatArray` (or `.float2Array` …
 [compute](../targets/compute.md) and [graphics](../targets/graphics.md)
 targets. `a[i]` reads one element — a `float`, or a `float2`/`float3`/`float4`
 — clamped to the ends and zero when empty, and `len(a)` counts; an array
-cannot be stored or passed on.
+cannot be stored in a variable.
+
+An array argument can be handed to a function whose parameter is a
+`list[T]` of its elements, or the array type itself (`FloatArray`, …). The
+function is compiled once for each array it is given, and reads that
+array's elements from the buffer the host filled; nothing is copied. Given a
+list instead, the same function works on the list:
+
+```py
+def centroid(pts: list[float2]) -> float2:
+    c = float2(0.0)
+    for i in range(len(pts)):
+        c += pts[i]
+    return c / float(max(len(pts), 1))
+
+def main(uv: float2, points: Float2Array) -> float4:
+    c = centroid(points)                         # the argument
+    d = centroid([float2(0.0), float2(1.0)])     # a list
+    ...
+```
 
 ## In use
 

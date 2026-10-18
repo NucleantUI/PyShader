@@ -8,8 +8,16 @@ import PyShader
 public enum PyShader {
     /// A fragment stage; `interface` defaults to NucleantVulkan's `NucleantShader` layout.
     static func compile(_ source: String, interface: FragmentInterface = .nucleant) throws -> CompiledShader
-    /// Any target. `sourceFile` adds the `.py` file's name and every statement's line.
-    static func compile(_ source: String, target: ShaderTarget, sourceFile: String? = nil) throws -> CompiledShader
+    /// Any target. `sourceFile` adds the `.py` file's name and every statement's line;
+    /// `modules` is the site-packages folder its imports of other PyShader modules are in.
+    static func compile(_ source: String, target: ShaderTarget, sourceFile: String? = nil, modules: URL? = nil) throws -> CompiledShader
+    static func compile(_ source: String, target: ShaderTarget, sourceFile: String? = nil, modules: String?) throws -> CompiledShader
+    /// The modules handed over as sources, by dotted name, for a host with no files.
+    static func compile(_ source: String, target: ShaderTarget, sourceFile: String? = nil, modules: [String: String]) throws -> CompiledShader
+    /// A `.py` file: its name and lines carried along, its imports found in its
+    /// folder, then in `modules` — by default the nearest `.venv`'s site-packages.
+    static func compile(contentsOf file: URL, target: ShaderTarget, modules: URL? = nil) throws -> CompiledShader
+    static func compile(contentsOf file: URL, target: ShaderTarget, modules: String?) throws -> CompiledShader
 }
 
 public struct CompiledShader: Sendable {
@@ -26,14 +34,38 @@ the shared indentation is stripped.
 With `sourceFile`, the module carries the file's name (`OpString`, which
 `OpSource` points at) and an `OpLine` before each statement, so `spirv-val`,
 RenderDoc and naga report Python lines. Without it the module has no line
-information and is the same as before the option existed. Errors are `PyShaderError` values:
+information and is the same as before the option existed. Each imported
+module file a compiled statement comes from gets its own `OpString`. Errors
+are `PyShaderError` values:
 
 ```swift
 public struct PyShaderError: Error, CustomStringConvertible {
     let message: String
     let line: Int?          // 1-based Python line
+    let file: String?       // the imported module's file the line is in; nil for the shader itself
     var description: String // "line 7: `main` parameter `foo` is not a shader input; available: …"
+                            // "noise/fbm.py, line 12: unknown function `nope`"
 }
+```
+
+## `modules:`
+
+The site-packages folder a shader's imports of other PyShader modules are
+installed in — a `URL` or a path. Only the packages whose distribution
+declares a `pyshader.modules` entry point can be imported from it, and the
+folders its `.pth` files add (editable installs) are searched too; see
+[Modules](../language/modules.md).
+
+Given as a dictionary instead, `modules` is the modules themselves: dotted
+name to source, a package's own source being its `__init__.py`. Nothing is
+read from disk, and every module given can be imported. The docs' previews
+compile this way.
+
+```swift
+let shader = try PyShader.compile(source, target: .nucleantUI, modules: [
+    "palette": palette,                               // import palette
+    "shapes": shapesInit, "shapes.star": star,        // a package and its module
+])
 ```
 
 ## `ShaderTarget`
@@ -67,11 +99,14 @@ bindings, `inputs`) are public for other pipelines. See
 ## `pyshaderc`
 
 ```sh
-swift run pyshaderc <input.py> [-o output.spv] [--target fragment|compute|graphics] [--content] [--arg name:kind]...
+swift run pyshaderc <input.py> [-o output.spv] [--target fragment|compute|graphics] [--content] [--arg name:kind]... [--site-packages dir]
 ```
 
 Writes `<input>.spv` next to the input unless `-o` is given and prints the
-word count. The module carries the input's file name and source lines (see
+word count. An error is printed as `<input>:<line>: error: …`. The
+[package plugins](plugins.md) run it for each section of a `pyshader.toml`. Imports are found in the input's folder, then in
+`--site-packages` — by default the site-packages of the nearest `.venv`
+above the input. The module carries the input's file name and source lines (see
 `sourceFile` above). Exit status 1 with the error on stderr when compilation fails,
 2 for a usage error.
 

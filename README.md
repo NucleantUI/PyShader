@@ -111,7 +111,8 @@ def march(p: float3) -> float:
     return length(p) - 1.0
 ```
 
-No recursion (SPIR-V forbids it), no imports besides `pyshader`, no
+No recursion (SPIR-V forbids it), no imports besides `pyshader` and
+[PyShader modules](#modules), no
 decorators besides the `@inline` / `@noinline` hints, no default parameter
 values, and keyword arguments only when constructing a class. Classes are plain structs (see
 [Vertex + fragment](#vertex--fragment)).
@@ -238,10 +239,31 @@ quad's own coordinate is common), but not an argument. Classes are plain
 structs — annotated fields only, constructed positionally or by keyword,
 read with `v.field` — and work anywhere, not just as varyings.
 
+### Modules
+
+A shader can import other PyShader modules — `.py` files in the same subset.
+Only what it uses is compiled in, as if written there, under the module's
+qualified name (`noise.fbm`), so two modules' `hash` never clash.
+
+```py
+from noise import fbm          # an installed shader library
+import palettes                # palettes.py next to the shader
+from shaderlib.sdf import *    # only the names the code uses
+```
+
+Modules are found next to the shader and in a site-packages folder —
+`modules:` / `--site-packages`, by default the nearest uv `.venv`'s: a library is a normal package with a
+`pyproject.toml` that declares itself under the `pyshader.modules` entry
+point, so `uv add pyshader-noise` is all a shader project needs. See
+[Modules](https://nucleantui.github.io/PyShader/language/modules/) and
+[Examples/modules/](Examples/modules/).
+
 ## Examples
 
 - [Examples/](Examples/) — one file per feature, all validated with `spirv-val` in the tests.
 - [Examples/graphics/](Examples/graphics/) — a vertex + fragment module: Baby Lights' instanced glows.
+- [Examples/modules/](Examples/modules/) — a uv shader project importing a local module and a shader library.
+- [Examples/precompiled/](Examples/precompiled/) — a package whose shaders the build plugin compiles from `pyshader.toml`.
 - [Examples/shadertoy/](Examples/shadertoy/) — four ShaderToy shaders in GLSL
   and PyShader side by side, plus an app that runs each pair next to each
   other. [Its README](Examples/shadertoy/README.md) lists what porting needed.
@@ -268,13 +290,14 @@ import PyShader
 
 let shader = try PyShader.compile(source)                             // fragment, NucleantVulkan VKShader layout
 let compute = try PyShader.compile(source, target: .nucleantUI)  // compute, NucleantUI Shader layout
+let file = try PyShader.compile(contentsOf: url, target: .nucleantUI) // a .py file; its imports found beside it and in .venv
 shader.spirv        // [UInt32] for vkCreateShaderModule
 ```
 
 Or from the command line:
 
 ```sh
-swift run pyshaderc shader.py -o shader.spv [--target compute --content --arg name:float4]
+swift run pyshaderc shader.py -o shader.spv [--target compute --content --arg name:float4] [--site-packages dir]
 ```
 
 Three targets, same Python: `.fragment(FragmentInterface)` for a fragment stage
@@ -288,6 +311,19 @@ argument declarations are properties of the interface structs.
 In NucleantUI, `ShaderFunction(pyshader: source)` goes wherever a
 `ShaderFunction` goes — `Shader(...)`, `.shader(_:)`, `arguments:` — and
 `VertexShaderFunction(pyshader: source)` into a `VertexShader(...)`.
+
+Or ahead of time, from a `pyshader.toml` at the root of a package that lists
+each shader and the `.spv` it becomes: `PyShaderBuildPlugin` compiles them
+on every build into the target's resources, and
+`swift package pyshader-compile` writes them into the package. See
+[Package plugins](https://nucleantui.github.io/PyShader/compiler/plugins/).
+
+```toml
+[clouds]
+source = "Shaders/clouds.py"
+output = "Resources/clouds.spv"
+target = "compute"
+```
 
 ## Decompiling
 

@@ -3,7 +3,7 @@ name = "pyshader"
 version = "0.1.0"
 description = "Python-syntax shader API: typed stubs for the PyShader SPIR-V compiler"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.13"
 license = { text = "MIT" }
 
 [build-system]
@@ -17,7 +17,10 @@ packages = ["src/pyshader"]
 docs = [
     "mkdocs-material>=9.5",
     "mkdocs-pyshader",
+    # The previews can import it: the plugin ships every installed PyShader module.
+    "pyshader-stdlib",
 ]
 
 [tool.uv.sources]
 mkdocs-pyshader = { path = "mkdocs-pyshader", editable = true }
+pyshader-stdlib = { git = "https://github.com/NucleantUI/pyshader-stdlib", branch = "master" }

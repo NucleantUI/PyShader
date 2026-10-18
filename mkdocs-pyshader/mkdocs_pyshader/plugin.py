@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import shutil
+from importlib.metadata import entry_points
 from pathlib import Path
 
 from mkdocs.config import config_options
@@ -22,7 +23,21 @@ FENCES = (
     ("pyshader-preview", fences.preview_only),
     ("pyshader-edit", fences.editor),
     ("pyshader-convert", fences.converter),
+    ("pyshader-api", fences.api_reference),
 )
+
+
+def installed_modules() -> dict[str, str]:
+    """The sources of the PyShader modules installed where MkDocs runs: every
+    package a distribution declares under the `pyshader.modules` entry point
+    (`pyshader.stdlib`), by dotted name, found along `sys.path` as the
+    compiler finds them in site-packages (editable installs included)."""
+    sources: dict[str, str] = {}
+    for point in entry_points(group="pyshader.modules"):
+        package = point.value.split(":")[0].strip()
+        if package:
+            sources.update(fences.module_sources(package))
+    return sources
 
 
 def _version(name: str) -> str:
@@ -43,6 +58,10 @@ class PyShaderPlugin(BasePlugin):
 
     def on_config(self, config):
         fences.base_path = Path(config.config_file_path).parent
+        # The libraries every preview can import, shipped once as modules.json.
+        self.modules_json = json.dumps(installed_modules(), sort_keys=True)
+        self.modules_version = hashlib.sha1(self.modules_json.encode()).hexdigest()[:10]
+        log.info("pyshader: %d installed module files for the previews", len(json.loads(self.modules_json)))
 
         extensions = config["markdown_extensions"]
         if "pymdownx.superfences" not in extensions:
@@ -68,6 +87,7 @@ class PyShaderPlugin(BasePlugin):
             "monaco": self.config["monaco_url"],
             "glslang": self.config["glslang_url"],
             "versions": {name: _version(name) for name in WASM},
+            "modules": f"{site}{self.config['assets_dir'].strip('/')}/modules.json?v={self.modules_version}",
         }
         tag = f"<script>window.PyShaderConfig={json.dumps(settings)};</script>"
         return output.replace("</head>", tag + "</head>", 1) if "</head>" in output else output
@@ -75,6 +95,7 @@ class PyShaderPlugin(BasePlugin):
     def on_post_build(self, config):
         target = Path(config["site_dir"]) / self.config["assets_dir"].strip("/")
         target.mkdir(parents=True, exist_ok=True)
+        (target / "modules.json").write_text(self.modules_json, encoding="utf-8")
         for name in ("pyshader-preview.js", "pyshader-preview.css", *WASM):
             source = ASSETS / name
             if source.exists():

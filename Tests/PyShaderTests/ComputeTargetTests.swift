@@ -109,7 +109,7 @@ struct ComputeTargetTests {
         }
     }
 
-    @Test("FloatArray cannot be stored or passed on")
+    @Test("FloatArray cannot be stored in a variable")
     func floatArrayMisuse() {
         let interface = ComputeImageInterface.nucleantUI(samplesContent: false, arguments: [("a", .floatArray)])
         do {

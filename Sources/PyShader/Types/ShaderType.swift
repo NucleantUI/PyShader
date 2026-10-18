@@ -214,7 +214,7 @@ public indirect enum ShaderType: Hashable, Sendable, CustomStringConvertible {
         case .scalar(let k): return k.name
         case .vector(let k, let n): return "\(k.name)\(n)"
         case .matrix(let k, let c, let r): return "\(k.name)\(c)x\(r)"
-        case .array(let t, let n): return "list[\(t)] (\(n))"
+        case .array(let t, let n): return n < 0 ? "list[\(t)]" : "list[\(t)] (\(n))"
         case .tuple(let ts): return "tuple[\(ts.map(\.description).joined(separator: ", "))]"
         case .structure(let name, _): return name
         case .pointer(_, let t): return "ptr<\(t)>"

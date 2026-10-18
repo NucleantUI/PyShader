@@ -1,0 +1,19 @@
+# What this package compiles to SPIR-V. Paths are relative to this file.
+# site-packages = ".venv/lib/python3.13/site-packages"   # where imported shader libraries are installed
+
+[tiles]
+source = "Sources/ShaderPack/Shaders/tiles.py"
+output = "Generated/tiles.spv"
+target = "compute"
+
+[ripple]
+source = "../compute/effect_ripple.py"
+output = "Generated/ripple.spv"
+target = "compute"
+content = true
+
+[glow]
+source = "../graphics/instanced_glow.py"
+output = "Generated/glow.spv"
+target = "graphics"
+arguments = ["touches:floatArray", "glowSeconds:float"]

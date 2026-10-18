@@ -31,6 +31,8 @@ final class SpirvModuleBuilder {
     /// The `OpString` naming the `.py` file, when the module carries source lines.
     private(set) var sourceFileId: SpirvId?
     private var sourceFileName = ""
+    /// An `OpString` per imported module file a statement came from, in first-use order.
+    private var moduleFiles: [(name: String, id: SpirvId)] = []
 
     private struct ConstantKey: Hashable {
         let type: ShaderType
@@ -67,10 +69,19 @@ final class SpirvModuleBuilder {
         sourceFileName = name
     }
 
-    /// `OpLine` for a statement on `line` of the source file; nil when the module has none.
-    func line(_ line: Int) -> SpirvInstruction? {
+    /// `OpLine` for a statement on `line` of the source file, or of the
+    /// imported module `file`; nil when the module carries no lines.
+    func line(_ line: Int, in file: String? = nil) -> SpirvInstruction? {
         guard let sourceFileId, line > 0 else { return nil }
-        return .init(.opLine, [sourceFileId, UInt32(line), 0])
+        guard let file else { return .init(.opLine, [sourceFileId, UInt32(line), 0]) }
+        let id: SpirvId
+        if let known = moduleFiles.first(where: { $0.name == file }) {
+            id = known.id
+        } else {
+            id = allocate()
+            moduleFiles.append((file, id))
+        }
+        return .init(.opLine, [id, UInt32(line), 0])
     }
 
     func name(_ id: SpirvId, _ name: String) {
@@ -280,6 +291,9 @@ final class SpirvModuleBuilder {
         for i in executionModes { words += i.words }
         if let sourceFileId {
             words += SpirvInstruction(.opString, [sourceFileId] + SpirvInstruction.encode(string: sourceFileName)).words
+            for file in moduleFiles {
+                words += SpirvInstruction(.opString, [file.id] + SpirvInstruction.encode(string: file.name)).words
+            }
             words += SpirvInstruction(.opSource, [SpirvSourceLanguage.unknown.rawValue, 0, sourceFileId]).words
         } else {
             words += SpirvInstruction(.opSource, [SpirvSourceLanguage.unknown.rawValue, 0]).words
