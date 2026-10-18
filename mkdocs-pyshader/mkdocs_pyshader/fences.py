@@ -8,14 +8,18 @@ editor whose contents come back as PyShader source.
 
 from __future__ import annotations
 
+import ast
 import html
 import json
 import re
+import sys
 from pathlib import Path
 
 # Fence options the validator accepts, with how the value is parsed.
 _OPTIONS = {
     "file": str,
+    "modules": str,
+    "module": str,
     "examples": str,
     "args": str,
     "content": str,
@@ -71,6 +75,37 @@ def _parse_args(spec: str) -> list[dict]:
     return args
 
 
+def folder_modules(folder: Path, prefix: str = "") -> dict[str, str]:
+    """Every `.py` file under `folder` as a module, by dotted name relative to
+    it (`palettes`, `shaderlib.noise`; a package's own source is its
+    `__init__.py`)."""
+    sources = {}
+    for path in sorted(folder.rglob("*.py")):
+        parts = list(path.relative_to(folder).with_suffix("").parts)
+        if "__pycache__" in parts:
+            continue
+        if parts[-1] == "__init__":
+            parts.pop()
+        name = ".".join(([prefix] if prefix else []) + parts)
+        if name:
+            sources[name] = path.read_text(encoding="utf-8")
+    return sources
+
+
+def module_sources(package: str) -> dict[str, str]:
+    """The sources of the package `package` (dotted) and everything below
+    it, from the first `sys.path` entry that has it."""
+    relative = Path(*package.split("."))
+    for entry in sys.path:
+        root = Path(entry or ".")
+        if (root / relative).is_dir():
+            return folder_modules(root / relative, package)
+        single = (root / relative).with_suffix(".py")
+        if single.is_file():
+            return {package: single.read_text(encoding="utf-8")}
+    return {}
+
+
 def _source(src: str, options: dict) -> str:
     if "file" in options:
         return (base_path / options["file"]).read_text(encoding="utf-8")
@@ -83,6 +118,9 @@ def _preview_div(source: str, options: dict, mode: str) -> str:
         "source": source,
         "args": _parse_args(options["args"]) if "args" in options else [],
     }
+    # `modules="Examples/imports"`: the local modules this preview's source imports.
+    if "modules" in options:
+        data["modules"] = folder_modules(base_path / options["modules"])
     # No `target`: the preview reads it off the source, and off each edit.
     for key in ("target", "content", "height", "vertices", "instances", "debounce"):
         if key in options:
@@ -154,4 +192,54 @@ def converter(src, language, css_class, options, md, **kwargs):
     return (
         f'<div class="pyshader-convert"{style} data-pyshader-convert="{html.escape(json.dumps(data), quote=True)}">'
         '<div class="pyshader-status pyshader-status-busy">Loading the converter…</div></div>'
+    )
+
+
+def _first_paragraph(doc: str | None) -> str:
+    if not doc:
+        return ""
+    return " ".join(doc.strip().split("\n\n")[0].split())
+
+
+def _inline_code(text: str) -> str:
+    """Docstring text with `code` spans kept, everything else escaped."""
+    parts = text.split("`")
+    return "".join(f"<code>{html.escape(p)}</code>" if i % 2 else html.escape(p) for i, p in enumerate(parts))
+
+
+def api_reference(src, language, css_class, options, md, **kwargs):
+    """`pyshader-api module="pyshader.stdlib.fragment.sdf"`: the module's public
+    functions and constants, read from the installed source, one row each with
+    its signature and the first paragraph of its docstring."""
+    name = options.get("module", src.strip())
+    source = module_sources(name).get(name)
+    if source is None:
+        raise ValueError(f"pyshader-api: module `{name}` is not installed where MkDocs runs")
+    tree = ast.parse(source)
+    rows = []
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and not node.name.startswith("_"):
+            params = ", ".join(
+                f"{a.arg}: {ast.unparse(a.annotation)}" if a.annotation else a.arg for a in node.args.args
+            )
+            returns = f" -> {ast.unparse(node.returns)}" if node.returns else ""
+            signature = f"{node.name}({params}){returns}"
+            rows.append((node.name, signature, _first_paragraph(ast.get_docstring(node))))
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+            target = node.targets[0] if isinstance(node, ast.Assign) else node.target
+            if isinstance(target, ast.Name) and target.id.isupper() and not target.id.startswith("_") and node.value is not None:
+                value = ast.unparse(node.value)
+                if "\n" in value or len(value) > 70:
+                    value = value.split("(")[0] + "(…)"
+                rows.append((target.id, f"{target.id} = {value}", "Constant."))
+    body = "".join(
+        f'<tr id="{html.escape(name.split(".")[-1])}-{html.escape(row_name)}"><td><code>{html.escape(signature)}</code></td>'
+        f"<td>{_inline_code(doc)}</td></tr>"
+        for row_name, signature, doc in rows
+    )
+    module_doc = _first_paragraph(ast.get_docstring(tree))
+    caption = f"<p class=\"pyshader-api-doc\">{_inline_code(module_doc)}</p>" if module_doc else ""
+    return (
+        f'<div class="pyshader-api"><p class="pyshader-api-module"><code>{html.escape(name)}</code></p>{caption}'
+        f"<table><thead><tr><th>Name</th><th>What it does</th></tr></thead><tbody>{body}</tbody></table></div>"
     )

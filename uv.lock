@@ -420,6 +420,7 @@ source = { editable = "." }
 docs = [
     { name = "mkdocs-material" },
     { name = "mkdocs-pyshader" },
+    { name = "pyshader-stdlib" },
 ]
 
 [package.metadata]
@@ -428,7 +429,13 @@ docs = [
 docs = [
     { name = "mkdocs-material", specifier = ">=9.5" },
     { name = "mkdocs-pyshader", editable = "mkdocs-pyshader" },
+    { name = "pyshader-stdlib", git = "https://github.com/NucleantUI/pyshader-stdlib?branch=master" },
 ]
+
+[[package]]
+name = "pyshader-stdlib"
+version = "0.1.0"
+source = { git = "https://github.com/NucleantUI/pyshader-stdlib?branch=master#ef3f12b93f204199e40871cce05d8db6fff62964" }
 
 [[package]]
 name = "python-dateutil"

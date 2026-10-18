@@ -269,6 +269,17 @@ struct ModuleTests {
         #expect(!n.contains("palettes.unused_debug"))
         #expect(strings(words).contains("noise/fbm.py"))
     }
+
+    @Test("the imports tutorial's example compiles: a module, named imports and a package's __all__")
+    func importsExample() throws {
+        let file = examplesDirectory.appendingPathComponent("imports/orbit.py")
+        let shader = try PyShader.compile(contentsOf: file, target: .nucleantUI)
+        if let result = try Tools.validate(shader) { #expect(result.isEmpty, "spirv-val: \(result)") }
+        let n = names(SpirvWords(words: shader.spirv))
+        for name in ["palette.ramp", "lighting.glow", "lighting.halo", "shapes.star.star", "shapes.ring.ring", "shapes.polar.angle_of"] {
+            #expect(n.contains(name), "\(name)")
+        }
+    }
 }
 
 @Suite("Module discovery")
@@ -373,6 +384,28 @@ struct ModuleDiscoveryTests {
             Issue.record("expected an error")
         } catch let error as PyShaderError {
             #expect(error.message.contains("`pyshader/secret.py` is installed but is not a PyShader module"), "got: \(error)")
+        }
+    }
+
+    @Test("modules: handed over as sources, packages under pyshader included")
+    func moduleSources() throws {
+        let sources = [
+            "pyshader.stdlib": "",
+            "pyshader.stdlib.fragment": "",
+            "pyshader.stdlib.fragment.sdf": "from pyshader import *\n\ndef sd_circle(p: float2, r: float) -> float:\n    return length(p) - r\n",
+            "palettes": "SUNSET = float3(1.0, 0.5, 0.2)\n",
+        ]
+        let shader = try PyShader.compile("""
+            from pyshader import *
+            from pyshader.stdlib.fragment.sdf import sd_circle
+            import palettes
+            def main(uv: float2) -> float4:
+                return float4(palettes.SUNSET * sd_circle(uv - 0.5, 0.3), 1.0)
+            """, target: .nucleant, modules: sources)
+        let n = names(SpirvWords(words: shader.spirv))
+        #expect(n.contains("pyshader.stdlib.fragment.sdf.sd_circle"))
+        #expect(throws: PyShaderError.self) {
+            try PyShader.compile("import palettes\ndef main(uv: float2) -> float4:\n    return float4(1.0)\n", target: .nucleant, modules: [String: String]())
         }
     }
 

@@ -46,6 +46,11 @@ result; move the pointer over the ones that read `mouse`.
     ```pyshader-preview file="Examples/shadertoy/pyshader/cyber-fuji-2020.py" height="180"
     ```
 
+-   **[Imports](../tutorials/imports.md)** — local modules, a package's `__all__`, and the standard library
+
+    ```pyshader-preview file="Examples/imports/orbit.py" modules="Examples/imports" height="180"
+    ```
+
 -   **[Instanced glow](graphics.md)** — the graphics target: a vertex + fragment module with varyings
 
     ```pyshader-preview file="Examples/graphics/instanced_glow.py" target="graphics" vertices="6" instances="3" args="touches:floatArray=0.3 0.5 0.1 0 0.7 0.4 0.6 0 0.5 0.75 0.9 0, glowSeconds:float=1000000" height="180"

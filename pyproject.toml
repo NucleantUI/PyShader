@@ -17,7 +17,10 @@ packages = ["src/pyshader"]
 docs = [
     "mkdocs-material>=9.5",
     "mkdocs-pyshader",
+    # The previews can import it: the plugin ships every installed PyShader module.
+    "pyshader-stdlib",
 ]
 
 [tool.uv.sources]
 mkdocs-pyshader = { path = "mkdocs-pyshader", editable = true }
+pyshader-stdlib = { git = "https://github.com/NucleantUI/pyshader-stdlib", branch = "master" }

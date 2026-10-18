@@ -13,6 +13,10 @@
 //    arg=name:float|float2|float3|float4|floatArray|float2Array|float3Array|float4Array
 //                                       (repeatable, in buffer order)
 //
+//  The modules the source may import are registered beforehand, one call to
+//  pyshader_add_module per module (dotted name and source), and stay until
+//  pyshader_clear_modules.
+//
 //  On success the result is the SPIR-V module as bytes, and the entry point
 //  names are readable through pyshader_entry_point / pyshader_vertex_entry_point.
 //  On failure it is the error text.
@@ -36,6 +40,8 @@ private nonisolated(unsafe) var resultCount: Int32 = 0
 private nonisolated(unsafe) var entryPointBytes: [UInt8] = []
 private nonisolated(unsafe) var vertexEntryPointBytes: [UInt8] = []
 private nonisolated(unsafe) var decompileWarningBytes: [UInt8] = []
+/// The modules `pyshader_compile` can import, by dotted name.
+private nonisolated(unsafe) var moduleSources: [String: String] = [:]
 
 private func storeResult(_ bytes: [UInt8]) {
     freeResult()
@@ -110,6 +116,27 @@ public func pyshader_dealloc(_ pointer: UnsafeMutableRawPointer?, _ size: Int32)
     pointer?.deallocate()
 }
 
+/// Registers a module the next compiles can import: `name` dotted (`noise`,
+/// `pyshader.stdlib.fragment.sdf`), `source` its Python source (a package's
+/// `__init__.py`).
+@_expose(wasm, "pyshader_add_module")
+@_cdecl("pyshader_add_module")
+public func pyshader_add_module(
+    _ namePointer: UnsafeRawPointer?,
+    _ nameLength: Int32,
+    _ sourcePointer: UnsafeRawPointer?,
+    _ sourceLength: Int32
+) {
+    moduleSources[string(from: namePointer, length: nameLength)] = string(from: sourcePointer, length: sourceLength)
+}
+
+/// Forgets every registered module.
+@_expose(wasm, "pyshader_clear_modules")
+@_cdecl("pyshader_clear_modules")
+public func pyshader_clear_modules() {
+    moduleSources = [:]
+}
+
 /// Returns 0 on success (result = SPIR-V bytes), 1 on failure (result = error text).
 @_expose(wasm, "pyshader_compile")
 @_cdecl("pyshader_compile")
@@ -122,7 +149,8 @@ public func pyshader_compile(
     do {
         let shader = try PyShader.compile(
             string(from: sourcePointer, length: sourceLength),
-            target: try target(from: string(from: optionsPointer, length: optionsLength))
+            target: try target(from: string(from: optionsPointer, length: optionsLength)),
+            modules: moduleSources
         )
         entryPointBytes = Array(shader.entryPoint.utf8)
         vertexEntryPointBytes = Array((shader.vertexEntryPoint ?? "").utf8)

@@ -144,9 +144,36 @@
     return ptr;
   }
 
-  /** Python source -> { wgsl, entryPoint, vertexEntryPoint, spirv }; throws with the compiler's message. */
-  async function compile(source, options) {
-    const { swift, naga } = await loadModules();
+  let libraryPromise = null;
+
+  /** The installed PyShader libraries (`pyshader.stdlib`, …) every preview can
+   * import: dotted name -> source, written by the plugin as modules.json. */
+  function loadLibraries() {
+    if (!config.modules) return Promise.resolve({});
+    if (libraryPromise) return libraryPromise;
+    libraryPromise = fetch(new URL(config.modules, document.baseURI))
+      .then((response) => (response.ok ? response.json() : {}))
+      .catch(() => ({}));
+    return libraryPromise;
+  }
+
+  /** Hands the compiler the modules the next compile can import: the libraries and `local`. */
+  function registerModules(swift, libraries, local) {
+    swift.pyshader_clear_modules();
+    for (const [name, source] of Object.entries({ ...libraries, ...(local || {}) })) {
+      const n = encoder.encode(name), s = encoder.encode(source);
+      const namePtr = putBytes(swift, "pyshader_alloc", n), sourcePtr = putBytes(swift, "pyshader_alloc", s);
+      swift.pyshader_add_module(namePtr, n.length, sourcePtr, s.length);
+      swift.pyshader_dealloc(namePtr, n.length);
+      swift.pyshader_dealloc(sourcePtr, s.length);
+    }
+  }
+
+  /** Python source -> { wgsl, entryPoint, vertexEntryPoint, spirv }; throws with the compiler's message.
+   * `modules` are the source's local modules (dotted name -> source), next to the installed libraries. */
+  async function compile(source, options, modules) {
+    const [{ swift, naga }, libraries] = await Promise.all([loadModules(), loadLibraries()]);
+    if (swift.pyshader_add_module) registerModules(swift, libraries, modules);
 
     const src = encoder.encode(source), opt = encoder.encode(options);
     const srcPtr = putBytes(swift, "pyshader_alloc", src), optPtr = putBytes(swift, "pyshader_alloc", opt);
@@ -477,7 +504,7 @@
       this.status("compiling…", "busy");
       let compiled;
       try {
-        compiled = await compile(source, this.options());
+        compiled = await compile(source, this.options(), this.data.modules);
       } catch (error) {
         if (id !== this.compileId) return;
         this.status(error.message, "error");

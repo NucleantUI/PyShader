@@ -61,6 +61,14 @@ public enum PyShader {
         try compile(source, target: target, sourceFile: sourceFile, modules: modules.map { URL(fileURLWithPath: $0) })
     }
 
+    /// `compile(_:target:sourceFile:modules:)` with the modules handed over as
+    /// sources instead of found on disk: dotted name to source (`"noise"`,
+    /// `"pyshader.stdlib.fragment.sdf"`), a package's own source being its
+    /// `__init__.py`. For hosts with no file system, as the docs' previews.
+    public static func compile(_ source: String, target: ShaderTarget, sourceFile: String? = nil, modules: [String: String]) throws -> CompiledShader {
+        try compile(source, target: target, sourceFile: sourceFile, searching: ShaderModules(sources: modules))
+    }
+
     /// Compiles a `.py` file, its name and lines carried into the module. Its
     /// imports are found in its own folder, then in `modules` — a site-packages
     /// folder, by default the one of the nearest uv `.venv` above the file.

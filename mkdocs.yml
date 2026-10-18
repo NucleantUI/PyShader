@@ -64,6 +64,8 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Getting started: getting-started.md
+  - Tutorials:
+      - Imports: tutorials/imports.md
   - Language:
       - Types: language/types.md
       - Operators: language/operators.md
@@ -73,6 +75,14 @@ nav:
       - Classes: language/classes.md
       - Modules: language/modules.md
       - Builtins: language/builtins.md
+  - Standard library:
+      - Overview: stdlib/index.md
+      - Shaping & easing: stdlib/shaping.md
+      - Color & blend: stdlib/color.md
+      - Shapes & SDF: stdlib/shapes.md
+      - Coordinates & patterns: stdlib/patterns.md
+      - Random, noise & cellular: stdlib/noise.md
+      - Vertex helpers: stdlib/vertex.md
   - Targets:
       - Overview: targets/index.md
       - Fragment: targets/fragment.md

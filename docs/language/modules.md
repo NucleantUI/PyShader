@@ -16,6 +16,9 @@ def main(uv: float2, time: float) -> float4:
     return float4(palettes.shade(palettes.OCEAN, d), 1.0)
 ```
 
+The [imports tutorial](../tutorials/imports.md) walks through it with live
+examples; this page is the reference.
+
 The same rules apply in a module as in a shader: it may define functions,
 classes and constants (and variables a function declares `global`), and
 import `pyshader` and other PyShader modules — nothing from the Python

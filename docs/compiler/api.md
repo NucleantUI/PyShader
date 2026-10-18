@@ -12,6 +12,8 @@ public enum PyShader {
     /// `modules` is the site-packages folder its imports of other PyShader modules are in.
     static func compile(_ source: String, target: ShaderTarget, sourceFile: String? = nil, modules: URL? = nil) throws -> CompiledShader
     static func compile(_ source: String, target: ShaderTarget, sourceFile: String? = nil, modules: String?) throws -> CompiledShader
+    /// The modules handed over as sources, by dotted name, for a host with no files.
+    static func compile(_ source: String, target: ShaderTarget, sourceFile: String? = nil, modules: [String: String]) throws -> CompiledShader
     /// A `.py` file: its name and lines carried along, its imports found in its
     /// folder, then in `modules` — by default the nearest `.venv`'s site-packages.
     static func compile(contentsOf file: URL, target: ShaderTarget, modules: URL? = nil) throws -> CompiledShader
@@ -53,6 +55,19 @@ installed in — a `URL` or a path. Only the packages whose distribution
 declares a `pyshader.modules` entry point can be imported from it, and the
 folders its `.pth` files add (editable installs) are searched too; see
 [Modules](../language/modules.md).
+
+Given as a dictionary instead, `modules` is the modules themselves: dotted
+name to source, a package's own source being its `__init__.py`. Nothing is
+read from disk, and every module given can be imported. The docs' previews
+compile this way.
+
+```swift
+let shader = try PyShader.compile(source, target: .nucleantUI, modules: [
+    "palette": palette,                               // import palette
+    "shapes": shapesInit, "shapes.star": star,        // a package and its module
+])
+```
+
 ## `ShaderTarget`
 
 ```swift
