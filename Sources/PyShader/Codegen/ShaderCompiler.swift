@@ -17,6 +17,10 @@ final class ShaderCompiler {
     private var inlining: [String] = []
     private var lambdaInstances: [String: (id: SpirvId, returnType: ShaderType)] = [:]
     private var lambdaCounter = 0
+    /// Instances of the functions taking lists of any length or array
+    /// arguments, by name and parameter types; and how many each has.
+    private var genericInstances: [GenericKey: SpirvId] = [:]
+    private var genericCounts: [String: Int] = [:]
 
     /// Compute-target resources, created on first use.
     private var contentImage: SpirvId?
@@ -36,7 +40,7 @@ final class ShaderCompiler {
 
     func compile() throws -> [UInt32] {
         // Ids first so calls can reference functions defined later in the file.
-        for name in program.functionOrder {
+        for name in program.functionOrder where !program.functions[name]!.isGeneric {
             let id = builder.allocate()
             program.assignFunctionId(name, id)
             builder.name(id, program.isEntry(name) ? "py_\(name)" : name)
@@ -44,7 +48,7 @@ final class ShaderCompiler {
 
         try emitGlobalsInit()
 
-        for name in program.functionOrder {
+        for name in program.functionOrder where !program.functions[name]!.isGeneric {
             let fn = program.functions[name]!
             let forwards = program.entry(named: name)?.forwardsColor ?? false
             let file = program.origin(of: name)
@@ -665,6 +669,34 @@ final class ShaderCompiler {
         }
         let ids = args.map(\.id)
         return caller.emit(.opFunctionCall, type: instance.returnType, [instance.id] + ids)
+    }
+
+    // MARK: Functions taking lists
+
+    /// `fn` compiled for `params` (its parameters with the lengths and arrays
+    /// of one call's arguments), once per distinct set. Registered before its
+    /// body is emitted, so functions calling each other do not instantiate
+    /// forever; the recursion check reports them.
+    func instantiate(_ fn: ShaderFunctionSignature, params: [(name: String, type: ShaderType)]) throws -> SpirvId {
+        // By the types themselves: two array arguments print alike but are different arrays.
+        let key = GenericKey(name: fn.name, types: params.map(\.type))
+        if let id = genericInstances[key] { return id }
+        let id = builder.allocate()
+        let count = (genericCounts[fn.name] ?? 0) + 1
+        genericCounts[fn.name] = count
+        builder.name(id, count == 1 ? fn.name : "\(fn.name)_\(count)")
+        genericInstances[key] = id
+        let file = program.origin(of: fn.name)
+        let emitter = FunctionEmitter(compiler: self, name: fn.name, returnType: fn.returnType, sourceFile: file)
+        try PyShaderError.attributing(to: file) {
+            try emitter.emitFunction(id: id, params: params, body: fn.def.body, control: fn.control, line: fn.def.lineno)
+        }
+        return id
+    }
+
+    private struct GenericKey: Hashable {
+        let name: String
+        let types: [ShaderType]
     }
 
     // MARK: Globals

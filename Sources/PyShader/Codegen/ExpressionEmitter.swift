@@ -773,7 +773,15 @@ extension FunctionEmitter {
             return emit(.opVectorExtractDynamic, type: base.type.elementType!, [base.id, index])
         case .matrix, .array, .tuple:
             guard let k = constantIndex(s.slice) else {
-                throw PyShaderError("dynamic indexing needs the `\(base.type)` in a variable", line: s.lineno)
+                // A value, not a variable (a module constant, a call's result):
+                // copied into a temporary, then read through a pointer like a local.
+                guard let elem = base.type.elementType(at: nil) else {
+                    throw PyShaderError("tuple index must be a constant", line: s.lineno)
+                }
+                let temp = declareTemp(type: base.type)
+                store(temp.ptr, base.id)
+                let index = try emitIndex(s.slice, count: base.type.count, line: s.lineno)
+                return load(chain(temp.ptr, elem, [index]).id, type: elem)
             }
             let i = k < 0 ? k + base.type.count : k
             guard (0..<base.type.count).contains(i), let elem = base.type.elementType(at: i) else {
@@ -922,13 +930,25 @@ extension FunctionEmitter {
         guard args.count == fn.params.count else {
             throw PyShaderError("`\(fn.name)` takes \(fn.params.count) argument(s), got \(args.count)", line: line)
         }
+        var params = fn.params
+        if fn.isGeneric {
+            params = try zip(args, fn.params).map { arg, param in
+                guard let bound = ShaderProgram.bind(param.type, to: arg.type) else {
+                    throw PyShaderError("`\(fn.name)` parameter `\(param.name)` takes a `\(param.type)`, got `\(arg.type)`", line: line)
+                }
+                return (param.name, bound)
+            }
+        }
         var ids: [UInt32] = []
-        for (arg, param) in zip(args, fn.params) {
+        for (arg, param) in zip(args, params) {
+            // An array argument is a handle the function reads through; nothing is passed.
+            if case .floatArray = param.type { continue }
             let v = try coerce(arg, to: param.type, line: line)
             ids.append(v.id)
         }
         compiler.recordCall(from: functionName, to: fn.name)
-        return emit(.opFunctionCall, type: fn.returnType, [fn.id] + ids)
+        let target = fn.isGeneric ? try compiler.instantiate(fn, params: params) : fn.id
+        return emit(.opFunctionCall, type: fn.returnType, [target] + ids)
     }
 
     /// Vector / scalar constructors: `float4(1, 0, 0, 1)`, `float3(v2, z)`, `float4(0.5)`, `int(x)`.

@@ -19,6 +19,10 @@ struct ShaderFunctionSignature {
     let control: SpirvFunctionControl
     var id: SpirvId = 0
 
+    /// Takes a list of any length (`list[float2]`) or an array argument
+    /// (`Float2Array`): compiled once per argument types it is called with,
+    /// as the lengths and arrays come from the call, not from the `def`.
+    var isGeneric: Bool { params.contains { ShaderProgram.isOpen($0.type) } }
 }
 
 struct LambdaTemplate {
@@ -329,6 +333,9 @@ final class ShaderProgram {
         } else {
             returnType = entry?.outputType ?? .void
         }
+        if Self.isOpen(returnType) {
+            throw PyShaderError("`\(def.name)` cannot return a `\(returnType)`: a returned list needs a length the `def` itself fixes", line: def.lineno)
+        }
         if let entry {
             if let expected = entry.outputType {
                 if returnType != expected {
@@ -366,6 +373,46 @@ final class ShaderProgram {
     func resolveType(_ expr: Expression, line: Int) throws -> ShaderType {
         if case .name(let n) = expr, let s = structs[n.id] { return s }
         return try Self.resolveType(expr, line: line)
+    }
+
+    /// A parameter type whose length (or array) comes from the argument:
+    /// `list[T]`, at any depth, and the array argument types (`Float2Array`).
+    static func isOpen(_ type: ShaderType) -> Bool {
+        switch type {
+        case .array(let e, let n): return n < 0 || isOpen(e)
+        case .floatArray(let argument, _): return argument < 0
+        case .tuple(let members): return members.contains(where: isOpen)
+        default: return false
+        }
+    }
+
+    /// The type a parameter declared `declared` takes for an argument of type
+    /// `actual`; nil when the argument does not fit. A `list[T]` takes the
+    /// length of the list handed to it, or is that array argument when handed
+    /// one of `T`s; an array argument type is the argument handed to it, or
+    /// takes a list of its elements. A closed type stays as declared; the
+    /// argument is converted to it at the call.
+    static func bind(_ declared: ShaderType, to actual: ShaderType) -> ShaderType? {
+        guard isOpen(declared) else { return declared }
+        switch (declared, actual) {
+        case (.array(let e, let n), .array(let a, let m)) where n < 0 || n == m:
+            return bind(e, to: a).map { .array($0, m) }
+        case (.array(let e, let n), .floatArray(let argument, let a)) where n < 0 && e == a && argument >= 0:
+            return actual
+        case (.floatArray(_, let e), .floatArray(let argument, let a)) where e == a && argument >= 0:
+            return actual
+        case (.floatArray(_, let e), .array(let a, let m)) where bind(e, to: a) != nil:
+            return .array(e, m)
+        case (.tuple(let ds), .tuple(let as_)) where ds.count == as_.count:
+            var bound: [ShaderType] = []
+            for (d, a) in zip(ds, as_) {
+                guard let b = bind(d, to: a) else { return nil }
+                bound.append(b)
+            }
+            return .tuple(bound)
+        default:
+            return nil
+        }
     }
 
     /// An annotation's array type (bound to no argument) against the input's
