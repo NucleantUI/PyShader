@@ -324,6 +324,19 @@ struct ModuleDiscoveryTests {
         #expect(names(words).contains("local.half"))
     }
 
+    @Test("a shader with no .venv above it compiles: the search stops at the root")
+    func noVenv() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("pyshader-novenv-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let shader = root.appendingPathComponent("main.py")
+        try "def main(uv: float2) -> float4:\n    return float4(uv, 0.0, 1.0)\n".write(to: shader, atomically: true, encoding: .utf8)
+        // A folder URL ends in `/`; walking up from one reaches `file:///`.
+        #expect(ShaderModules.nearestVenv(from: root) == nil)
+        #expect(ShaderModules.discover(near: shader, environment: [:]).paths.count == 1)
+        _ = try PyShader.compile(contentsOf: shader, target: .nucleant)
+    }
+
     @Test("an installed package that declares no pyshader.modules entry point cannot be imported")
     func undeclared() throws {
         let (root, shader) = try project()

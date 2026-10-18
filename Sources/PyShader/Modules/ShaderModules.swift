@@ -67,13 +67,15 @@ struct ShaderModules: Sendable {
 
     /// The first `.venv` folder in `folder` or above it.
     static func nearestVenv(from folder: URL) -> URL? {
-        var dir = folder
+        var dir = folder.standardizedFileURL
         while true {
             let venv = dir.appendingPathComponent(".venv")
             if isDirectory(venv) { return venv }
-            let parent = dir.deletingLastPathComponent()
-            if parent.path == dir.path { return nil }
-            dir = parent
+            // Stop at the root by its path: the parent of a folder URL
+            // `file:///` is `file:///../`, so comparing parent and child
+            // never ends.
+            if dir.path == "/" { return nil }
+            dir = dir.deletingLastPathComponent()
         }
     }
 
