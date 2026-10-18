@@ -80,6 +80,10 @@ struct ModuleRewriter {
         guard case .name(let n) = base, !locals.contains(n.id),
               case .module(var d)? = try linker.resolve(n.id, in: module, line: n.lineno) else { return nil }
         for (i, x) in attributes.enumerated() {
+            // `pyshader.sin`, `pyshader.float3`: a builtin, left as it is.
+            if d.isBuiltin, try linker.submodule(d, x.attr, line: x.lineno, in: module) == nil {
+                return .attribute(a)
+            }
             switch try linker.resolveMember(d, x.attr, line: x.lineno, in: module) {
             case .module(let sub):
                 d = sub

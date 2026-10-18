@@ -177,8 +177,10 @@ final class ShaderProgram {
         }
     }
 
+    /// The builtin module. What is installed under it (`pyshader.stdlib`) is
+    /// PyShader modules, imported like any other.
     static func isShaderModule(_ name: String) -> Bool {
-        name == "pyshader" || name.hasPrefix("pyshader.")
+        name == "pyshader"
     }
 
     private func bindGlobal(name: String, value: Expression, line: Int) throws {

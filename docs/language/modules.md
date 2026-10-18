@@ -73,8 +73,9 @@ only the packages that declare themselves PyShader modules can be imported;
 
 A shader library is an ordinary Python package with a `pyproject.toml`. It
 depends on `pyshader` (for the editor) and on any other shader library it
-imports, and declares its top-level package under the `pyshader.modules`
-entry point group:
+imports, and declares its package under the `pyshader.modules` entry point
+group. That package, and everything below it, is what can be imported from
+it:
 
 ```toml title="pyproject.toml"
 [project]
@@ -113,6 +114,33 @@ swift run pyshaderc clouds.py                  # finds noise in .venv
 [Examples/modules](https://github.com/NucleantUI/PyShader/tree/main/Examples/modules)
 is such a project: a shader, a local module beside it, and a library in
 `packages/pyshader-noise`.
+
+### Libraries under `pyshader`
+
+`pyshader` itself is the compiler's: `from pyshader import *` is never read
+from a file. A library can still live under it, as `pyshader.stdlib` does,
+by declaring the dotted package. It installs into the `pyshader/` folder of
+the stubs, without an `__init__.py` of its own (with `uv_build`, a dotted
+`module-name`):
+
+```toml title="pyproject.toml"
+[project.entry-points."pyshader.modules"]
+stdlib = "pyshader.stdlib"
+
+[tool.uv.build-backend]
+module-name = "pyshader.stdlib"
+```
+
+```py
+from pyshader import *
+from pyshader.stdlib.fragment.noise import fbm
+import pyshader.stdlib.fragment.sdf as sdf
+```
+
+Only the declared package opens: anything else under `pyshader/` in
+site-packages is not a PyShader module. For the editor to see both the stubs
+and the library under one `pyshader`, install both the usual way, not
+editable.
 
 ## Errors and source lines
 

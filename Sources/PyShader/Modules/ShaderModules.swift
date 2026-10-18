@@ -14,11 +14,17 @@ struct ShaderModules: Sendable {
     /// One folder modules are looked up in, like an entry of Python's `sys.path`.
     struct SearchPath: Sendable, Equatable {
         let directory: URL
-        /// The top-level packages importable from here; nil for any. A
-        /// site-packages folder holds every Python package of the
-        /// environment, so only the ones whose distribution declares a
-        /// `pyshader.modules` entry point are let through.
+        /// The modules importable from here, dotted, with everything below
+        /// them; nil for any. A site-packages folder holds every Python
+        /// package of the environment, so only the ones a distribution
+        /// declares under the `pyshader.modules` entry point are let through.
         let allowed: Swift.Set<String>?
+
+        /// `name` is a declared module, inside one, or a package on the way to one.
+        func allows(_ name: String) -> Bool {
+            guard let allowed else { return true }
+            return allowed.contains { name == $0 || name.hasPrefix($0 + ".") || $0.hasPrefix(name + ".") }
+        }
 
         init(directory: URL, allowed: Swift.Set<String>? = nil) {
             self.directory = directory
@@ -115,9 +121,9 @@ struct ShaderModules: Sendable {
         return folders.map { SearchPath(directory: $0, allowed: allowed) }
     }
 
-    /// The top-level packages of an `entry_points.txt`'s `[pyshader.modules]`
-    /// section: `noise = noise` (or `= shaderlib.noise`) declares `noise`
-    /// (`shaderlib`) a PyShader module.
+    /// The modules of an `entry_points.txt`'s `[pyshader.modules]` section:
+    /// `noise = noise` declares `noise` a PyShader module, `stdlib =
+    /// pyshader.stdlib` declares `pyshader.stdlib` (and nothing else of `pyshader`).
     static func declaredModules(entryPoints text: String) -> Swift.Set<String> {
         var modules: Swift.Set<String> = []
         var inSection = false
@@ -130,9 +136,7 @@ struct ShaderModules: Sendable {
             guard inSection, let eq = line.firstIndex(of: "=") else { continue }
             let value = line[line.index(after: eq)...].trimmingCharacters(in: .whitespaces)
             let module = value.split(separator: ":").first.map(String.init) ?? value
-            if let top = module.split(separator: ".").first, !top.isEmpty {
-                modules.insert(String(top))
-            }
+            if !module.isEmpty { modules.insert(module) }
         }
         return modules
     }
@@ -186,7 +190,7 @@ struct ShaderModules: Sendable {
                 hit = (relative + "/", "", true)
             }
             guard let hit else { continue }
-            if let allowed = path.allowed, !allowed.contains(parts[0]) {
+            if !path.allows(name) {
                 undeclared = undeclared ?? hit.file
                 continue
             }

@@ -86,12 +86,20 @@ struct ConfigTests {
         try write("\(site)/colors-0.1.dist-info/entry_points.txt", "[pyshader.modules]\ncolors = colors\n")
         try write("\(site)/_colors.pth", "\(root.path)/editable/src\n")
 
+        // A library under `pyshader` counts; the `pyshader` stubs beside it do not.
+        try write("\(site)/pyshader/__init__.py")
+        try write("\(site)/pyshader/stdlib/__init__.py")
+        try write("\(site)/pyshader/stdlib/fragment/noise.py")
+        try write("\(site)/pyshader_stdlib-0.1.dist-info/entry_points.txt", "[pyshader.modules]\nstdlib = pyshader.stdlib\n")
+
         let configFile = root.appendingPathComponent("pyshader.toml")
         for text in ["[a]\nsource = \"Shaders/main.py\"\n", "site-packages = \"\(site)\"\n[a]\nsource = \"Shaders/main.py\"\n"] {
             let config = try PyShaderConfig(parsing: text)
             let inputs = config.inputFiles(for: config.sections[0], root: root, configFile: configFile).map { $0.path.replacingOccurrences(of: root.path + "/", with: "") }
             #expect(inputs.sorted() == [
                 ".venv/lib/python3.13/site-packages/noise/__init__.py",
+                ".venv/lib/python3.13/site-packages/pyshader/stdlib/__init__.py",
+                ".venv/lib/python3.13/site-packages/pyshader/stdlib/fragment/noise.py",
                 "Shaders/lib/shapes.py",
                 "Shaders/main.py",
                 "editable/src/colors/palette.py",

@@ -304,7 +304,7 @@ struct ModuleDiscoveryTests {
         let modules = ShaderModules.discover(near: shader, environment: [:])
         #expect(modules.paths.first?.directory.lastPathComponent == "shaders")
         #expect(modules.paths.first?.allowed == nil)
-        #expect(modules.paths.dropFirst().allSatisfy { $0.allowed == Swift.Set(["noise", "colors"]) })
+        #expect(modules.paths.dropFirst().allSatisfy { $0.allowed == Swift.Set(["noise", "colors.palette"]) })
 
         try "from noise import fbm\nfrom colors import RED\nimport local\ndef main(uv: float2) -> float4:\n    return float4(RED * local.half(fbm(uv)), 1.0)\n"
             .write(to: shader, atomically: true, encoding: .utf8)
@@ -324,6 +324,55 @@ struct ModuleDiscoveryTests {
         } catch let error as PyShaderError {
             #expect(error.message.contains("`numpy/__init__.py` is installed but is not a PyShader module"), "got: \(error)")
             #expect(error.line == 1)
+        }
+    }
+
+    @Test("a library installed under pyshader (pyshader.stdlib): imported in every form, next to the builtins", arguments: [false, true])
+    func underPyshader(editable: Bool) throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pyshader-stdlib-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        func write(_ path: String, _ text: String) throws {
+            let url = root.appendingPathComponent(path)
+            try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try text.write(to: url, atomically: true, encoding: .utf8)
+        }
+        let site = ".venv/lib/python3.13/site-packages"
+        // The editor stubs: never read by the compiler, and nothing beside `stdlib` under them is importable.
+        try write("\(site)/pyshader/__init__.py", "from typing import Any\n")
+        try write("\(site)/pyshader/secret.py", "X = 1.0\n")
+        try write("\(site)/pyshader-0.1.0.dist-info/METADATA", "Name: pyshader\n")
+        try write("\(site)/pyshader_stdlib-0.1.0.dist-info/entry_points.txt", "[pyshader.modules]\nstdlib = pyshader.stdlib\n")
+        // Installed, the library's files join the stubs' folder; editable, a `.pth` points at its source.
+        let library = editable ? "stdlib-src/src" : site
+        if editable { try write("\(site)/_pyshader_stdlib.pth", "\(root.path)/stdlib-src/src\n") }
+        try write("\(library)/pyshader/stdlib/__init__.py", "\"\"\"The library.\"\"\"\n")
+        try write("\(library)/pyshader/stdlib/fragment/__init__.py", "")
+        try write("\(library)/pyshader/stdlib/fragment/shapes.py", "from pyshader import *\nfrom .matrix import rotate2d\n\ndef circle(p: float2, r: float) -> float:\n    return step(length(rotate2d(PI) * p), r)\n")
+        try write("\(library)/pyshader/stdlib/fragment/matrix.py", "from pyshader import *\n\ndef rotate2d(a: float) -> float2x2:\n    return float2x2(cos(a), sin(a), -sin(a), cos(a))\n")
+        try write("shaders/main.py", "")
+        let shader = root.appendingPathComponent("shaders/main.py")
+
+        for source in [
+            "from pyshader import *\nfrom pyshader.stdlib.fragment.shapes import circle\ndef main(uv: float2) -> float4:\n    return float4(circle(uv, 0.5))\n",
+            "from pyshader import *\nfrom pyshader.stdlib.fragment import shapes\ndef main(uv: float2) -> float4:\n    return float4(shapes.circle(uv, 0.5))\n",
+            "import pyshader.stdlib.fragment.shapes as shapes\ndef main(uv: float2) -> float4:\n    return float4(shapes.circle(uv, 0.5))\n",
+            "import pyshader\nimport pyshader.stdlib.fragment.shapes\ndef main(uv: pyshader.float2) -> pyshader.float4:\n    return pyshader.float4(pyshader.stdlib.fragment.shapes.circle(uv, pyshader.sin(0.5)))\n",
+        ] {
+            try source.write(to: shader, atomically: true, encoding: .utf8)
+            let compiled = try PyShader.compile(contentsOf: shader, target: .nucleant)
+            if let result = try Tools.validate(compiled) { #expect(result.isEmpty, "spirv-val: \(result)") }
+            let n = names(SpirvWords(words: compiled.spirv))
+            #expect(n.contains("pyshader.stdlib.fragment.shapes.circle"), "\(source)")
+            #expect(n.contains("pyshader.stdlib.fragment.matrix.rotate2d"), "\(source)")
+        }
+
+        try "from pyshader.secret import X\ndef main(uv: float2) -> float4:\n    return float4(X)\n".write(to: shader, atomically: true, encoding: .utf8)
+        do {
+            _ = try PyShader.compile(contentsOf: shader, target: .nucleant)
+            Issue.record("expected an error")
+        } catch let error as PyShaderError {
+            #expect(error.message.contains("`pyshader/secret.py` is installed but is not a PyShader module"), "got: \(error)")
         }
     }
 

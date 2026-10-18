@@ -239,15 +239,24 @@ struct PyShaderConfig: Equatable {
         var files: [URL] = []
         for folder in folders {
             for module in declared {
-                let file = folder.appendingPathComponent(module + ".py")
+                let parts = module.split(separator: ".").map(String.init)
+                // The packages above it (`shaderlib/__init__.py` for `shaderlib.noise`);
+                // `pyshader` itself is the compiler's builtin, never read.
+                for depth in parts.indices.dropLast() where parts[...depth] != ["pyshader"] {
+                    let initFile = folder.appendingPathComponent(parts[...depth].joined(separator: "/") + "/__init__.py")
+                    if fm.fileExists(atPath: initFile.path) { files.append(initFile) }
+                }
+                let path = parts.joined(separator: "/")
+                let file = folder.appendingPathComponent(path + ".py")
                 if fm.fileExists(atPath: file.path) { files.append(file) }
-                files += pythonFiles(under: folder.appendingPathComponent(module))
+                files += pythonFiles(under: folder.appendingPathComponent(path))
             }
         }
         return files
     }
 
-    /// The top-level packages an `entry_points.txt`'s `[pyshader.modules]` section names.
+    /// The modules an `entry_points.txt`'s `[pyshader.modules]` section names,
+    /// dotted (`noise`, `pyshader.stdlib`).
     static func declaredModules(entryPoints text: String) -> [String] {
         var modules: [String] = []
         var inSection = false
@@ -256,8 +265,8 @@ struct PyShaderConfig: Equatable {
             if line.hasPrefix("[") { inSection = line == "[pyshader.modules]"; continue }
             guard inSection, let eq = line.firstIndex(of: "=") else { continue }
             let value = line[line.index(after: eq)...].trimmingCharacters(in: .whitespaces)
-            if let top = value.split(separator: ":").first?.split(separator: ".").first, !modules.contains(String(top)) {
-                modules.append(String(top))
+            if let module = value.split(separator: ":").first.map(String.init), !module.isEmpty, !modules.contains(module) {
+                modules.append(module)
             }
         }
         return modules

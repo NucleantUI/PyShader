@@ -43,6 +43,9 @@ final class ModuleLinker {
         }
 
         var isMain: Bool { name.isEmpty }
+        /// `pyshader`: the compiler's builtins, never read from a file. Only
+        /// the modules installed under it (`pyshader.stdlib`) are loaded.
+        var isBuiltin: Bool { name == "pyshader" }
     }
 
     enum ImportBinding {
@@ -125,6 +128,11 @@ final class ModuleLinker {
 
     private func loadIfPresent(_ name: String, line: Int, from importer: LoadedModule) throws -> LoadedModule? {
         if let m = loaded[name] { return m }
+        if ShaderProgram.isShaderModule(name) {
+            let builtin = LoadedModule(name: name, file: nil, isPackage: true)
+            loaded[name] = builtin
+            return builtin
+        }
         let parts = name.split(separator: ".")
         if parts.count > 1 {
             let parent = parts.dropLast().joined(separator: ".")
@@ -320,11 +328,17 @@ final class ModuleLinker {
         return try PyShaderError.attributing(to: s.file) { try resolve(name, in: s, line: line) }
     }
 
+    /// `d`'s submodule `name`, when there is one.
+    func submodule(_ d: LoadedModule, _ name: String, line: Int, in importer: LoadedModule) throws -> LoadedModule? {
+        guard d.isPackage else { return nil }
+        return try loadIfPresent(d.name + "." + name, line: line, from: importer)
+    }
+
     /// `name` read from module `d` (`from d import name`, `d.name`): what `d`
     /// binds it to, or its submodule of that name.
     func resolveMember(_ d: LoadedModule, _ name: String, line: Int, in importer: LoadedModule) throws -> Binding {
         if let b = try resolve(name, in: d, line: line) { return b }
-        if d.isPackage, let sub = try loadIfPresent(d.name + "." + name, line: line, from: importer) {
+        if let sub = try submodule(d, name, line: line, in: importer) {
             return .module(sub)
         }
         throw PyShaderError("module `\(d.name)` has no `\(name)`", line: line)
