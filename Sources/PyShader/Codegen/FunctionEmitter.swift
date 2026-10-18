@@ -20,6 +20,8 @@ final class FunctionEmitter {
     let returnType: ShaderType
     /// Called for `return` without a value (and for falling off the end) in a non-void function.
     let implicitReturn: ((FunctionEmitter) throws -> Value)?
+    /// The imported module's file the function came from, for `OpLine`; nil for the shader's own.
+    let sourceFile: String?
 
     private var variableDecls: [SpirvInstruction] = []
     private var body: [SpirvInstruction] = []
@@ -42,11 +44,12 @@ final class FunctionEmitter {
     /// `break`, which only leaves the switch.
     private var matchBreaks: [(loopDepth: Int, merge: SpirvId, flag: LocalVariable?)] = []
 
-    init(compiler: ShaderCompiler, name: String, returnType: ShaderType, implicitReturn: ((FunctionEmitter) throws -> Value)? = nil) {
+    init(compiler: ShaderCompiler, name: String, returnType: ShaderType, implicitReturn: ((FunctionEmitter) throws -> Value)? = nil, sourceFile: String? = nil) {
         self.compiler = compiler
         self.functionName = name
         self.returnType = returnType
         self.implicitReturn = implicitReturn
+        self.sourceFile = sourceFile
     }
 
     // MARK: Driving
@@ -404,7 +407,7 @@ final class FunctionEmitter {
     func emitBlock(_ statements: [Statement]) throws {
         for s in statements {
             ensureOpen()
-            if let line = builder.line(s.lineno) { emit(line) }
+            if let line = builder.line(s.lineno, in: sourceFile) { emit(line) }
             try emitStatement(s)
         }
     }

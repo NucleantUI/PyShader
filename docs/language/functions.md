@@ -104,7 +104,9 @@ constant's job.
 
 `from pyshader import *` and `import pyshader` are accepted and ignored so an
 editor can be pointed at the stub package; `pyshader.sin(x)` works. Docstrings
-are allowed on the module and on functions. Nothing else can be imported.
+are allowed on the module and on functions. Besides `pyshader`, a shader can
+import other PyShader modules — see [Modules](modules.md); nothing from
+Python's standard library or other packages.
 Classes are plain structs, defined at module level; see [Classes](classes.md).
 
 ## In use

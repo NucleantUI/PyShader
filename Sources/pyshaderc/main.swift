@@ -3,10 +3,13 @@
 //
 //  usage: pyshaderc <input.py> [-o output.spv] [--target fragment|compute|graphics]
 //                   [--content] [--arg name:float|float2|float3|float4|floatArray|float2Array|float3Array|float4Array]...
+//                   [-I dir]...
 //
 //  `--target compute` builds for NucleantUI's `Shader` view (storage image),
 //  `--target graphics` for its `VertexShader` view (vertex + fragment, one module);
 //  `--content` adds the sampled content image (`layer()`), `--arg` a ShaderArgument.
+//  Imports are found next to the input, in each `-I` / `--module-path` folder,
+//  in `PYSHADER_PATH` and in the nearest uv `.venv` (see `ShaderModules.discover`).
 //
 
 import Foundation
@@ -14,7 +17,7 @@ import PyShader
 
 func usage() -> Never {
     FileHandle.standardError.write("""
-    usage: pyshaderc <input.py> [-o output.spv] [--target fragment|compute|graphics] [--content] [--arg name:kind]...
+    usage: pyshaderc <input.py> [-o output.spv] [--target fragment|compute|graphics] [--content] [--arg name:kind]... [-I dir]...
 
     """.data(using: .utf8)!)
     exit(2)
@@ -26,6 +29,7 @@ var targetName = "fragment"
 var samplesContent = false
 var arguments: [(name: String, kind: ShaderArgumentKind)] = []
 var inputs: [String] = []
+var modulePaths: [URL] = []
 
 while !args.isEmpty {
     let a = args.removeFirst()
@@ -38,6 +42,9 @@ while !args.isEmpty {
         targetName = args.removeFirst()
     case "--content":
         samplesContent = true
+    case "-I", "--module-path":
+        guard !args.isEmpty else { usage() }
+        modulePaths.append(URL(fileURLWithPath: args.removeFirst()))
     case "--arg":
         guard !args.isEmpty else { usage() }
         let spec = args.removeFirst().split(separator: ":", maxSplits: 1).map(String.init)
@@ -72,8 +79,8 @@ default: usage()
 }
 
 do {
-    let source = try String(contentsOfFile: input, encoding: .utf8)
-    let shader = try PyShader.compile(source, target: target, sourceFile: (input as NSString).lastPathComponent)
+    let file = URL(fileURLWithPath: input)
+    let shader = try PyShader.compile(contentsOf: file, target: target, modules: .discover(near: file, extraPaths: modulePaths))
     let outPath = output ?? (input as NSString).deletingPathExtension + ".spv"
     try shader.bytes.write(to: URL(fileURLWithPath: outPath))
     print("\(outPath): \(shader.spirv.count) words")

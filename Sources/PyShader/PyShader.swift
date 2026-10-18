@@ -47,21 +47,38 @@ public enum PyShader {
     ///   (`OpString`) and marks every statement with its line (`OpLine`), so
     ///   `spirv-val`, RenderDoc and naga point at the Python source. Without it the
     ///   module carries no line information.
-    public static func compile(_ source: String, target: ShaderTarget, sourceFile: String? = nil) throws -> CompiledShader {
-        let module: Module
-        do {
-            module = try parsePython(normalize(source))
-        } catch let error as PyShaderError {
-            throw error
-        } catch {
-            throw PyShaderError("syntax error: \(error)")
-        }
-        let program = try ShaderProgram(module: module, target: target)
+    /// - Parameter modules: Where the shader's imports of other PyShader modules
+    ///   are found. What the shader uses from them is compiled in as if written
+    ///   in it; with `.none`, importing anything besides `pyshader` is an error.
+    public static func compile(_ source: String, target: ShaderTarget, sourceFile: String? = nil, modules: ShaderModules = .none) throws -> CompiledShader {
+        let linker = ModuleLinker(modules: modules)
+        let module = try linker.link(parse(source))
+        let program = try ShaderProgram(module: module, target: target, origins: linker.origins)
         let compiler = ShaderCompiler(program: program, sourceFile: sourceFile)
         let words = try compiler.compile()
         var vertexEntryPoint: String?
         if case .graphics(let i) = target { vertexEntryPoint = i.vertexEntryPoint }
         return CompiledShader(spirv: words, entryPoint: target.entryPoint, vertexEntryPoint: vertexEntryPoint)
+    }
+
+    /// Compiles a `.py` file, its name and lines carried into the module. Its
+    /// imports are found by `ShaderModules.discover(near:)` — the file's
+    /// folder, `PYSHADER_PATH`, and the nearest uv `.venv` — unless `modules`
+    /// says otherwise.
+    public static func compile(contentsOf file: URL, target: ShaderTarget, modules: ShaderModules? = nil) throws -> CompiledShader {
+        let source = try String(contentsOf: file, encoding: .utf8)
+        return try compile(source, target: target, sourceFile: file.lastPathComponent, modules: modules ?? .discover(near: file))
+    }
+
+    /// Parses PyShader source, after `normalize`.
+    static func parse(_ source: String) throws -> Module {
+        do {
+            return try parsePython(normalize(source))
+        } catch let error as PyShaderError {
+            throw error
+        } catch {
+            throw PyShaderError("syntax error: \(error)")
+        }
     }
 
     /// Strips the indentation shared by every non-blank line (source embedded in a

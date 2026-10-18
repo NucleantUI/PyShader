@@ -45,9 +45,16 @@ final class ShaderProgram {
     private(set) var lambdas: [String: LambdaTemplate] = [:]
     /// `class` declarations: plain structs of annotated fields.
     private(set) var structs: [String: ShaderType] = [:]
+    /// Module-level names in the order they are declared, which is the order
+    /// module variables are initialized in.
+    private var declarationOrder: [String] = []
+    /// The imported module each definition pulled in from one came from, by
+    /// its qualified name (`noise.fbm`); the shader's own are absent.
+    private let origins: [String: String]
 
-    init(module: Module, target: ShaderTarget) throws {
+    init(module: Module, target: ShaderTarget, origins: [String: String] = [:]) throws {
         self.target = target
+        self.origins = origins
         self.entries = try EntrySignature.all(for: target)
         // Classes first, so a function may return one declared below it;
         // then the vertex stage, whose varyings become the fragment stage's
@@ -57,21 +64,36 @@ final class ShaderProgram {
             if case .functionDef(let def) = stmt {
                 defs.append(def)
             } else {
-                try collect(stmt)
+                try PyShaderError.attributing(to: origin(of: stmt)) { try collect(stmt) }
             }
         }
         if case .graphics(let i) = target, let vertex = defs.first(where: { $0.name == i.vertexEntryPoint }) {
-            try declare(vertex)
+            try PyShaderError.attributing(to: origin(of: vertex.name)) { try declare(vertex) }
             try addVaryings(from: vertex, to: i.fragmentEntryPoint, arguments: i.arguments.map(\.name))
         }
         for def in defs where functions[def.name] == nil {
-            try declare(def)
+            try PyShaderError.attributing(to: origin(of: def.name)) { try declare(def) }
         }
         try promoteVariables(defs)
         for entry in entries.values.sorted(by: { $0.entryPoint < $1.entryPoint }) where functions[entry.entryPoint] == nil {
             let returns = entry.outputType.map { "\($0)" } ?? "Varyings"
             throw PyShaderError("shader needs a global `def \(entry.entryPoint)(...) -> \(returns):` entry point")
         }
+    }
+
+    /// The file an imported definition came from; nil for the shader's own.
+    func origin(of name: String) -> String? { origins[name] }
+
+    private func origin(of stmt: Statement) -> String? {
+        switch stmt {
+        case .classDef(let c): return origin(of: c.name)
+        case .assign(let a):
+            if a.targets.count == 1, case .name(let n) = a.targets[0] { return origin(of: n.id) }
+        case .annAssign(let a):
+            if case .name(let n) = a.target { return origin(of: n.id) }
+        default: break
+        }
+        return nil
     }
 
     /// The single-stage entry point; the fragment one for `.graphics`.
@@ -165,6 +187,7 @@ final class ShaderProgram {
         } else {
             globals[name] = (value, line)
         }
+        declarationOrder.append(name)
     }
 
     /// A global a function declares `global` is assigned somewhere, so it is a
@@ -193,8 +216,10 @@ final class ShaderProgram {
                 }
             }
         }
-        for def in defs { try walk(def.body) }
-        variableOrder = variables.keys.sorted { variables[$0]!.line < variables[$1]!.line }
+        for def in defs {
+            try PyShaderError.attributing(to: origin(of: def.name)) { try walk(def.body) }
+        }
+        variableOrder = declarationOrder.filter { variables[$0] != nil }
     }
 
     /// `class Name:` with one annotated field per line — a struct. No

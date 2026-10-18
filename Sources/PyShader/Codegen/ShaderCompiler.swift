@@ -47,13 +47,17 @@ final class ShaderCompiler {
         for name in program.functionOrder {
             let fn = program.functions[name]!
             let forwards = program.entry(named: name)?.forwardsColor ?? false
+            let file = program.origin(of: name)
             let emitter = FunctionEmitter(
                 compiler: self,
                 name: name,
                 returnType: fn.returnType,
-                implicitReturn: forwards ? { try Self.forwardColor($0, entry: name, line: fn.def.lineno) } : nil
+                implicitReturn: forwards ? { try Self.forwardColor($0, entry: name, line: fn.def.lineno) } : nil,
+                sourceFile: file
             )
-            try emitter.emitFunction(id: fn.id, params: fn.params, body: fn.def.body, control: fn.control, line: fn.def.lineno)
+            try PyShaderError.attributing(to: file) {
+                try emitter.emitFunction(id: fn.id, params: fn.params, body: fn.def.body, control: fn.control, line: fn.def.lineno)
+            }
         }
 
         try checkRecursion()
@@ -81,13 +85,16 @@ final class ShaderCompiler {
         try emitter.emitWrapper(id: id) { e in
             for name in self.program.variableOrder {
                 let g = self.program.variables[name]!
-                var value = try e.emitExpression(g.expr)
-                if let annotation = g.annotation {
-                    let type = try self.program.resolveType(annotation, line: g.line)
-                    value = try e.coerce(value, to: type, line: g.line)
-                }
-                guard value.type.isStorable else {
-                    throw PyShaderError("cannot store a `\(value.type)` in the module variable `\(name)`", line: g.line)
+                let value = try PyShaderError.attributing(to: self.program.origin(of: name)) {
+                    var value = try e.emitExpression(g.expr)
+                    if let annotation = g.annotation {
+                        let type = try self.program.resolveType(annotation, line: g.line)
+                        value = try e.coerce(value, to: type, line: g.line)
+                    }
+                    guard value.type.isStorable else {
+                        throw PyShaderError("cannot store a `\(value.type)` in the module variable `\(name)`", line: g.line)
+                    }
+                    return value
                 }
                 let ptr = self.builder.globalVariable(type: value.type, storage: .private, name: name)
                 e.store(ptr, value.id)
@@ -650,7 +657,9 @@ final class ShaderCompiler {
             builder.name(id, internalName)
             let emitter = FunctionEmitter(compiler: self, name: internalName, returnType: .void)
             let paramList = zip(params, args).map { (name: $0.arg, type: $1.type) }
-            let typed = try emitter.emitLambda(id: id, params: paramList, body: template.lambda.body, line: template.line)
+            let typed = try PyShaderError.attributing(to: program.origin(of: template.name)) {
+                try emitter.emitLambda(id: id, params: paramList, body: template.lambda.body, line: template.line)
+            }
             instance = (id, typed)
             lambdaInstances[key] = instance
         }
@@ -683,7 +692,7 @@ final class ShaderCompiler {
             if done.contains(n) { return }
             if visiting.contains(n) {
                 let cycle = (path.drop(while: { $0 != n }) + [n]).joined(separator: " -> ")
-                throw PyShaderError("recursion is not allowed in shader code: \(cycle)", line: program.functions[n]?.def.lineno)
+                throw PyShaderError("recursion is not allowed in shader code: \(cycle)", line: program.functions[n]?.def.lineno, file: program.origin(of: n))
             }
             visiting.insert(n)
             for m in callGraph[n] ?? [] { try visit(m, path: path + [n]) }

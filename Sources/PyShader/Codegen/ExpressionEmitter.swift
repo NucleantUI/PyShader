@@ -106,7 +106,7 @@ extension FunctionEmitter {
         }
         if let global = program.globals[n.id] {
             return try compiler.withGlobalInlining(n.id, line: n.lineno) {
-                try emitExpression(global.expr)
+                try PyShaderError.attributing(to: program.origin(of: n.id)) { try emitExpression(global.expr) }
             }
         }
         if program.lambdas[n.id] != nil || program.functions[n.id] != nil {

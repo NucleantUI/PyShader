@@ -71,6 +71,7 @@ nav:
       - Control flow: language/control-flow.md
       - Lists & tuples: language/lists.md
       - Classes: language/classes.md
+      - Modules: language/modules.md
       - Builtins: language/builtins.md
   - Targets:
       - Overview: targets/index.md

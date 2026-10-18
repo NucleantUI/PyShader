@@ -1,0 +1,14 @@
+# A shader project: `uv sync` installs the shader libraries it depends on
+# into .venv, where pyshaderc (and the editor) find them.
+[project]
+name = "pyshader-modules-example"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = ["pyshader", "pyshader-noise"]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+pyshader = { path = "../..", editable = true }
+pyshader-noise = { path = "packages/pyshader-noise", editable = true }
