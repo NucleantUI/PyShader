@@ -5,6 +5,7 @@
 source = "Sources/ShaderPack/Shaders/tiles.py"
 output = "Generated/tiles.spv"
 target = "compute"
+optimize = ["-O"]          # spirv-opt passes, run on the compiled module
 
 [ripple]
 source = "../compute/effect_ripple.py"

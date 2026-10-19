@@ -19,23 +19,25 @@ struct ConfigTests {
                 "gain:float",   # one per line
                 "tint:float4",
             ]
+            optimize = ["-O", "--strip-debug"]
 
             ["plain.name"]
             source = "Shaders/#plasma.py"
             """)
         #expect(config.sitePackages == ".venv/lib/python3.13/site-packages")
         #expect(config.sections == [
-            .init(name: "clouds", source: "Shaders/clouds.py", output: "Resources/clouds.spv", target: "compute", content: true, arguments: ["gain:float", "tint:float4"]),
-            .init(name: "plain.name", source: "Shaders/#plasma.py", output: "plain.name.spv", target: "fragment", content: false, arguments: []),
+            .init(name: "clouds", source: "Shaders/clouds.py", output: "Resources/clouds.spv", target: "compute", content: true, arguments: ["gain:float", "tint:float4"], optimize: ["-O", "--strip-debug"]),
+            .init(name: "plain.name", source: "Shaders/#plasma.py", output: "plain.name.spv", target: "fragment", content: false, arguments: [], optimize: []),
         ])
     }
 
     @Test("pyshaderc's arguments for a section")
     func compilerArguments() throws {
-        let config = try PyShaderConfig(parsing: "site-packages = \"site\"\n[a]\nsource = \"s/a.py\"\ntarget = \"graphics\"\ncontent = true\narguments = [\"t:floatArray\"]\n")
+        let config = try PyShaderConfig(parsing: "site-packages = \"site\"\n[a]\nsource = \"s/a.py\"\ntarget = \"graphics\"\ncontent = true\narguments = [\"t:floatArray\"]\noptimize = [\"-O\", \"--strip-debug\"]\n")
         let root = URL(fileURLWithPath: "/pkg")
         #expect(config.compilerArguments(for: config.sections[0], root: root, output: URL(fileURLWithPath: "/out/a.spv")) == [
-            "/pkg/s/a.py", "-o", "/out/a.spv", "--target", "graphics", "--content", "--arg", "t:floatArray", "--site-packages", "/pkg/site",
+            "/pkg/s/a.py", "-o", "/out/a.spv", "--target", "graphics", "--content", "--arg", "t:floatArray",
+            "--optimize", "-O", "--optimize", "--strip-debug", "--site-packages", "/pkg/site",
         ])
     }
 
@@ -60,6 +62,8 @@ struct ConfigTests {
         expectError("[a]\nsource = \"a.py\"\n[a]\nsource = \"b.py\"\n", "defined twice", line: 3)
         expectError("[a]\nsource = \"a.py\"\narguments = [\"gain\"]\n", "name:kind", line: 3)
         expectError("[a]\nsource = \"a.py\"\ncontent = \"yes\"\n", "`true` or `false`", line: 3)
+        expectError("[a]\nsource = \"a.py\"\noptimize = \"-O\"\n", "`optimize` must be an array", line: 3)
+        expectError("[a]\nsource = \"a.py\"\noptimize = [\"O\"]\n", "must start with `-`", line: 3)
         expectError("[a]\nsource = a.py\n", "expected a string", line: 2)
         expectError("[a.b]\nsource = \"a.py\"\n", "one name", line: 1)
         expectError("[a]\nsource = \"a.py\"\n[b]\nsource = \"b.py\"\noutput = \"a.spv\"\n", "two sections write `a.spv`", line: 1)

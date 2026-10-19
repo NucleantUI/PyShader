@@ -6,7 +6,7 @@ A package whose shaders are compiled to SPIR-V before it runs, from
 
 | section | source | target |
 |---|---|---|
-| `tiles` | `Sources/ShaderPack/Shaders/tiles.py`, importing `shapes.py` beside it | compute |
+| `tiles` | `Sources/ShaderPack/Shaders/tiles.py`, importing `shapes.py` beside it | compute, `optimize = ["-O"]` (910 words to 626) |
 | `ripple` | `../compute/effect_ripple.py` | compute, with `content` |
 | `glow` | `../graphics/instanced_glow.py` | graphics, with two `arguments` |
 

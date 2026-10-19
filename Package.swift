@@ -39,6 +39,7 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/Py-Swift/PySwiftAST.git", .upToNextMinor(from: "0.0.1")),
         .package(url: "https://github.com/NucleantUI/SpirvCore.git", .upToNextMinor(from: "0.0.1")),
+        .package(url: "https://github.com/NucleantUI/SpirvTools.git", .upToNextMinor(from: "0.0.1")),
     ],
     targets: [
         .target(
@@ -56,9 +57,13 @@ let package = Package(
                 "PyShader",
             ]
         ),
+        // SpirvTools for --optimize (pyshader.toml's `optimize`).
         .executableTarget(
             name: "pyshaderc",
-            dependencies: ["PyShader"]
+            dependencies: [
+                "PyShader",
+                .product(name: "SpirvTools", package: "SpirvTools"),
+            ]
         ),
         .executableTarget(
             name: "spirv2py",

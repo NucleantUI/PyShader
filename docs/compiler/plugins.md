@@ -22,11 +22,12 @@ output = "Resources/clouds.spv"      # default: <section>.spv
 target = "compute"                   # fragment (default) | compute | graphics
 content = true                       # pyshaderc --content
 arguments = ["gain:float", "tint:float4"]   # pyshaderc --arg, in order
+optimize = ["-O"]                    # pyshaderc --optimize: spirv-opt passes, in order
 ```
 
 Each `[section]` is one shader. Paths are relative to the file. The keys
 are `pyshaderc`'s options: `target`, `content` and `arguments` mean what
-`--target`, `--content` and `--arg` do; `site-packages` is
+`--target`, `--content`, `--arg` and `--optimize` do; `site-packages` is
 `--site-packages`, and like it, only the packages that declare a
 `pyshader.modules` entry point can be imported from it (see
 [Modules](../language/modules.md)). A module beside the source is always

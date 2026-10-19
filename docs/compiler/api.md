@@ -99,7 +99,7 @@ bindings, `inputs`) are public for other pipelines. See
 ## `pyshaderc`
 
 ```sh
-swift run pyshaderc <input.py> [-o output.spv] [--target fragment|compute|graphics] [--content] [--arg name:kind]... [--site-packages dir]
+swift run pyshaderc <input.py> [-o output.spv] [--target fragment|compute|graphics] [--content] [--arg name:kind]... [--site-packages dir] [--optimize flag]...
 ```
 
 Writes `<input>.spv` next to the input unless `-o` is given and prints the
@@ -107,12 +107,17 @@ word count. An error is printed as `<input>:<line>: error: …`. The
 [package plugins](plugins.md) run it for each section of a `pyshader.toml`. Imports are found in the input's folder, then in
 `--site-packages` — by default the site-packages of the nearest `.venv`
 above the input. The module carries the input's file name and source lines (see
-`sourceFile` above). Exit status 1 with the error on stderr when compilation fails,
+`sourceFile` above). `--optimize` runs a
+[SPIRV-Tools](https://github.com/NucleantUI/SpirvTools) optimizer pass over the
+module, as `spirv-opt` spells it (`-O`, `-Os`, `--strip-debug`, …), in the order
+given, and validates the result; SPIRV-Tools is linked in on macOS only so far,
+elsewhere `--optimize` fails with an error that says so. Exit status 1 with the error on stderr when compilation fails,
 2 for a usage error.
 
 ```sh
 swift run pyshaderc Examples/plasma.py
 swift run pyshaderc Examples/compute/effect_ripple.py --target compute --content
+swift run pyshaderc Examples/compute/effect_ripple.py --target compute --content --optimize -O
 swift run pyshaderc Examples/graphics/instanced_glow.py --target graphics --arg touches:floatArray --arg glowSeconds:float
 spirv-val --target-env vulkan1.0 Examples/plasma.spv
 ```

@@ -3,21 +3,24 @@
 //
 //  usage: pyshaderc <input.py> [-o output.spv] [--target fragment|compute|graphics]
 //                   [--content] [--arg name:float|float2|float3|float4|floatArray|float2Array|float3Array|float4Array]...
-//                   [--site-packages dir]
+//                   [--site-packages dir] [--optimize flag]...
 //
 //  `--target compute` builds for NucleantUI's `Shader` view (storage image),
 //  `--target graphics` for its `VertexShader` view (vertex + fragment, one module);
 //  `--content` adds the sampled content image (`layer()`), `--arg` a ShaderArgument.
 //  Imports are found next to the input, then in `--site-packages` — by default
 //  the site-packages of the nearest uv `.venv` above the input.
+//  `--optimize` runs a spirv-opt pass over the module (`-O`, `-Os`,
+//  `--strip-debug`, …), in the order given, and validates the result.
 //
 
 import Foundation
 import PyShader
+import SpirvTools
 
 func usage() -> Never {
     FileHandle.standardError.write("""
-    usage: pyshaderc <input.py> [-o output.spv] [--target fragment|compute|graphics] [--content] [--arg name:kind]... [--site-packages dir]
+    usage: pyshaderc <input.py> [-o output.spv] [--target fragment|compute|graphics] [--content] [--arg name:kind]... [--site-packages dir] [--optimize flag]...
 
     """.data(using: .utf8)!)
     exit(2)
@@ -30,6 +33,7 @@ var samplesContent = false
 var arguments: [(name: String, kind: ShaderArgumentKind)] = []
 var inputs: [String] = []
 var sitePackages: String?
+var optimize: [String] = []
 
 while !args.isEmpty {
     let a = args.removeFirst()
@@ -45,6 +49,9 @@ while !args.isEmpty {
     case "--site-packages":
         guard !args.isEmpty else { usage() }
         sitePackages = args.removeFirst()
+    case "--optimize":
+        guard !args.isEmpty else { usage() }
+        optimize.append(args.removeFirst())
     case "--arg":
         guard !args.isEmpty else { usage() }
         let spec = args.removeFirst().split(separator: ":", maxSplits: 1).map(String.init)
@@ -80,9 +87,17 @@ default: usage()
 
 do {
     let shader = try PyShader.compile(contentsOf: URL(fileURLWithPath: input), target: target, modules: sitePackages)
+    var words = shader.spirv
+    if !optimize.isEmpty {
+        let tools = SpirvContext()
+        words = try tools.optimize(words, flags: optimize)
+        if let invalid = tools.validate(words) {
+            throw SpirvDiagnostic(message: "the module is not valid after \(optimize.joined(separator: " ")): \(invalid)")
+        }
+    }
     let outPath = output ?? (input as NSString).deletingPathExtension + ".spv"
-    try shader.bytes.write(to: URL(fileURLWithPath: outPath))
-    print("\(outPath): \(shader.spirv.count) words")
+    try words.withUnsafeBufferPointer { Data(buffer: $0) }.write(to: URL(fileURLWithPath: outPath))
+    print("\(outPath): \(words.count) words" + (optimize.isEmpty ? "" : " (\(shader.spirv.count) before \(optimize.joined(separator: " ")))"))
 } catch let error as PyShaderError where error.file == nil && error.line != nil {
     // `file:line: error:` — what editors and build logs link to the source.
     FileHandle.standardError.write("\(input):\(error.line!): error: \(error.message)\n".data(using: .utf8)!)

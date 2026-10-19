@@ -14,6 +14,7 @@
 //      target = "compute"                   # optional: fragment | compute | graphics
 //      content = true                       # optional
 //      arguments = ["gain:float", "tint:float4"]
+//      optimize = ["-O"]                    # optional: spirv-opt passes
 //
 //  Paths are relative to the folder the file is in. Only the TOML this needs
 //  is read: tables, and keys holding strings, booleans or arrays of strings.
@@ -33,6 +34,8 @@ struct PyShaderConfig: Equatable {
         let target: String
         let content: Bool
         let arguments: [String]
+        /// spirv-opt flags (`-O`, `-Os`, `--strip-debug`, …), run in order; none by default.
+        let optimize: [String]
     }
 
     /// The file's name, at the root of the package.
@@ -148,7 +151,7 @@ struct PyShaderConfig: Equatable {
         var sections: [Section] = []
         for table in tables {
             let owner = "[\(table.name)] "
-            for (key, (_, line)) in table.keys where !["source", "output", "target", "content", "arguments"].contains(key) {
+            for (key, (_, line)) in table.keys where !["source", "output", "target", "content", "arguments", "optimize"].contains(key) {
                 throw ParseError(message: "\(owner)unknown key `\(key)`", line: line)
             }
             guard let source = try string(table.keys, "source", in: owner) else {
@@ -171,8 +174,16 @@ struct PyShaderConfig: Equatable {
                 }
                 arguments = a
             }
+            var optimize: [String] = []
+            if let (value, line) = table.keys["optimize"] {
+                guard case .strings(let flags) = value else { throw ParseError(message: "\(owner)`optimize` must be an array of spirv-opt flags, like `[\"-O\"]`", line: line) }
+                for flag in flags where !flag.hasPrefix("-") {
+                    throw ParseError(message: "\(owner)optimizer flag `\(flag)` must start with `-`, as spirv-opt spells it", line: line)
+                }
+                optimize = flags
+            }
             let output = try string(table.keys, "output", in: owner) ?? "\(table.name).spv"
-            sections.append(Section(name: table.name, source: source, output: output, target: target, content: content, arguments: arguments))
+            sections.append(Section(name: table.name, source: source, output: output, target: target, content: content, arguments: arguments, optimize: optimize))
         }
         guard !sections.isEmpty else {
             throw ParseError(message: "no sections: add a `[name]` table with a `source` for each shader", line: 1)
@@ -189,6 +200,7 @@ struct PyShaderConfig: Equatable {
         var args = [root.appendingPathComponent(section.source).path, "-o", output.path, "--target", section.target]
         if section.content { args.append("--content") }
         for argument in section.arguments { args += ["--arg", argument] }
+        for flag in section.optimize { args += ["--optimize", flag] }
         if let sitePackages { args += ["--site-packages", root.appendingPathComponent(sitePackages).path] }
         return args
     }
