@@ -40,7 +40,7 @@ strings, `true` / `false` or arrays of strings.
 
 ```swift title="Package.swift"
 dependencies: [
-    .package(url: "https://github.com/NucleantUI/PyShader.git", .upToNextMinor(from: "0.0.2")),
+    .package(url: "https://github.com/NucleantUI/PyShader.git", .upToNextMinor(from: "0.0.3")),
 ],
 targets: [
     .executableTarget(
