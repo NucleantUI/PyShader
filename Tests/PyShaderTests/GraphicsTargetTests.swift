@@ -37,14 +37,17 @@ struct GraphicsTargetTests {
     @Test("one module, two entry points, shared uniforms and argument buffer")
     func layout() throws {
         let shader = try PyShader.compile(Self.glow, target: .graphics(.nucleantUI(arguments: Self.touches)))
-        #expect(shader.entryPoint == "fragment")
-        #expect(shader.vertexEntryPoint == "vertex")
+        // Not `vertex` / `fragment`, which are keywords in Metal.
+        #expect(shader.entryPoint == "fragment_main")
+        #expect(shader.vertexEntryPoint == "vertex_main")
         if let result = try Tools.validate(shader) {
             #expect(result.isEmpty, "spirv-val: \(result)")
         }
         let words = SpirvWords(words: shader.spirv)
         let entries = words.instructions.filter { $0.opcode == SpirvOp.opEntryPoint.rawValue }
         #expect(entries.map(\.operands[0]) == [SpirvExecutionModel.vertex.rawValue, SpirvExecutionModel.fragment.rawValue])
+        #expect(entries.map { SpirvInstruction.decode(string: $0.operands, from: 2).string } == ["vertex_main", "fragment_main"],
+                "the module's names are the ones `CompiledShader` reports")
         let modes = words.instructions.filter { $0.opcode == SpirvOp.opExecutionMode.rawValue }
         #expect(modes.count == 1 && modes[0].operands[1] == SpirvExecutionMode.originUpperLeft.rawValue)
 

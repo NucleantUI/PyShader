@@ -149,6 +149,17 @@ public struct GraphicsInterface: Sendable {
     /// effect or a shader with `ShaderArgument`s.
     public static let nucleantUI = GraphicsInterface()
 
+    /// The vertex stage's entry point as the module names it — `vertex_main`
+    /// for `def vertex`. Not the Python name: `vertex` and `fragment` are
+    /// keywords in Metal, and MoltenVK keeps a module's entry-point names
+    /// when it translates the module for it, so a stage called `vertex`
+    /// never compiles there.
+    public var vertexStageName: String { vertexEntryPoint + "_main" }
+
+    /// The fragment stage's entry point as the module names it — see
+    /// `vertexStageName`.
+    public var fragmentStageName: String { fragmentEntryPoint + "_main" }
+
     public static func nucleantUI(
         samplesContent: Bool = false,
         contentIsTopDown: Bool = false,

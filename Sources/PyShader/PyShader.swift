@@ -14,7 +14,8 @@ public struct CompiledShader: Sendable {
     /// SPIR-V words (little-endian, magic first).
     public let spirv: [UInt32]
     /// Name of the SPIR-V entry point (`pName` for the pipeline stage). For a
-    /// `.graphics` target this is the fragment stage's; see `vertexEntryPoint`.
+    /// `.graphics` target this is the fragment stage's — `fragment_main` for
+    /// `def fragment`; see `vertexEntryPoint`.
     public let entryPoint: String
     /// The vertex stage's entry point in the same module, for a `.graphics`
     /// target; nil for a single-stage one.
@@ -88,9 +89,12 @@ public enum PyShader {
         let program = try ShaderProgram(module: module, target: target, origins: linker.origins)
         let compiler = ShaderCompiler(program: program, sourceFile: sourceFile)
         let words = try compiler.compile()
-        var vertexEntryPoint: String?
-        if case .graphics(let i) = target { vertexEntryPoint = i.vertexEntryPoint }
-        return CompiledShader(spirv: words, entryPoint: target.entryPoint, vertexEntryPoint: vertexEntryPoint)
+        // The names in the module, which for a graphics pair are not the
+        // Python ones — see `GraphicsInterface.vertexStageName`.
+        if case .graphics(let i) = target {
+            return CompiledShader(spirv: words, entryPoint: i.fragmentStageName, vertexEntryPoint: i.vertexStageName)
+        }
+        return CompiledShader(spirv: words, entryPoint: target.entryPoint)
     }
 
     /// Parses PyShader source, after `normalize`.

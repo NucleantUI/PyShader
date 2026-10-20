@@ -361,8 +361,8 @@ final class ShaderCompiler {
         }
 
         let vertexId = builder.allocate()
-        builder.name(vertexId, interface.vertexEntryPoint)
-        builder.addEntryPoint(model: .vertex, function: vertexId, name: interface.vertexEntryPoint, interface: vertexInterface)
+        builder.name(vertexId, interface.vertexStageName)
+        builder.addEntryPoint(model: .vertex, function: vertexId, name: interface.vertexStageName, interface: vertexInterface)
 
         let vertexLine = vertex.def.lineno
         let vertexWrapper = FunctionEmitter(compiler: self, name: interface.vertexEntryPoint, returnType: .void)
@@ -445,8 +445,8 @@ final class ShaderCompiler {
         }
 
         let fragmentId = builder.allocate()
-        builder.name(fragmentId, interface.fragmentEntryPoint)
-        builder.addEntryPoint(model: .fragment, function: fragmentId, name: interface.fragmentEntryPoint, interface: fragmentInterface)
+        builder.name(fragmentId, interface.fragmentStageName)
+        builder.addEntryPoint(model: .fragment, function: fragmentId, name: interface.fragmentStageName, interface: fragmentInterface)
         builder.addExecutionMode(function: fragmentId, mode: .originUpperLeft)
 
         let fragmentLine = fragment.def.lineno
