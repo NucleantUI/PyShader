@@ -25,6 +25,9 @@ final class ShaderCompiler {
     /// Compute-target resources, created on first use.
     private var contentImage: SpirvId?
     private var argumentBuffer: SpirvId?
+    private var inputBuffer: SpirvId?
+    /// Types whose std430 layout has been decorated already.
+    private var laidOut: Swift.Set<ShaderType> = []
     /// The named textures' sampler globals, by name, created on first use.
     private var textureImages: [String: SpirvId] = [:]
 
@@ -301,6 +304,8 @@ final class ShaderCompiler {
                     // A handle, not a value: the sampler is a module-level
                     // uniform the body reaches by name, as an array argument is.
                     continue
+                } else if param.type == self.program.inputStruct {
+                    args.append(self.loadInput(e).id)
                 } else {
                     throw PyShaderError("`\(param.name)` is not a shader input", line: line)
                 }
@@ -394,6 +399,8 @@ final class ShaderCompiler {
                     }
                 } else if interface.textures.contains(where: { $0.name == param.name }) {
                     continue   // a handle: the sampler is a module-level uniform
+                } else if param.type == self.program.inputStruct {
+                    args.append(self.loadInput(e).id)
                 } else {
                     throw PyShaderError("`\(param.name)` is not a shader input", line: vertexLine)
                 }
@@ -420,17 +427,25 @@ final class ShaderCompiler {
         builder.decorate(color, .location, [0])
         fragmentInterface.append(color)
 
+        // A fragment taking the vertex stage's class reads every varying.
+        let takesVaryings = fragment.params.contains { $0.type == vertex.returnType }
         var inputs: [String: SpirvId] = [:]
-        for (location, (name, type)) in varyings.enumerated() where fragment.params.contains(where: { $0.name == name }) {
+        var varyingInputs: [SpirvId] = []
+        for (location, (name, type)) in varyings.enumerated()
+        where takesVaryings || fragment.params.contains(where: { $0.name == name }) {
             let v = builder.globalVariable(type: type, storage: .input, name: "f_\(name)")
             builder.decorate(v, .location, [UInt32(location)])
             // Integers and booleans cannot be interpolated.
             if !type.isFloat { builder.decorate(v, .flat) }
             inputs[name] = v
+            varyingInputs.append(v)
             fragmentInterface.append(v)
         }
         var fragCoordVar: SpirvId?
         var frontFacingVar: SpirvId?
+        if takesVaryings {
+            fragCoordVar = builtIn(.fragCoord, type: .float(4), name: "gl_FragCoord", into: &fragmentInterface)
+        }
         for param in fragment.params where inputs[param.name] == nil {
             switch interface.inputs[param.name] {
             case .uv, .fragCoord, .pixel:
@@ -462,7 +477,14 @@ final class ShaderCompiler {
 
             var args: [SpirvId] = []
             for param in fragment.params {
-                if let v = inputs[param.name] {
+                if param.type == vertex.returnType {
+                    // The vertex stage's class again, its position the
+                    // fragment's own (`gl_FragCoord`) and every other field
+                    // interpolated.
+                    let position = e.load(fragCoordVar!, type: .float(4))
+                    let fields = zip(varyingInputs, varyings).map { e.load($0, type: $1.1).id }
+                    args.append(e.emit(.opCompositeConstruct, type: vertex.returnType, [position.id] + fields).id)
+                } else if let v = inputs[param.name] {
                     args.append(e.load(v, type: param.type).id)
                 } else if let input = interface.inputs[param.name] {
                     let value: Value
@@ -487,6 +509,8 @@ final class ShaderCompiler {
                     }
                 } else if interface.textures.contains(where: { $0.name == param.name }) {
                     continue   // a handle: the sampler is a module-level uniform
+                } else if param.type == self.program.inputStruct {
+                    args.append(self.loadInput(e).id)
                 } else {
                     throw PyShaderError("`\(param.name)` is not a shader input", line: fragmentLine)
                 }
@@ -494,6 +518,57 @@ final class ShaderCompiler {
 
             let result = e.emit(.opFunctionCall, type: fragment.returnType, [fragment.id] + args)
             e.store(color, result.id)
+        }
+    }
+
+    // MARK: - Class input
+
+    /// The class input, read whole from `uInput` — `readonly buffer
+    /// ShaderInput { <class> value; }` at the target's input binding.
+    private func loadInput(_ e: FunctionEmitter) -> Value {
+        let type = program.inputStruct!
+        let ptr = e.emit(.opAccessChain, type: .pointer(.uniform, type), [inputBufferVariable(), e.builder.constant(int: 0)])
+        return e.load(ptr.id, type: type)
+    }
+
+    private func inputBufferVariable() -> SpirvId {
+        if let v = inputBuffer { return v }
+        let type = program.inputStruct!
+        let binding = program.target.inputBinding!
+        decorateLayout(type)
+        let block = ShaderType.structure(name: "ShaderInput", members: [("value", type)])
+        let blockId = builder.type(block)
+        builder.decorate(blockId, .bufferBlock)
+        builder.memberDecorate(blockId, 0, .offset, [0])
+        builder.memberDecorate(blockId, 0, .nonWritable)
+        let v = builder.globalVariable(type: block, storage: .uniform, name: "uInput")
+        builder.decorate(v, .descriptorSet, [UInt32(binding.set)])
+        builder.decorate(v, .binding, [UInt32(binding.binding)])
+        inputBuffer = v
+        return v
+    }
+
+    /// The std430 offsets, strides and matrix layout of `type` and of
+    /// everything inside it — what the host packs the input by.
+    private func decorateLayout(_ type: ShaderType) {
+        guard !laidOut.contains(type) else { return }
+        laidOut.insert(type)
+        switch type {
+        case .structure(_, let members):
+            let id = builder.type(type)
+            for (index, (offset, member)) in zip(type.std430Offsets!, members).enumerated() {
+                builder.memberDecorate(id, index, .offset, [UInt32(offset)])
+                if case .matrix(let kind, _, let rows) = member.1 {
+                    builder.memberDecorate(id, index, .colMajor)
+                    builder.memberDecorate(id, index, .matrixStride, [UInt32(ShaderType.vector(kind, rows).std430Stride!)])
+                }
+                decorateLayout(member.1)
+            }
+        case .array(let element, _):
+            builder.decorate(builder.type(type), .arrayStride, [UInt32(element.std430Stride!)])
+            decorateLayout(element)
+        default:
+            break
         }
     }
 

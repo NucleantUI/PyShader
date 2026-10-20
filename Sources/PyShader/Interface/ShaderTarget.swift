@@ -69,6 +69,25 @@ public enum ShaderTarget: Sendable {
         }
     }
 
+    /// Where a `class` input is read from, when the target has a buffer for
+    /// one — see `ComputeImageInterface.inputBinding`.
+    var inputBinding: (set: Int, binding: Int)? {
+        switch self {
+        case .fragment: return nil
+        case .computeImage(let i): return (i.descriptorSet, i.inputBinding)
+        case .graphics(let i): return (i.descriptorSet, i.inputBinding)
+        }
+    }
+
+    /// The shader arguments, which may not share the input's binding.
+    var arguments: [(name: String, kind: ShaderArgumentKind)] {
+        switch self {
+        case .fragment: return []
+        case .computeImage(let i): return i.arguments
+        case .graphics(let i): return i.arguments
+        }
+    }
+
     /// Where the shader-argument buffer is bound, when the target has one.
     var argumentsBinding: (set: Int, binding: Int)? {
         switch self {
@@ -192,6 +211,11 @@ public struct ComputeImageInterface: Sendable {
     public var argumentsBinding: Int?
     /// Values handed in from the host, in buffer order. Each becomes a `main` parameter.
     public var arguments: [(name: String, kind: ShaderArgumentKind)]
+    /// `readonly buffer { <class> value; }`, std430: where an entry point's
+    /// parameter typed as one of the module's classes is read from, whole —
+    /// the host writes the class's fields at their std430 offsets. One class
+    /// per shader; it shares no binding with `arguments`.
+    public var inputBinding: Int
     /// `sampler2D` per named texture, at its own binding — `a(uv)` and
     /// `a_size` in the body. Names that are also arguments or inputs are an
     /// error.
@@ -209,6 +233,7 @@ public struct ComputeImageInterface: Sendable {
         contentIsTopDown: Bool = false,
         argumentsBinding: Int? = nil,
         arguments: [(name: String, kind: ShaderArgumentKind)] = [],
+        inputBinding: Int = 3,
         textures: [ShaderTexture] = [],
         inputs: [String: Input] = ComputeImageInterface.defaultInputs
     ) {
@@ -221,6 +246,7 @@ public struct ComputeImageInterface: Sendable {
         self.contentIsTopDown = contentIsTopDown
         self.argumentsBinding = argumentsBinding
         self.arguments = arguments
+        self.inputBinding = inputBinding
         self.textures = textures
         self.inputs = inputs
     }

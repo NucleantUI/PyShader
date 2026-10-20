@@ -98,6 +98,11 @@ public struct GraphicsInterface: Sendable {
     public var argumentsBinding: Int?
     /// Values handed in from the host, in buffer order. Each may be a parameter of either stage.
     public var arguments: [(name: String, kind: ShaderArgumentKind)]
+    /// `readonly buffer { <class> value; }`, std430: where either stage's
+    /// parameter typed as one of the module's classes is read from, whole —
+    /// the host writes the class's fields at their std430 offsets. One class
+    /// per shader; it shares no binding with `arguments`.
+    public var inputBinding: Int
     /// `sampler2D` per named texture, at its own binding, readable from
     /// either stage — `a(uv)` and `a_size` in the body, as in the compute
     /// target.
@@ -114,6 +119,7 @@ public struct GraphicsInterface: Sendable {
         contentIsTopDown: Bool = false,
         argumentsBinding: Int? = nil,
         arguments: [(name: String, kind: ShaderArgumentKind)] = [],
+        inputBinding: Int = 3,
         textures: [ShaderTexture] = [],
         inputs: [String: Input] = GraphicsInterface.defaultInputs
     ) {
@@ -125,6 +131,7 @@ public struct GraphicsInterface: Sendable {
         self.contentIsTopDown = contentIsTopDown
         self.argumentsBinding = argumentsBinding
         self.arguments = arguments
+        self.inputBinding = inputBinding
         self.textures = textures
         self.inputs = inputs
     }
