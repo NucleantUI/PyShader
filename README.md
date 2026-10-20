@@ -188,6 +188,7 @@ Types, promotion and operator rules in detail: [vector-types.md](vector-types.md
 | `color` | `float4` | vertex colour, forwarded by a bare `return` | — |
 | *ShaderArgument name* | `float`…`float4`, `FloatArray`, `Float2Array`…`Float4Array` | — | argument buffer |
 | *texture name* | `Texture` | — | a sampled image at its own binding |
+| *any name* | a module class | — | the class input: one std430 buffer at `inputBinding` (3), read whole |
 
 ### Textures
 
@@ -235,9 +236,12 @@ only vertex-stage inputs besides the uniforms (`time`, `time_delta`,
 `frame`, `resolution`, `mouse`, `mouse_click`) and the arguments, which both
 stages may take. The fragment stage has `uv`, `frag_coord`, `pixel` and
 `front_facing` besides. A varying may shadow a built-in input (`uv` for a
-quad's own coordinate is common), but not an argument. Classes are plain
-structs — annotated fields only, constructed positionally or by keyword,
-read with `v.field` — and work anywhere, not just as varyings.
+quad's own coordinate is common), but not an argument; `fragment` may also
+take the vertex stage's class whole (`def fragment(v: Glow)`). Classes are
+plain structs — annotated fields only, constructed positionally or by
+keyword, read with `v.field` — and work anywhere, not just as varyings. A
+graphics module's entry points are `vertex_main` and `fragment_main`:
+`vertex` and `fragment` are keywords in Metal.
 
 ### Modules
 

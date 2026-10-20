@@ -18,6 +18,7 @@
 | `mouse_click`  | `float2` | `Uniforms.mouseInfo.zw`, y flipped |
 | *argument*     | `float` / `float2` / `float3` / `float4` / `FloatArray` / `Float2Array` … `Float4Array` | the `ShaderArgument` of that name |
 | *texture*      | `Texture` | the `ShaderTexture` of that name — see [Textures](#textures) |
+| *any name*     | a module class | the [class input](#a-class-as-input), read whole |
 
 ## Bindings
 
@@ -28,7 +29,7 @@ Descriptor set 0, local size 8 × 8:
 | 0 | `writeonly image2D` rgba8, the output |
 | 1 | `Uniforms { vec4 timeInfo; vec4 res; vec4 mouseInfo; }`, std140 |
 | 2 | `sampler2D` of the view under the effect — only with `samplesContent: true`; enables `layer()` |
-| 3 | `readonly buffer { float data[]; }` — only with arguments |
+| 3 | `readonly buffer { float data[]; }` — only with arguments; or the [class input](#a-class-as-input), at `inputBinding` |
 | 4 and up | `sampler2D` per named texture, at the binding its `ShaderTexture` gives |
 
 The argument buffer starts with an `(offset, count)` float pair per argument,
@@ -63,6 +64,34 @@ handed to `Shader(_:arguments:)`; `main` takes them by name:
 ```
 
 An argument name that is also a built-in input is an error.
+
+## A class as input
+
+A `main` parameter typed as one of the module's classes is the shader's
+input, read whole from one storage buffer at `inputBinding` (3 by default):
+
+```py
+class Look:
+    color_a: float4
+    color_b: float4
+    intensity: float
+
+def main(uv: float2, look: Look) -> float4:
+    return float4(mix(look.color_a.xyz, look.color_b.xyz, uv.x) * look.intensity, 1.0)
+```
+
+The host writes the fields in order, each at its std430 offset: a `float`
+or `int` on 4 bytes, a `float2` on 8, a `float3` on 16 (12 long, so a scalar
+after it fills its fourth slot), a `float4` on 16; a nested class aligns to
+its widest field, a fixed-size list's elements are each rounded up to their
+alignment, a matrix is a list of its columns. `Look` above is `color_a` at
+0, `color_b` at 16, `intensity` at 32. A `bool` or 16-bit field cannot be
+read from a buffer and is refused.
+
+A shader takes one input class. It may sit beside arguments only at another
+binding — set `inputBinding` — since both default to 3. In NucleantUI it is
+what a `ShaderInput` packs: each value's `pack(into:)` puts itself at its
+std430 offset, so a model packing the same fields in the same order matches.
 
 ## Textures
 
