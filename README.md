@@ -301,7 +301,7 @@ shader.spirv        // [UInt32] for vkCreateShaderModule
 Or from the command line:
 
 ```sh
-swift run pyshaderc shader.py -o shader.spv [--target compute --content --arg name:float4] [--site-packages dir] [--optimize -O]
+swift run pyshaderc shader.py -o shader.spv [--target compute --content-top-down --arg name:float4] [--site-packages dir] [--optimize -O]
 ```
 
 Three targets, same Python: `.fragment(FragmentInterface)` for a fragment stage

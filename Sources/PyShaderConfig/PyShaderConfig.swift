@@ -12,7 +12,8 @@
 //      source = "Shaders/clouds.py"
 //      output = "Resources/clouds.spv"      # optional: <section>.spv
 //      target = "compute"                   # optional: fragment | compute | graphics
-//      content = true                       # optional
+//      content = true                       # optional: the content image, y-up
+//      content-top-down = true              # optional: the content image, top-down
 //      arguments = ["gain:float", "tint:float4"]
 //      optimize = ["-O"]                    # optional: spirv-opt passes
 //
@@ -36,6 +37,9 @@ struct PyShaderConfig: Equatable {
         let arguments: [String]
         /// spirv-opt flags (`-O`, `-Os`, `--strip-debug`, …), run in order; none by default.
         let optimize: [String]
+        /// The content image stored top-down, as NucleantUI hands a module
+        /// every image; implies `content`.
+        var contentIsTopDown = false
     }
 
     /// The file's name, at the root of the package.
@@ -151,7 +155,7 @@ struct PyShaderConfig: Equatable {
         var sections: [Section] = []
         for table in tables {
             let owner = "[\(table.name)] "
-            for (key, (_, line)) in table.keys where !["source", "output", "target", "content", "arguments", "optimize"].contains(key) {
+            for (key, (_, line)) in table.keys where !["source", "output", "target", "content", "content-top-down", "arguments", "optimize"].contains(key) {
                 throw ParseError(message: "\(owner)unknown key `\(key)`", line: line)
             }
             guard let source = try string(table.keys, "source", in: owner) else {
@@ -165,6 +169,11 @@ struct PyShaderConfig: Equatable {
             if let (value, line) = table.keys["content"] {
                 guard case .bool(let b) = value else { throw ParseError(message: "\(owner)`content` must be `true` or `false`", line: line) }
                 content = b
+            }
+            var contentIsTopDown = false
+            if let (value, line) = table.keys["content-top-down"] {
+                guard case .bool(let b) = value else { throw ParseError(message: "\(owner)`content-top-down` must be `true` or `false`", line: line) }
+                contentIsTopDown = b
             }
             var arguments: [String] = []
             if let (value, line) = table.keys["arguments"] {
@@ -183,7 +192,7 @@ struct PyShaderConfig: Equatable {
                 optimize = flags
             }
             let output = try string(table.keys, "output", in: owner) ?? "\(table.name).spv"
-            sections.append(Section(name: table.name, source: source, output: output, target: target, content: content, arguments: arguments, optimize: optimize))
+            sections.append(Section(name: table.name, source: source, output: output, target: target, content: content || contentIsTopDown, arguments: arguments, optimize: optimize, contentIsTopDown: contentIsTopDown))
         }
         guard !sections.isEmpty else {
             throw ParseError(message: "no sections: add a `[name]` table with a `source` for each shader", line: 1)
@@ -198,7 +207,7 @@ struct PyShaderConfig: Equatable {
     /// `pyshaderc`'s arguments for a section, `root` being the config file's folder.
     func compilerArguments(for section: Section, root: URL, output: URL) -> [String] {
         var args = [root.appendingPathComponent(section.source).path, "-o", output.path, "--target", section.target]
-        if section.content { args.append("--content") }
+        if section.contentIsTopDown { args.append("--content-top-down") } else if section.content { args.append("--content") }
         for argument in section.arguments { args += ["--arg", argument] }
         for flag in section.optimize { args += ["--optimize", flag] }
         if let sitePackages { args += ["--site-packages", root.appendingPathComponent(sitePackages).path] }
