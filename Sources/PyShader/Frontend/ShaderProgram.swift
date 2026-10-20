@@ -49,6 +49,12 @@ final class ShaderProgram {
     private(set) var lambdas: [String: LambdaTemplate] = [:]
     /// `class` declarations: plain structs of annotated fields.
     private(set) var structs: [String: ShaderType] = [:]
+    /// The class an entry point takes as its input, read whole from the
+    /// target's input buffer; nil when none does.
+    private(set) var inputStruct: ShaderType?
+    /// The class the vertex stage returns, which the fragment stage may take
+    /// whole instead of field by field.
+    private(set) var varyingsStruct: ShaderType?
     /// Module-level names in the order they are declared, which is the order
     /// module variables are initialized in.
     private var declarationOrder: [String] = []
@@ -120,6 +126,7 @@ final class ShaderProgram {
         guard first.1 == .float(4) else {
             throw PyShaderError("the first field of `\(vertex.name)`'s return class is the position and must be a `float4`, not `\(first.1)`", line: vertex.lineno)
         }
+        varyingsStruct = signature.returnType
         guard var fragment = entries[fragmentName] else { return }
         for (name, type) in members.dropFirst() {
             if arguments.contains(name) {
@@ -306,7 +313,8 @@ final class ShaderProgram {
         var params: [(String, ShaderType)] = []
         for arg in def.args.posonlyArgs + def.args.args {
             if let entry {
-                guard let type = entry.parameterTypes[arg.arg] else {
+                guard let type = try entry.parameterTypes[arg.arg]
+                        ?? classParameter(arg.arg, annotation: arg.annotation, of: def) else {
                     let names = entry.parameterNames.joined(separator: ", ")
                     throw PyShaderError("`\(def.name)` parameter `\(arg.arg)` is not a shader input; available: \(names)", line: def.lineno)
                 }
@@ -352,6 +360,32 @@ final class ShaderProgram {
 
         functions[def.name] = ShaderFunctionSignature(name: def.name, params: params, returnType: returnType, def: def, control: control)
         functionOrder.append(def.name)
+    }
+
+    /// An entry point's parameter typed as one of the module's classes, by any
+    /// name: in the fragment stage, the class the vertex stage returns — its
+    /// varyings, whole, with the fragment's own position first — and
+    /// otherwise the shader's input, read from the target's input buffer.
+    /// nil for any other parameter, which is then not a shader input.
+    private func classParameter(_ name: String, annotation: Expression?, of def: FunctionDef) throws -> ShaderType? {
+        guard let annotation, case .name(let n) = annotation, let type = structs[n.id] else { return nil }
+        if case .graphics(let i) = target, def.name == i.fragmentEntryPoint, type == varyingsStruct {
+            return type
+        }
+        guard let binding = target.inputBinding else {
+            throw PyShaderError("`\(name)`: a class input needs the compute or graphics target, which have a buffer to read it from", line: def.lineno)
+        }
+        if let inputStruct, inputStruct != type {
+            throw PyShaderError("`\(name)`: a shader takes one input class, and it already takes `\(inputStruct)`", line: def.lineno)
+        }
+        if !target.arguments.isEmpty, target.argumentsBinding?.binding == binding.binding {
+            throw PyShaderError("`\(name)`: the class input and the shader arguments are both at binding \(binding.binding)", line: def.lineno)
+        }
+        guard type.std430 != nil else {
+            throw PyShaderError("`\(name)`: class `\(n.id)` cannot be read from a buffer — its fields must be 32-bit numbers, vectors, matrices, fixed-size lists or classes of them (no `bool`)", line: def.lineno)
+        }
+        inputStruct = type
+        return type
     }
 
     func assignFunctionId(_ name: String, _ id: SpirvId) {
