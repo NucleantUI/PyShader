@@ -23,11 +23,16 @@ struct ConfigTests {
 
             ["plain.name"]
             source = "Shaders/#plasma.py"
+
+            [upright]
+            source = "Shaders/upright.py"
+            content-top-down = true
             """)
         #expect(config.sitePackages == ".venv/lib/python3.13/site-packages")
         #expect(config.sections == [
             .init(name: "clouds", source: "Shaders/clouds.py", output: "Resources/clouds.spv", target: "compute", content: true, arguments: ["gain:float", "tint:float4"], optimize: ["-O", "--strip-debug"]),
             .init(name: "plain.name", source: "Shaders/#plasma.py", output: "plain.name.spv", target: "fragment", content: false, arguments: [], optimize: []),
+            .init(name: "upright", source: "Shaders/upright.py", output: "upright.spv", target: "fragment", content: true, arguments: [], optimize: [], contentIsTopDown: true),
         ])
     }
 
@@ -38,6 +43,10 @@ struct ConfigTests {
         #expect(config.compilerArguments(for: config.sections[0], root: root, output: URL(fileURLWithPath: "/out/a.spv")) == [
             "/pkg/s/a.py", "-o", "/out/a.spv", "--target", "graphics", "--content", "--arg", "t:floatArray",
             "--optimize", "-O", "--optimize", "--strip-debug", "--site-packages", "/pkg/site",
+        ])
+        let topDown = try PyShaderConfig(parsing: "[b]\nsource = \"b.py\"\ntarget = \"compute\"\ncontent = true\ncontent-top-down = true\n")
+        #expect(topDown.compilerArguments(for: topDown.sections[0], root: root, output: URL(fileURLWithPath: "/out/b.spv")) == [
+            "/pkg/b.py", "-o", "/out/b.spv", "--target", "compute", "--content-top-down",
         ])
     }
 
@@ -62,6 +71,7 @@ struct ConfigTests {
         expectError("[a]\nsource = \"a.py\"\n[a]\nsource = \"b.py\"\n", "defined twice", line: 3)
         expectError("[a]\nsource = \"a.py\"\narguments = [\"gain\"]\n", "name:kind", line: 3)
         expectError("[a]\nsource = \"a.py\"\ncontent = \"yes\"\n", "`true` or `false`", line: 3)
+        expectError("[a]\nsource = \"a.py\"\ncontent-top-down = \"yes\"\n", "`content-top-down` must be", line: 3)
         expectError("[a]\nsource = \"a.py\"\noptimize = \"-O\"\n", "`optimize` must be an array", line: 3)
         expectError("[a]\nsource = \"a.py\"\noptimize = [\"O\"]\n", "must start with `-`", line: 3)
         expectError("[a]\nsource = a.py\n", "expected a string", line: 2)

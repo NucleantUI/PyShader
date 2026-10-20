@@ -20,18 +20,22 @@ site-packages = ".venv/lib/python3.13/site-packages"
 source = "Shaders/clouds.py"
 output = "Resources/clouds.spv"      # default: <section>.spv
 target = "compute"                   # fragment (default) | compute | graphics
-content = true                       # pyshaderc --content
+content-top-down = true              # pyshaderc --content-top-down (or content = true: --content)
 arguments = ["gain:float", "tint:float4"]   # pyshaderc --arg, in order
 optimize = ["-O"]                    # pyshaderc --optimize: spirv-opt passes, in order
 ```
 
 Each `[section]` is one shader. Paths are relative to the file. The keys
-are `pyshaderc`'s options: `target`, `content` and `arguments` mean what
-`--target`, `--content`, `--arg` and `--optimize` do; `site-packages` is
+are `pyshaderc`'s options: `target`, `content`, `content-top-down`,
+`arguments` and `optimize` mean what `--target`, `--content`,
+`--content-top-down`, `--arg` and `--optimize` do; `site-packages` is
 `--site-packages`, and like it, only the packages that declare a
 `pyshader.modules` entry point can be imported from it (see
 [Modules](../language/modules.md)). A module beside the source is always
 importable. The build plugin uses only the file name of `output`.
+`content-top-down` is the one for NucleantUI's `.shader(_:)`: it hands a
+module the view top-down, as it is stored, and `layer(uv)` then reads it
+upright; with `content` alone it reads that view upside down.
 
 Only the TOML this needs is read: tables, `#` comments, and keys holding
 strings, `true` / `false` or arrays of strings.

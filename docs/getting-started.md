@@ -61,7 +61,7 @@ pages describe what `main` can take in each case.
 
 ```sh
 swift run pyshaderc shader.py -o shader.spv
-swift run pyshaderc effect.py --target compute --content -o effect.spv
+swift run pyshaderc effect.py --target compute --content-top-down -o effect.spv
 swift run pyshaderc glow.py --target graphics --arg touches:floatArray --arg glowSeconds:float
 ```
 
@@ -70,7 +70,8 @@ swift run pyshaderc glow.py --target graphics --arg touches:floatArray --arg glo
 | `--target fragment` (default) | NucleantVulkan's `NucleantShader` fragment layout |
 | `--target compute` | NucleantUI's `Shader` view: a compute stage writing a storage image |
 | `--target graphics` | NucleantUI's `VertexShader` view: vertex + fragment in one module |
-| `--content` | the shader may call `layer()` (compute) |
+| `--content` | the shader may call `layer()`, reading the content image stored y-up |
+| `--content-top-down` | the shader may call `layer()`, reading the content image stored top-down — NucleantUI (0.0.3 and later) hands a module every image so, the view under `.shader(_:)` included |
 | `--arg name:kind` | a `ShaderArgument`; kinds are `float` `float2` `float3` `float4` `floatArray` |
 
 The output validates with `spirv-val --target-env vulkan1.0` and can be

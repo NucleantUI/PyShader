@@ -99,7 +99,7 @@ bindings, `inputs`) are public for other pipelines. See
 ## `pyshaderc`
 
 ```sh
-swift run pyshaderc <input.py> [-o output.spv] [--target fragment|compute|graphics] [--content] [--arg name:kind]... [--site-packages dir] [--optimize flag]...
+swift run pyshaderc <input.py> [-o output.spv] [--target fragment|compute|graphics] [--content] [--content-top-down] [--arg name:kind]... [--site-packages dir] [--optimize flag]...
 ```
 
 Writes `<input>.spv` next to the input unless `-o` is given and prints the
@@ -116,8 +116,8 @@ elsewhere `--optimize` fails with an error that says so. Exit status 1 with the 
 
 ```sh
 swift run pyshaderc Examples/plasma.py
-swift run pyshaderc Examples/compute/effect_ripple.py --target compute --content
-swift run pyshaderc Examples/compute/effect_ripple.py --target compute --content --optimize -O
+swift run pyshaderc Examples/compute/effect_ripple.py --target compute --content-top-down
+swift run pyshaderc Examples/compute/effect_ripple.py --target compute --content-top-down --optimize -O
 swift run pyshaderc Examples/graphics/instanced_glow.py --target graphics --arg touches:floatArray --arg glowSeconds:float
 spirv-val --target-env vulkan1.0 Examples/plasma.spv
 ```
