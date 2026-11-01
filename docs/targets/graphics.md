@@ -49,7 +49,7 @@ but not an argument.
 | `time` `time_delta` `frame` `resolution` `mouse` `mouse_click` | ✓ | ✓ |
 | *arguments* | ✓ | ✓ |
 | *textures* (`Texture`) | ✓ | ✓ |
-| the [class input](compute.md#a-class-as-input) | ✓ | ✓ |
+| the [class input](compute.md#a-class-as-input), or the [list input](compute.md#a-list-of-a-class-as-input) | ✓ | ✓ |
 | `uv` `frag_coord` `pixel` `front_facing` | | ✓ |
 | varyings, by name — or the vertex stage's class, whole | | ✓ |
 

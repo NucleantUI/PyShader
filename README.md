@@ -189,6 +189,7 @@ Types, promotion and operator rules in detail: [vector-types.md](vector-types.md
 | *ShaderArgument name* | `float`…`float4`, `FloatArray`, `Float2Array`…`Float4Array` | — | argument buffer |
 | *texture name* | `Texture` | — | a sampled image at its own binding |
 | *any name* | a module class | — | the class input: one std430 buffer at `inputBinding` (3), read whole |
+| *any name* | `list[` a module class `]` | — | the list input: the same buffer as the class's elements, `a[i]` and `len(a)` |
 
 ### Textures
 

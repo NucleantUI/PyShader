@@ -174,6 +174,8 @@ final class SpirvModuleBuilder {
             declarations.append(.init(.opTypeRuntimeArray, [id, elemId]))
         case .floatArray:
             preconditionFailure("argument array handles have no SPIR-V type")
+        case .inputList:
+            preconditionFailure("the list input is a handle and has no SPIR-V type")
         }
         typeIds[t] = id
         return id
@@ -252,6 +254,8 @@ final class SpirvModuleBuilder {
             return constantComposite(type: t, elements: Array(repeating: z, count: n))
         case .tuple(let members):
             return constantComposite(type: t, elements: members.map { zero(of: $0) })
+        case .structure(_, let members):
+            return constantComposite(type: t, elements: members.map { zero(of: $0.1) })
         default: preconditionFailure("zero(of:) on non-numeric type \(t)")
         }
     }

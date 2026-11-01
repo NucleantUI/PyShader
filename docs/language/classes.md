@@ -42,6 +42,14 @@ def fragment(local: float2, seed: float, time: float) -> float4:
     ...
 ```
 
+## As the shader's input
+
+On the compute and graphics targets, an entry point parameter typed as a
+class is the shader's [class input](../targets/compute.md#a-class-as-input),
+which the host writes into a buffer; typed `list[Step]`, it is the
+[list input](../targets/compute.md#a-list-of-a-class-as-input), one `Step`
+per element.
+
 ## In use
 
 ```pyshader

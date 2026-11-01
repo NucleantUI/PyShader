@@ -19,6 +19,7 @@
 | *argument*     | `float` / `float2` / `float3` / `float4` / `FloatArray` / `Float2Array` … `Float4Array` | the `ShaderArgument` of that name |
 | *texture*      | `Texture` | the `ShaderTexture` of that name — see [Textures](#textures) |
 | *any name*     | a module class | the [class input](#a-class-as-input), read whole |
+| *any name*     | `list[` a module class `]` | the [list input](#a-list-of-a-class-as-input), read an element at a time |
 
 ## Bindings
 
@@ -29,7 +30,7 @@ Descriptor set 0, local size 8 × 8:
 | 0 | `writeonly image2D` rgba8, the output |
 | 1 | `Uniforms { vec4 timeInfo; vec4 res; vec4 mouseInfo; }`, std140 |
 | 2 | `sampler2D` of the view under the effect — only with `samplesContent: true`; enables `layer()` |
-| 3 | `readonly buffer { float data[]; }` — only with arguments; or the [class input](#a-class-as-input), at `inputBinding` |
+| 3 | `readonly buffer { float data[]; }` — only with arguments; or the [class input](#a-class-as-input) or [list input](#a-list-of-a-class-as-input), at `inputBinding` |
 | 4 and up | `sampler2D` per named texture, at the binding its `ShaderTexture` gives |
 
 The argument buffer starts with an `(offset, count)` float pair per argument,
@@ -88,10 +89,45 @@ alignment, a matrix is a list of its columns. `Look` above is `color_a` at
 0, `color_b` at 16, `intensity` at 32. A `bool` or 16-bit field cannot be
 read from a buffer and is refused.
 
-A shader takes one input class. It may sit beside arguments only at another
-binding — set `inputBinding` — since both default to 3. In NucleantUI it is
-what a `ShaderInput` packs: each value's `pack(into:)` puts itself at its
-std430 offset, so a model packing the same fields in the same order matches.
+A shader takes one input: a class, or a [list of one](#a-list-of-a-class-as-input).
+It may sit beside arguments only at another binding — set `inputBinding` —
+since both default to 3. In NucleantUI it is what a `ShaderInput` packs:
+each value's `pack(into:)` puts itself at its std430 offset, so a model
+packing the same fields in the same order matches.
+
+## A list of a class as input
+
+A `main` parameter typed as a list of one of the module's classes is the
+input too: the class's elements one after another in that same buffer,
+`readonly buffer ShaderInput { Step value[]; }`, as many as the host writes.
+
+```py
+class Step:
+    color: float4
+    flags: uint
+
+def main(uv: float2, steps: list[Step]) -> float4:
+    total = float4(0.0)
+    for i in range(len(steps)):
+        if (steps[i].flags & 1) != 0:
+            total += steps[i].color
+    return total
+```
+
+The host writes each element at the class's std430 stride, its size rounded
+up to its alignment: `Step` above is 20 bytes aligned to 16, so the steps
+are 32 bytes apart — `color` at 0, `flags` at 16, then 12 bytes of padding.
+`steps[i]` reads one element, clamped to the ends and zero when the list is
+empty, as an [array argument](#arguments) does; `len(steps)` is how many
+whole elements the buffer bound there holds, so a host that binds more than
+it writes sees the rest as elements too.
+
+The list is read where it is, never copied: it cannot be stored in a
+variable or assigned to, and a function taking a `list[Step]` reads the same
+buffer when it is handed the list. Both stages of a
+[graphics](graphics.md) pair can take it, as they can the class input —
+`Examples/step_sequencer/step_sequencer.py` draws a step sequencer's 64 pads
+as one instanced draw, the vertex stage reading `steps[instance_index]`.
 
 ## Textures
 

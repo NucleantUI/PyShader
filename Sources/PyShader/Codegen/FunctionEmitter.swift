@@ -96,6 +96,19 @@ final class FunctionEmitter {
         label(mergeLabel, reachable: true)
     }
 
+    /// `if cond:` around code built in Swift, as a structured selection.
+    func emitIf(_ cond: Value, _ then: () throws -> Void) rethrows {
+        let thenLabel = builder.allocate()
+        let mergeLabel = builder.allocate()
+        let entryReachable = reachable
+        emit(.init(.opSelectionMerge, [mergeLabel, SpirvSelectionControl.none.rawValue]))
+        terminate(.init(.opBranchConditional, [cond.id, thenLabel, mergeLabel]))
+        label(thenLabel, reachable: entryReachable)
+        try then()
+        terminate(.init(.opBranch, [mergeLabel]))
+        label(mergeLabel, reachable: entryReachable)
+    }
+
     /// Emits a lambda body; the return type is whatever the expression evaluates to.
     func emitLambda(id: SpirvId, params: [(name: String, type: ShaderType)], body expr: Expression, line: Int) throws -> ShaderType {
         let paramIds = beginFunction(params)
@@ -114,6 +127,11 @@ final class FunctionEmitter {
         body.append(.init(.opLabel, [builder.allocate()]))
         for p in params {
             if case .floatArray = p.type {
+                handles[p.name] = p.type
+                continue
+            }
+            // The list input is read in place from its buffer, as an array argument is.
+            if case .inputList = p.type {
                 handles[p.name] = p.type
                 continue
             }

@@ -286,6 +286,8 @@ extension FunctionEmitter {
             switch args[0].type {
             case .floatArray(let argument, _):
                 return try compiler.argumentArrayCount(argument, from: self, line: line)
+            case .inputList:
+                return try compiler.inputListCount(from: self, line: line)
             case .array, .tuple, .matrix, .vector:
                 return Value(id: builder.constant(int: args[0].type.count), type: .int)
             default:

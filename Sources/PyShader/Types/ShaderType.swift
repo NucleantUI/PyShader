@@ -81,6 +81,10 @@ public indirect enum ShaderType: Hashable, Sendable, CustomStringConvertible {
     /// of `float` or `float2`/`float3`/`float4` elements. Not a storable value: indexed
     /// with `a[i]`, measured with `len(a)`.
     case floatArray(argument: Int, element: ShaderType)
+    /// The shader's input as a list of one class (`steps: list[Step]`): the
+    /// elements of the input buffer, as many as the host binds. A handle, not
+    /// a storable value: indexed with `a[i]`, measured with `len(a)`.
+    case inputList(ShaderType)
 
     public static let bool: ShaderType = .scalar(.bool)
     public static let float: ShaderType = .scalar(.float(bits: 32))
@@ -224,6 +228,7 @@ public indirect enum ShaderType: Hashable, Sendable, CustomStringConvertible {
         case .sampledImage: return "sampler2D"
         case .runtimeArray(let t): return "\(t)[]"
         case .floatArray(_, let element): return Self.argumentArrayNames.first { $0.element == element }?.name ?? "\(element)Array"
+        case .inputList(let element): return "list[\(element)]"
         }
     }
 
@@ -271,6 +276,7 @@ public indirect enum ShaderType: Hashable, Sendable, CustomStringConvertible {
         case (.sampledImage(let a), .sampledImage(let b)): return a == b
         case (.runtimeArray(let a), .runtimeArray(let b)): return a == b
         case (.floatArray(let a, let ae), .floatArray(let b, let be)): return a == b && ae == be
+        case (.inputList(let a), .inputList(let b)): return a == b
         default: return false
         }
     }
@@ -292,6 +298,7 @@ public indirect enum ShaderType: Hashable, Sendable, CustomStringConvertible {
         case .sampledImage(let k): hasher.combine(7); hasher.combine(k)
         case .runtimeArray(let t): hasher.combine(8); hasher.combine(t)
         case .floatArray(let i, let element): hasher.combine(9); hasher.combine(i); hasher.combine(element)
+        case .inputList(let element): hasher.combine(13); hasher.combine(element)
         }
     }
 }

@@ -110,6 +110,16 @@ def main(uv: float2, points: Float2Array) -> float4:
     ...
 ```
 
+## A list of a class as input
+
+On the compute and graphics targets, a `main` parameter annotated
+`list[Step]`, `Step` a module class, is the shader's
+[list input](../targets/compute.md#a-list-of-a-class-as-input): the host's
+`Step`s, read from its buffer the way an array argument is — `steps[i]`
+clamped and zero when empty, `len(steps)` counting, never stored. A function
+whose parameter is a `list[Step]` takes it as it takes an array argument,
+or a list of `Step`s instead.
+
 ## In use
 
 Three colours in a list, indexed by a value computed per pixel, with the

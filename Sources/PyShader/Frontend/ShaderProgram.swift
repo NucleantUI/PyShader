@@ -49,9 +49,10 @@ final class ShaderProgram {
     private(set) var lambdas: [String: LambdaTemplate] = [:]
     /// `class` declarations: plain structs of annotated fields.
     private(set) var structs: [String: ShaderType] = [:]
-    /// The class an entry point takes as its input, read whole from the
-    /// target's input buffer; nil when none does.
-    private(set) var inputStruct: ShaderType?
+    /// What an entry point takes as its input from the target's input
+    /// buffer: a class, read whole, or a list of one (`.inputList`), read an
+    /// element at a time; nil when none does.
+    private(set) var inputType: ShaderType?
     /// The class the vertex stage returns, which the fragment stage may take
     /// whole instead of field by field.
     private(set) var varyingsStruct: ShaderType?
@@ -320,7 +321,7 @@ final class ShaderProgram {
                 }
                 if let ann = arg.annotation {
                     let declared = try resolveType(ann, line: def.lineno)
-                    guard declared == type || Self.sameArgumentArray(declared, type) else {
+                    guard declared == type || Self.sameArgumentArray(declared, type) || Self.isInputList(declared, type) else {
                         throw PyShaderError("`\(arg.arg)` is a `\(type)` input, not `\(declared)`", line: def.lineno)
                     }
                 }
@@ -362,29 +363,43 @@ final class ShaderProgram {
         functionOrder.append(def.name)
     }
 
-    /// An entry point's parameter typed as one of the module's classes, by any
-    /// name: in the fragment stage, the class the vertex stage returns — its
-    /// varyings, whole, with the fragment's own position first — and
-    /// otherwise the shader's input, read from the target's input buffer.
-    /// nil for any other parameter, which is then not a shader input.
+    /// An entry point's parameter typed as one of the module's classes, or as
+    /// a list of one, by any name: in the fragment stage, the class the vertex
+    /// stage returns — its varyings, whole, with the fragment's own position
+    /// first — and otherwise the shader's input, read from the target's input
+    /// buffer. nil for any other parameter, which is then not a shader input.
     private func classParameter(_ name: String, annotation: Expression?, of def: FunctionDef) throws -> ShaderType? {
-        guard let annotation, case .name(let n) = annotation, let type = structs[n.id] else { return nil }
-        if case .graphics(let i) = target, def.name == i.fragmentEntryPoint, type == varyingsStruct {
-            return type
+        guard let annotation else { return nil }
+        let className: String
+        let type: ShaderType
+        switch annotation {
+        case .name(let n):
+            guard let s = structs[n.id] else { return nil }
+            if case .graphics(let i) = target, def.name == i.fragmentEntryPoint, s == varyingsStruct {
+                return s
+            }
+            (className, type) = (n.id, s)
+        case .subscriptExpr(let sub):
+            // `list[Step]`: the buffer is the host's elements, one after another.
+            guard case .name(let generic) = sub.value, generic.id == "list",
+                  case .name(let n) = sub.slice, let s = structs[n.id] else { return nil }
+            (className, type) = (n.id, .inputList(s))
+        default:
+            return nil
         }
         guard let binding = target.inputBinding else {
             throw PyShaderError("`\(name)`: a class input needs the compute or graphics target, which have a buffer to read it from", line: def.lineno)
         }
-        if let inputStruct, inputStruct != type {
-            throw PyShaderError("`\(name)`: a shader takes one input class, and it already takes `\(inputStruct)`", line: def.lineno)
+        if let inputType, inputType != type {
+            throw PyShaderError("`\(name)`: a shader takes one input class, and it already takes `\(inputType)`", line: def.lineno)
         }
         if !target.arguments.isEmpty, target.argumentsBinding?.binding == binding.binding {
             throw PyShaderError("`\(name)`: the class input and the shader arguments are both at binding \(binding.binding)", line: def.lineno)
         }
-        guard type.std430 != nil else {
-            throw PyShaderError("`\(name)`: class `\(n.id)` cannot be read from a buffer — its fields must be 32-bit numbers, vectors, matrices, fixed-size lists or classes of them (no `bool`)", line: def.lineno)
+        guard structs[className]!.std430 != nil else {
+            throw PyShaderError("`\(name)`: class `\(className)` cannot be read from a buffer — its fields must be 32-bit numbers, vectors, matrices, fixed-size lists or classes of them (no `bool`)", line: def.lineno)
         }
-        inputStruct = type
+        inputType = type
         return type
     }
 
@@ -405,10 +420,9 @@ final class ShaderProgram {
     }
 
     /// Resolves a type annotation expression (`float3`, `pyshader.float3`, a
-    /// `class` declared in the module) to a shader type.
+    /// `class` declared in the module, a list of one) to a shader type.
     func resolveType(_ expr: Expression, line: Int) throws -> ShaderType {
-        if case .name(let n) = expr, let s = structs[n.id] { return s }
-        return try Self.resolveType(expr, line: line)
+        try Self.resolveType(expr, line: line, classes: structs)
     }
 
     /// A parameter type whose length (or array) comes from the argument:
@@ -425,15 +439,17 @@ final class ShaderProgram {
     /// The type a parameter declared `declared` takes for an argument of type
     /// `actual`; nil when the argument does not fit. A `list[T]` takes the
     /// length of the list handed to it, or is that array argument when handed
-    /// one of `T`s; an array argument type is the argument handed to it, or
-    /// takes a list of its elements. A closed type stays as declared; the
-    /// argument is converted to it at the call.
+    /// one of `T`s, or the list input when handed that; an array argument type
+    /// is the argument handed to it, or takes a list of its elements. A closed
+    /// type stays as declared; the argument is converted to it at the call.
     static func bind(_ declared: ShaderType, to actual: ShaderType) -> ShaderType? {
         guard isOpen(declared) else { return declared }
         switch (declared, actual) {
         case (.array(let e, let n), .array(let a, let m)) where n < 0 || n == m:
             return bind(e, to: a).map { .array($0, m) }
         case (.array(let e, let n), .floatArray(let argument, let a)) where n < 0 && e == a && argument >= 0:
+            return actual
+        case (.array(let e, let n), .inputList(let a)) where n < 0 && e == a:
             return actual
         case (.floatArray(_, let e), .floatArray(let argument, let a)) where e == a && argument >= 0:
             return actual
@@ -458,10 +474,18 @@ final class ShaderProgram {
         return false
     }
 
-    /// Resolves a built-in type annotation (`float3`, `pyshader.float3`, `tuple[...]`).
-    static func resolveType(_ expr: Expression, line: Int) throws -> ShaderType {
+    /// An annotation's `list[T]` against the list input of `T`s it names.
+    private static func isInputList(_ declared: ShaderType, _ input: ShaderType) -> Bool {
+        if case .array(let a, let n) = declared, n < 0, case .inputList(let b) = input { return a == b }
+        return false
+    }
+
+    /// Resolves a built-in type annotation (`float3`, `pyshader.float3`,
+    /// `tuple[...]`), or one of `classes` by name, at any depth (`list[Step]`).
+    static func resolveType(_ expr: Expression, line: Int, classes: [String: ShaderType] = [:]) throws -> ShaderType {
         switch expr {
         case .name(let n):
+            if let t = classes[n.id] { return t }
             if let t = ShaderType.named(n.id) { return t }
             if let t = ShaderType.argumentArray(named: n.id) { return t }
             if let t = ShaderType.texture(named: n.id) { return t }
@@ -483,10 +507,10 @@ final class ShaderProgram {
             case "tuple":
                 let elements: [Expression]
                 if case .tuple(let t) = sub.slice { elements = t.elts } else { elements = [sub.slice] }
-                return .tuple(try elements.map { try resolveType($0, line: line) })
+                return .tuple(try elements.map { try resolveType($0, line: line, classes: classes) })
             case "list":
                 // The length comes from the value; -1 marks "any length" until then.
-                return .array(try resolveType(sub.slice, line: line), -1)
+                return .array(try resolveType(sub.slice, line: line, classes: classes), -1)
             default:
                 throw PyShaderError("unknown generic type `\(generic.id)`; use tuple[...] or list[...]", line: line)
             }

@@ -760,6 +760,13 @@ extension FunctionEmitter {
             }
             return try compiler.loadArgumentArrayElement(argument, element: element, index: index, from: self, line: s.lineno)
         }
+        if case .inputList(let element) = base.type {
+            let index = try emitExpression(s.slice)
+            guard index.type.isScalar, index.type.isInt else {
+                throw PyShaderError("list index must be an integer, got `\(index.type)`", line: s.lineno)
+            }
+            return try compiler.loadInputListElement(element, index: index, from: self, line: s.lineno)
+        }
         switch base.type {
         case .vector:
             if let k = constantIndex(s.slice) {
@@ -943,6 +950,7 @@ extension FunctionEmitter {
         for (arg, param) in zip(args, params) {
             // An array argument is a handle the function reads through; nothing is passed.
             if case .floatArray = param.type { continue }
+            if case .inputList = param.type { continue }
             let v = try coerce(arg, to: param.type, line: line)
             ids.append(v.id)
         }

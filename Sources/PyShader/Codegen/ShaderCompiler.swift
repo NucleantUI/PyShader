@@ -304,8 +304,8 @@ final class ShaderCompiler {
                     // A handle, not a value: the sampler is a module-level
                     // uniform the body reaches by name, as an array argument is.
                     continue
-                } else if param.type == self.program.inputStruct {
-                    args.append(self.loadInput(e).id)
+                } else if param.type == self.program.inputType {
+                    if let value = self.loadInput(e) { args.append(value.id) }
                 } else {
                     throw PyShaderError("`\(param.name)` is not a shader input", line: line)
                 }
@@ -399,8 +399,8 @@ final class ShaderCompiler {
                     }
                 } else if interface.textures.contains(where: { $0.name == param.name }) {
                     continue   // a handle: the sampler is a module-level uniform
-                } else if param.type == self.program.inputStruct {
-                    args.append(self.loadInput(e).id)
+                } else if param.type == self.program.inputType {
+                    if let value = self.loadInput(e) { args.append(value.id) }
                 } else {
                     throw PyShaderError("`\(param.name)` is not a shader input", line: vertexLine)
                 }
@@ -509,8 +509,8 @@ final class ShaderCompiler {
                     }
                 } else if interface.textures.contains(where: { $0.name == param.name }) {
                     continue   // a handle: the sampler is a module-level uniform
-                } else if param.type == self.program.inputStruct {
-                    args.append(self.loadInput(e).id)
+                } else if param.type == self.program.inputType {
+                    if let value = self.loadInput(e) { args.append(value.id) }
                 } else {
                     throw PyShaderError("`\(param.name)` is not a shader input", line: fragmentLine)
                 }
@@ -524,18 +524,30 @@ final class ShaderCompiler {
     // MARK: - Class input
 
     /// The class input, read whole from `uInput` — `readonly buffer
-    /// ShaderInput { <class> value; }` at the target's input binding.
-    private func loadInput(_ e: FunctionEmitter) -> Value {
-        let type = program.inputStruct!
+    /// ShaderInput { <class> value; }` at the target's input binding. nil for
+    /// a list input, which is a handle the body reads an element at a time.
+    private func loadInput(_ e: FunctionEmitter) -> Value? {
+        let type = program.inputType!
+        if case .inputList = type { return nil }
         let ptr = e.emit(.opAccessChain, type: .pointer(.uniform, type), [inputBufferVariable(), e.builder.constant(int: 0)])
         return e.load(ptr.id, type: type)
     }
 
+    /// `uInput`: the class as `ShaderInput`'s one member — or, for a list
+    /// input, the class's elements one after another, `<class> value[]` at
+    /// the class's std430 stride.
     private func inputBufferVariable() -> SpirvId {
         if let v = inputBuffer { return v }
-        let type = program.inputStruct!
+        let type: ShaderType
+        if case .inputList(let element) = program.inputType! {
+            type = .runtimeArray(element)
+            decorateLayout(element)
+            builder.decorate(builder.type(type), .arrayStride, [UInt32(element.std430Stride!)])
+        } else {
+            type = program.inputType!
+            decorateLayout(type)
+        }
         let binding = program.target.inputBinding!
-        decorateLayout(type)
         let block = ShaderType.structure(name: "ShaderInput", members: [("value", type)])
         let blockId = builder.type(block)
         builder.decorate(blockId, .bufferBlock)
@@ -546,6 +558,33 @@ final class ShaderCompiler {
         builder.decorate(v, .binding, [UInt32(binding.binding)])
         inputBuffer = v
         return v
+    }
+
+    /// `len(a)` for the list input: how many whole elements the buffer the
+    /// host binds holds.
+    func inputListCount(from e: FunctionEmitter, line: Int) throws -> Value {
+        let count = e.emit(.opArrayLength, type: .uint, [inputBufferVariable(), 0])
+        return try e.convert(count, to: .int, line: line)
+    }
+
+    /// `a[i]` for the list input of `element`s: clamped to the ends, zero
+    /// when empty, as an array argument's.
+    func loadInputListElement(_ element: ShaderType, index: Value, from e: FunctionEmitter, line: Int) throws -> Value {
+        let count = try inputListCount(from: e, line: line)
+        let index = try e.convert(index, to: .int, line: line)
+        let zero = e.builder.constant(int: 0)
+        let last = e.emit(.opISub, type: .int, [count.id, e.builder.constant(int: 1)])
+        let clamped = e.emitExt(.sClamp, type: .int, [index.id, zero, last.id])
+        // SPIR-V 1.0 cannot `OpSelect` a class: the element is read into a
+        // zeroed temporary, and only when there is one to read.
+        let value = e.declareTemp(type: element)
+        e.store(value.ptr, e.builder.zero(of: element))
+        let nonEmpty = e.emit(.opSGreaterThan, type: .bool, [count.id, zero])
+        e.emitIf(nonEmpty) {
+            let ptr = e.emit(.opAccessChain, type: .pointer(.uniform, element), [inputBufferVariable(), zero, clamped.id])
+            e.store(value.ptr, e.load(ptr.id, type: element).id)
+        }
+        return e.load(value.ptr, type: element)
     }
 
     /// The std430 offsets, strides and matrix layout of `type` and of
@@ -724,6 +763,16 @@ final class ShaderCompiler {
         let params = template.lambda.args.posonlyArgs + template.lambda.args.args
         guard params.count == args.count else {
             throw PyShaderError("`\(template.name)` takes \(params.count) argument(s), got \(args.count)", line: line)
+        }
+        // An array argument or the list input is a handle with no value to
+        // pass, and a lambda takes its parameters by value.
+        for arg in args {
+            switch arg.type {
+            case .floatArray, .inputList:
+                throw PyShaderError("a lambda cannot take a `\(arg.type)`; write it as a `def`", line: line)
+            default:
+                break
+            }
         }
         let key = template.name + "(" + args.map { "\($0.type)" }.joined(separator: ",") + ")@\(template.line)"
         let instance: (id: SpirvId, returnType: ShaderType)
