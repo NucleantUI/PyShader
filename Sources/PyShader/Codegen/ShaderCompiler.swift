@@ -342,6 +342,9 @@ final class ShaderCompiler {
         for (location, (name, type)) in varyings.enumerated() {
             let v = builder.globalVariable(type: type, storage: .output, name: "v_\(name)")
             builder.decorate(v, .location, [UInt32(location)])
+            // Flat on both sides, as the fragment input is: Vulkan only asks
+            // it of the input, but WGSL (naga, the web build) of both.
+            if !type.isFloat { builder.decorate(v, .flat) }
             outputs.append(v)
             vertexInterface.append(v)
         }

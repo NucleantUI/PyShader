@@ -108,6 +108,40 @@ struct ListInputTests {
         #expect(words.count(.opTypeRuntimeArray) == 1)
     }
 
+    /// The step's index handed on as an `int`: flat out of the vertex stage
+    /// as well as into the fragment one, which WGSL (naga, the web build)
+    /// asks of both sides, and Vulkan of the input only.
+    @Test("the step's index as an int varying is flat on both sides")
+    func intIndex() throws {
+        let words = try compile("""
+        QUAD = [float2(-1.0, -1.0), float2(1.0, -1.0), float2(-1.0, 1.0),
+                float2(-1.0, 1.0), float2(1.0, -1.0), float2(1.0, 1.0)]
+
+        class Step:
+            color: float4
+            flags: uint
+
+        class StepVertex:
+            position: float4
+            index: int
+
+        def vertex(vertex_index: int, instance_index: int) -> StepVertex:
+            c = QUAD[vertex_index] * 0.1
+            return StepVertex(float4(c, 0.0, 1.0), instance_index)
+
+        def fragment(v: StepVertex, steps: list[Step]) -> float4:
+            return steps[v.index].color
+        """, target: .nucleantUIGraphics)
+        let flat = Set(words.instructions
+            .filter { $0.opcode == SpirvOp.opDecorate.rawValue && $0.operands[1] == SpirvDecoration.flat.rawValue }
+            .map { $0.operands[0] })
+        let storage = words.instructions
+            .filter { $0.opcode == SpirvOp.opVariable.rawValue && flat.contains($0.operands[1]) }
+            .map { $0.operands[2] }
+            .sorted()
+        #expect(storage == [SpirvStorageClass.input.rawValue, SpirvStorageClass.output.rawValue].sorted())
+    }
+
     @Test("both stages of a pair read the same list")
     func bothStages() throws {
         let words = try compile("""

@@ -129,7 +129,7 @@ struct GraphicsTargetTests {
             return float4(uv, float(kind + pixel.x), 1.0) if front_facing else float4(frag_coord / resolution, mouse)
         """, target: .nucleantUIGraphics)
         let flats = words.instructions.filter { $0.opcode == SpirvOp.opDecorate.rawValue && $0.operands[1] == SpirvDecoration.flat.rawValue }
-        #expect(flats.count == 1)
+        #expect(flats.count == 2, "`kind` out of the vertex stage and into the fragment one")
         let builtIns = words.instructions
             .filter { $0.opcode == SpirvOp.opDecorate.rawValue && $0.operands[1] == SpirvDecoration.builtIn.rawValue }
             .map { $0.operands[2] }
