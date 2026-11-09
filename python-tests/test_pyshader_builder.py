@@ -84,7 +84,7 @@ def make_project(root: Path, shaders: str, files: dict[str, str] | None = None) 
 SHADERS = """\
 [tool.pyshader.glow]
 source = "src/glow_app/shaders/glow.py"
-output = "src/glow_app/shaders/glow.glsl"
+output = "src/glow_app/shaders/glow"
 target = "compute"
 format = "gles2"
 
@@ -110,11 +110,12 @@ def test_wheel_holds_the_compiled_shaders(project, tmp_path):
     with zipfile.ZipFile(out / name) as wheel:
         names = set(wheel.namelist())
         assert {"glow_app/__init__.py", "glow_app/main.py", "glow_app/shaders/glow.py",
-                "glow_app/shaders/glow.glsl", "glow_app/shaders/tinted.spv"} <= names
-        glsl = wheel.read("glow_app/shaders/glow.glsl").decode()
-        assert glsl.startswith("---VERTEX SHADER---\n")
-        assert "---FRAGMENT SHADER---" in glsl
-        assert "gl_FragColor = py_main(tex_coord0, time);" in glsl
+                "glow_app/shaders/glow.vert", "glow_app/shaders/glow.frag", "glow_app/shaders/tinted.spv"} <= names
+        vertex = wheel.read("glow_app/shaders/glow.vert").decode()
+        fragment = wheel.read("glow_app/shaders/glow.frag").decode()
+        assert "vertex stage" in vertex.splitlines()[0]
+        assert "gl_Position = vec4(a_position.xy, 0.0, 1.0);" in vertex
+        assert "gl_FragColor = py_main(v_uv, time);" in fragment
         spirv = wheel.read("glow_app/shaders/tinted.spv")
         assert spirv[:4] == bytes.fromhex("03022307")   # the SPIR-V magic, little-endian
         metadata = wheel.read("glow_app-1.2.0.dist-info/METADATA").decode()
@@ -138,29 +139,31 @@ def test_editable_writes_the_shaders_into_the_tree(project, tmp_path):
     out = tmp_path / "dist"
     out.mkdir()
     name = backend.build_editable(str(out))
-    assert (project / "src/glow_app/shaders/glow.glsl").read_text().startswith("---VERTEX SHADER---")
+    assert "fragment stage" in (project / "src/glow_app/shaders/glow.frag").read_text().splitlines()[0]
+    assert (project / "src/glow_app/shaders/glow.vert").is_file()
     assert (project / "src/glow_app/shaders/tinted.spv").is_file()
     with zipfile.ZipFile(out / name) as wheel:
         pth = wheel.read("__editable__.glow_app-1.2.0.pth").decode()
     assert pth.strip() == str((project / "src").resolve())
     # A wheel built afterwards holds the fresh shader once, not the copy in the tree too.
-    (project / "src/glow_app/shaders/glow.glsl").write_text("stale")
+    (project / "src/glow_app/shaders/glow.frag").write_text("stale")
     with zipfile.ZipFile(out / backend.build_wheel(str(out))) as wheel:
-        assert wheel.namelist().count("glow_app/shaders/glow.glsl") == 1
-        assert wheel.read("glow_app/shaders/glow.glsl").decode() != "stale"
+        assert wheel.namelist().count("glow_app/shaders/glow.frag") == 1
+        assert wheel.read("glow_app/shaders/glow.frag").decode() != "stale"
 
 
 def test_sdist_carries_sources_not_shader_outputs(project, tmp_path):
     out = tmp_path / "dist"
     out.mkdir()
-    (project / "src/glow_app/shaders/glow.glsl").write_text("built earlier")
+    (project / "src/glow_app/shaders/glow.vert").write_text("built earlier")
+    (project / "src/glow_app/shaders/glow.frag").write_text("built earlier")
     name = backend.build_sdist(str(out))
     assert name == "glow_app-1.2.0.tar.gz"
     with tarfile.open(out / name) as tar:
         names = set(tar.getnames())
     assert {"glow_app-1.2.0/pyproject.toml", "glow_app-1.2.0/PKG-INFO", "glow_app-1.2.0/shaders/tinted.py",
             "glow_app-1.2.0/shaders/palette.py", "glow_app-1.2.0/src/glow_app/shaders/glow.py"} <= names
-    assert "glow_app-1.2.0/src/glow_app/shaders/glow.glsl" not in names
+    assert not names & {"glow_app-1.2.0/src/glow_app/shaders/glow.vert", "glow_app-1.2.0/src/glow_app/shaders/glow.frag"}
 
 
 def test_what_opengl_es_2_cannot_do_stops_the_build_at_its_line(tmp_path, monkeypatch):
@@ -178,7 +181,7 @@ def test_what_opengl_es_2_cannot_do_stops_the_build_at_its_line(tmp_path, monkey
 
 
 def test_the_same_shader_compiles_to_spirv(tmp_path, monkeypatch):
-    shaders = SHADERS.split("[tool.pyshader.tinted]")[0].replace('format = "gles2"', 'format = "spirv"').replace("glow.glsl", "glow.spv")
+    shaders = SHADERS.split("[tool.pyshader.tinted]")[0].replace('format = "gles2"', 'format = "spirv"').replace('shaders/glow"', 'shaders/glow.spv"')
     root = make_project(tmp_path / "p", shaders)
     (root / "src/glow_app/shaders/glow.py").write_text(
         "def main(uv: float2) -> float4:\n    k = int(uv.x * 8.0) & 3\n    return float4(float(k))\n"
@@ -199,7 +202,7 @@ def main(uv: float2, t: float, tex_in: Texture, tex_out: Texture) -> float4:
 FADE_SHADERS = """\
 [tool.pyshader.fade]
 source = "src/glow_app/transitions/fade.py"
-output = "src/glow_app/transitions/fade.glsl"
+output = "src/glow_app/transitions/fade"
 target = "compute"
 format = "gles2"
 arguments = ["t:float"]
@@ -211,7 +214,7 @@ def test_texture_parameters_are_the_textures(tmp_path, monkeypatch):
     root = make_project(tmp_path / "p", FADE_SHADERS, {"src/glow_app/transitions/fade.py": FADE})
     monkeypatch.chdir(root)
     with zipfile.ZipFile(tmp_path / backend.build_wheel(str(tmp_path))) as wheel:
-        fragment = wheel.read("glow_app/transitions/fade.glsl").decode().split("---FRAGMENT SHADER---")[1]
+        fragment = wheel.read("glow_app/transitions/fade.frag").decode()
     for declaration in ("uniform float t;", "uniform sampler2D tex_in;", "uniform sampler2D tex_out;"):
         assert declaration in fragment
     assert "texture2D(tex_in, uv)" in fragment
@@ -223,7 +226,7 @@ def test_textures_top_down_flips_them(tmp_path, monkeypatch):
     root = make_project(tmp_path / "p", shaders, {"src/glow_app/transitions/fade.py": FADE})
     monkeypatch.chdir(root)
     with zipfile.ZipFile(tmp_path / backend.build_wheel(str(tmp_path))) as wheel:
-        fragment = wheel.read("glow_app/transitions/fade.glsl").decode().split("---FRAGMENT SHADER---")[1]
+        fragment = wheel.read("glow_app/transitions/fade.frag").decode()
     assert "1.0 - " in fragment
 
 
@@ -235,7 +238,33 @@ def test_pyshader_toml_is_read_like_the_swiftpm_plugins_read_it(tmp_path, monkey
     )
     monkeypatch.chdir(root)
     with zipfile.ZipFile(tmp_path / backend.build_wheel(str(tmp_path))) as wheel:
-        assert "glow_app/shaders/glow.glsl" in wheel.namelist()
+        assert {"glow_app/shaders/glow.vert", "glow_app/shaders/glow.frag"} <= set(wheel.namelist())
+
+
+def test_the_names_and_layout_are_options(tmp_path, monkeypatch):
+    """Both stages in one file, under the names the program they are linked into uses."""
+    shaders = """\
+[tool.pyshader.glow]
+source = "src/glow_app/shaders/glow.py"
+output = "src/glow_app/shaders/glow.glsl"
+target = "compute"
+format = "gles2"
+single-file = true
+position-attribute = "vPosition"
+texcoord-attribute = "vTexCoords0"
+uv-varying = "tex_coord0"
+position-matrices = ["projection_mat", "modelview_mat"]
+"""
+    root = make_project(tmp_path / "p", shaders)
+    monkeypatch.chdir(root)
+    with zipfile.ZipFile(tmp_path / backend.build_wheel(str(tmp_path))) as wheel:
+        assert "glow_app/shaders/glow.vert" not in wheel.namelist()
+        glsl = wheel.read("glow_app/shaders/glow.glsl").decode()
+    assert glsl.startswith("---VERTEX SHADER---\n")
+    vertex, fragment = glsl.split("---FRAGMENT SHADER---")
+    assert "tex_coord0 = vTexCoords0;" in vertex
+    assert "gl_Position = projection_mat * modelview_mat * vec4(vPosition.xy, 0.0, 1.0);" in vertex
+    assert "gl_FragColor = py_main(tex_coord0, time);" in fragment
 
 
 def test_modules_from_a_site_packages_declaring_them(tmp_path, monkeypatch):
@@ -251,7 +280,7 @@ def test_modules_from_a_site_packages_declaring_them(tmp_path, monkeypatch):
     (root / "src/glow_app/shaders/glow.py").write_text(TINTED.replace("from palette", "from shaderlib.palette"))
     monkeypatch.chdir(root)
     with zipfile.ZipFile(tmp_path / backend.build_wheel(str(tmp_path))) as wheel:
-        assert "palette_ramp(" in wheel.read("glow_app/shaders/glow.glsl").decode().replace("shaderlib_", "")
+        assert "palette_ramp(" in wheel.read("glow_app/shaders/glow.frag").decode().replace("shaderlib_", "")
     # Only declared packages are importable from a site-packages folder.
     (root / "src/glow_app/shaders/glow.py").write_text(TINTED.replace("from palette", "from undeclared"))
     with pytest.raises(backend.ShaderBuildError, match="undeclared"):
@@ -259,7 +288,7 @@ def test_modules_from_a_site_packages_declaring_them(tmp_path, monkeypatch):
 
 
 def test_an_output_outside_the_packages_is_refused(tmp_path, monkeypatch):
-    root = make_project(tmp_path / "p", SHADERS.split("[tool.pyshader.tinted]")[0].replace("src/glow_app/shaders/glow.glsl", "glow.glsl"))
+    root = make_project(tmp_path / "p", SHADERS.split("[tool.pyshader.tinted]")[0].replace('output = "src/glow_app/shaders/glow"', 'output = "glow"'))
     monkeypatch.chdir(root)
     with pytest.raises(backend.ShaderBuildError, match="outside the wheel's packages"):
         backend.build_wheel(str(tmp_path))
@@ -278,9 +307,20 @@ def test_configuration_mistakes():
     assert "unknown key `soruce`" in error({"a": {"source": "a.py", "soruce": "b.py"}})
     assert "spirv-opt" in error({"a": {"source": "a.py", "optimize": ["-O"]}})
     assert "two sections write" in error({"a": {"source": "a.py", "output": "x"}, "b": {"source": "b.py", "output": "x"}})
+    assert 'applies to `format = "gles2"`' in error({"a": {"source": "a.py", "uv-varying": "v"}})
+    assert "array of uniform names" in error({"a": {"source": "a.py", "format": "gles2", "position-matrices": "m"}})
+    assert "must be a GLSL name" in error({"a": {"source": "a.py", "format": "gles2", "uv-varying": "two words"}})
+    assert "two sections write `x.vert`" in error({"a": {"source": "a.py", "format": "gles2", "output": "x.glsl"},
+                                                   "b": {"source": "b.py", "format": "gles2", "output": "x.frag"}})
     config = _config.parse({"a": {"source": "a.py", "format": "gles2", "content-top-down": True, "arguments": ["g:float"]}}, "x")
-    assert config.sections[0].output == "a.glsl"
+    assert config.sections[0].outputs() == ("a.vert", "a.frag")
     assert config.sections[0].options() == "target=fragment format=gles2 content-top-down=1 arg=g:float file=a.py"
+    config = _config.parse({"a": {"source": "a.py", "format": "gles2", "single-file": True, "content-sampler": "texture0",
+                                  "position-matrices": ["p", "m"]}}, "x")
+    assert config.sections[0].outputs() == ("a.glsl",)
+    assert config.sections[0].options() == (
+        "target=fragment format=gles2 single-file=1 content-sampler=texture0 position-matrix=p position-matrix=m file=a.py"
+    )
 
 
 def test_both_configurations_at_once_is_an_error(tmp_path):

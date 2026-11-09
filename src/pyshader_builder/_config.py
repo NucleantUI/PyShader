@@ -9,9 +9,12 @@ Both hold what the SwiftPM plugins read from ``pyshader.toml``: an optional
 
     [tool.pyshader.clouds]
     source = "src/myapp/shaders/clouds.py"
-    output = "src/myapp/shaders/clouds.glsl"   # default: <section>.spv / <section>.glsl
+    output = "src/myapp/shaders/clouds"        # default: <section>.spv; gles2: <section>.vert + .frag
     target = "compute"                         # fragment (default) | compute | graphics
     format = "gles2"                           # spirv (default) | gles2
+    single-file = true                         # gles2: both stages in one file (<section>.glsl)
+    uv-varying = "v_uv"                        # gles2: the names the stages declare, and
+    position-matrices = []                     #   how the vertex stage places its quad
     content = true                             # or content-top-down = true
     textures-top-down = true                   # the `Texture` parameters top-down; y-up by default
     arguments = ["gain:float", "tint:float4"]
@@ -29,7 +32,13 @@ CONFIG_FILE = "pyshader.toml"
 TARGETS = ("fragment", "compute", "graphics")
 FORMATS = ("spirv", "gles2")
 ARGUMENT_KINDS = ("float", "float2", "float3", "float4", "floatArray", "float2Array", "float3Array", "float4Array")
-SECTION_KEYS = ("source", "output", "target", "content", "content-top-down", "textures-top-down", "arguments", "optimize", "format")
+#: gles2 keys holding one name; each is the wasm option of the same name.
+GLES2_NAME_KEYS = (
+    "position-attribute", "texcoord-attribute", "color-attribute", "color-uniform",
+    "opacity-uniform", "uv-varying", "color-varying", "content-sampler",
+)
+GLES2_KEYS = GLES2_NAME_KEYS + ("position-matrices", "single-file")
+SECTION_KEYS = ("source", "output", "target", "content", "content-top-down", "textures-top-down", "arguments", "optimize", "format") + GLES2_KEYS
 
 
 class ConfigError(Exception):
@@ -47,6 +56,20 @@ class Section:
     content_top_down: bool = False
     textures_top_down: bool = False
     arguments: tuple[str, ...] = ()
+    #: gles2: both stages in one file rather than a ``.vert`` and a ``.frag``.
+    single_file: bool = False
+    #: gles2: the names and vertex-stage options given, as ``key=value`` compiler options.
+    gles2_options: tuple[str, ...] = ()
+
+    def outputs(self) -> tuple[str, ...]:
+        """The files the section writes: ``output``, or for gles2 without
+        ``single-file`` the ``.vert`` and ``.frag`` beside it, its extension replaced."""
+        if self.format != "gles2" or self.single_file:
+            return (self.output,)
+        folder, _, name = self.output.replace("\\", "/").rpartition("/")
+        stem = name.rsplit(".", 1)[0] if "." in name.lstrip(".") else name
+        base = f"{folder}/{stem}" if folder else stem
+        return (base + ".vert", base + ".frag")
 
     def options(self) -> str:
         """The compiler's options for this section (see PyShaderWasm's Exports.swift)."""
@@ -58,6 +81,9 @@ class Section:
         if self.textures_top_down:
             parts.append("textures-top-down=1")
         parts += [f"arg={a}" for a in self.arguments]
+        if self.single_file:
+            parts.append("single-file=1")
+        parts += self.gles2_options
         file = self.source.replace("\\", "/").rsplit("/", 1)[-1]
         if file and not any(c.isspace() for c in file):
             parts.append(f"file={file}")   # named in the output's header and line information
@@ -113,7 +139,7 @@ def parse(table: dict, origin: str) -> Config:
             raise fail(f"unknown key `{key}`; outside a section only `site-packages` and `packages` are set")
     if not sections:
         raise fail("no sections: add a table with a `source` for each shader")
-    outputs = [s.output for s in sections]
+    outputs = [o for s in sections for o in s.outputs()]
     for output in outputs:
         if outputs.count(output) > 1:
             raise fail(f"two sections write `{output}`")
@@ -160,7 +186,23 @@ def _section(name: str, table: dict, fail) -> Section:
             "compile with pyshaderc or the SwiftPM plugins to optimize"
         )
     content_top_down = boolean("content-top-down")
-    default_output = f"{name}.{'glsl' if format == 'gles2' else 'spv'}"
+    if format != "gles2":
+        for key in GLES2_KEYS:
+            if key in table:
+                raise fail(f'{owner}`{key}` applies to `format = "gles2"`')
+    gles2_options: list[str] = []
+    for key in GLES2_NAME_KEYS:
+        value = string(key)
+        if value is not None:
+            if not value or any(c.isspace() or c == "=" for c in value):
+                raise fail(f"{owner}`{key}` must be a GLSL name, not `{value}`")
+            gles2_options.append(f"{key}={value}")
+    matrices = table.get("position-matrices", [])
+    if not isinstance(matrices, list) or not all(isinstance(m, str) and m and not any(c.isspace() or c == "=" for c in m) for m in matrices):
+        raise fail(f"{owner}`position-matrices` must be an array of uniform names")
+    gles2_options += [f"position-matrix={m}" for m in matrices]
+    single_file = boolean("single-file")
+    default_output = f"{name}.spv" if format == "spirv" else f"{name}.glsl" if single_file else name
     return Section(
         name=name,
         source=source,
@@ -171,4 +213,6 @@ def _section(name: str, table: dict, fail) -> Section:
         content_top_down=content_top_down,
         textures_top_down=boolean("textures-top-down"),
         arguments=tuple(arguments),
+        single_file=single_file,
+        gles2_options=tuple(gles2_options),
     )

@@ -4,7 +4,7 @@
 backend that ships with the `pyshader` package. It compiles a Python
 project's shaders while the project is built, the way the
 [package plugins](plugins.md) do for a Swift package, and puts the results
-in its wheel. A Kivy app can then load its OpenGL ES 2 shaders from its own
+in its wheel. An app can then load its OpenGL ES 2 shaders from its own
 package, compiled from PyShader modules beside them.
 
 ```toml title="pyproject.toml"
@@ -12,7 +12,6 @@ package, compiled from PyShader modules beside them.
 name = "myapp"
 version = "0.1.0"
 requires-python = ">=3.13"
-dependencies = ["kivy>=2.3.1"]
 
 [build-system]
 requires = ["pyshader"]
@@ -20,7 +19,7 @@ build-backend = "pyshader_builder"
 
 [tool.pyshader.glow]
 source = "src/myapp/shaders/glow.py"
-output = "src/myapp/shaders/glow.glsl"
+output = "src/myapp/shaders/glow"       # glow.vert and glow.frag
 target = "compute"
 format = "gles2"
 ```
@@ -34,7 +33,9 @@ format = "gles2"
 ```python
 from importlib.resources import files
 
-canvas.shader.source = str(files("myapp") / "shaders" / "glow.glsl")
+shaders = files("myapp") / "shaders"
+vertex = (shaders / "glow.vert").read_text()
+fragment = (shaders / "glow.frag").read_text()
 ```
 
 ## Configuration
@@ -47,12 +48,13 @@ same, with paths relative to the project's root:
 | key | |
 |---|---|
 | `source` | the shader's `.py` file |
-| `output` | where it goes; inside one of the wheel's packages. Default `<section>.spv`, or `<section>.glsl` for `gles2` |
-| `format` | `spirv` (default), for Vulkan, or `gles2`: [OpenGL ES 2](gles2.md), a Kivy `.glsl` file |
+| `output` | where it goes; inside one of the wheel's packages. Default `<section>.spv`; for `gles2`, `<output>.vert` and `<output>.frag` (its extension replaced), or with `single-file` the one file, `<section>.glsl` by default |
+| `format` | `spirv` (default), for Vulkan, or `gles2`: [OpenGL ES 2](gles2.md) |
 | `target` | `fragment` (default), `compute` or `graphics` |
-| `content`, `content-top-down` | `layer()` reads the content image (`texture0` in OpenGL ES 2) |
+| `content`, `content-top-down` | `layer()` reads the content image |
 | `textures-top-down` | the `Texture` parameters' images are stored top-down; y-up by default |
 | `arguments` | the shader arguments, `["gain:float", "tint:float4"]` |
+| `single-file`, `position-attribute`, `uv-varying`, `position-matrices`, … | `gles2`: how the stages are written out, and the names they declare; see [OpenGL ES 2 options](gles2.md#options) |
 
 Outside the sections, `site-packages` names where imported shader libraries
 are installed, as in `pyshader.toml`, and `packages` lists the wheel's
@@ -106,5 +108,6 @@ uv run scripts/build_wasm.py --only swift   # -> src/pyshader_builder/pyshader.w
 ```
 
 [Examples/kivy_shaders](https://github.com/NucleantUI/PyShader/tree/main/Examples/kivy_shaders)
-is a Kivy app built this way, with a gallery of a fragment shader, a compute
-shader, and an effect that reads its image through `layer()`.
+is a [Kivy](gles2.md#kivy) app built this way, with a gallery of a fragment
+shader, a compute shader, and an effect that reads its image through
+`layer()`.

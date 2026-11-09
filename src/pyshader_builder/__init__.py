@@ -8,9 +8,9 @@ In the project's ``pyproject.toml``::
 
     [tool.pyshader.glow]
     source = "src/myapp/shaders/glow.py"
-    output = "src/myapp/shaders/glow.glsl"
+    output = "src/myapp/shaders/glow"
     target = "compute"
-    format = "gles2"          # OpenGL ES 2, as Kivy draws; "spirv" (default) for Vulkan
+    format = "gles2"          # OpenGL ES 2: glow.vert and glow.frag; "spirv" (default) for Vulkan
 
 The shaders can also be listed in a ``pyshader.toml`` at the project's root,
 the file the SwiftPM plugins read, with the same keys. Each one is compiled
@@ -102,7 +102,7 @@ def build_sdist(sdist_directory, config_settings=None) -> str:
     root = Path.cwd()
     project, config = _load(root)
     # The compiled shaders are build products: the sdist carries their sources.
-    outputs = {(root / s.output).resolve() for s in config.sections} if config else set()
+    outputs = {(root / o).resolve() for s in config.sections for o in s.outputs()} if config else set()
     return _dist.write_sdist(Path(sdist_directory), project, outputs)
 
 
@@ -121,13 +121,14 @@ def compile_shaders(root: Path, config: _config.Config) -> dict[Path, bytes]:
         text = source.read_text(encoding="utf-8")
         modules = _modules.collect(source, site)
         try:
-            data = compiler.compile(text, section.options(), modules)
+            data, vertex = compiler.compile(text, section.options(), modules)
         except _compiler.CompileError as error:
             raise ShaderBuildError(_describe(error, section, config, text)) from None
-        path = (root / section.output).resolve()
-        out[path] = data
+        outputs = section.outputs()
+        for output, stage in zip(outputs, (vertex, data) if len(outputs) == 2 else (data,)):
+            out[(root / output).resolve()] = stage
         kind = "OpenGL ES 2" if section.format == "gles2" else "SPIR-V"
-        print(f"pyshader: [{section.name}] {section.source} -> {section.output} ({kind})", file=sys.stderr)
+        print(f"pyshader: [{section.name}] {section.source} -> {', '.join(outputs)} ({kind})", file=sys.stderr)
     return out
 
 

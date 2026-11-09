@@ -9,18 +9,13 @@
 import PySwiftAST
 
 extension ShaderTarget {
-    /// Where the first inferred texture is bound: NucleantUI's layout has the
-    /// output at 0, the uniforms at 1, the content at 2 and the input or
-    /// arguments at 3, and binds the textures from 4 in order.
-    static let firstTextureBinding = 4
-
     /// The target with its `textures` taken from the module's entry points,
     /// when the interface lists none: each parameter annotated `Texture`, in
-    /// the order the entry points declare them, gets the next binding from
-    /// `firstTextureBinding`. For a vertex + fragment pair it is one set for
+    /// the order the entry points declare them, gets the next binding from the
+    /// interface's `firstTextureBinding`. For a vertex + fragment pair it is one set for
     /// both stages, in the order the names first appear, the vertex stage
     /// first. An interface that lists its own textures, for a host with
-    /// another layout, is kept as it is, and so is a fragment target, which
+    /// its own bindings, is kept as it is, and so is a fragment target, which
     /// has no textures. They are read top-down when the interface's
     /// `texturesAreTopDown` says so, y-up otherwise.
     func inferringTextures(from module: Module) -> ShaderTarget {
@@ -29,16 +24,16 @@ extension ShaderTarget {
             return self
         case .computeImage(var i):
             guard i.textures.isEmpty else { return self }
-            i.textures = Self.textures(of: [i.entryPoint], in: module, isTopDown: i.texturesAreTopDown)
+            i.textures = Self.textures(of: [i.entryPoint], in: module, first: i.firstTextureBinding, isTopDown: i.texturesAreTopDown)
             return .computeImage(i)
         case .graphics(var i):
             guard i.textures.isEmpty else { return self }
-            i.textures = Self.textures(of: [i.vertexEntryPoint, i.fragmentEntryPoint], in: module, isTopDown: i.texturesAreTopDown)
+            i.textures = Self.textures(of: [i.vertexEntryPoint, i.fragmentEntryPoint], in: module, first: i.firstTextureBinding, isTopDown: i.texturesAreTopDown)
             return .graphics(i)
         }
     }
 
-    private static func textures(of entryPoints: [String], in module: Module, isTopDown: Bool) -> [ShaderTexture] {
+    private static func textures(of entryPoints: [String], in module: Module, first: Int, isTopDown: Bool) -> [ShaderTexture] {
         var defs: [String: FunctionDef] = [:]
         var classes: Swift.Set<String> = []
         for stmt in module.body {
@@ -56,7 +51,7 @@ extension ShaderTarget {
                 names.append(arg.arg)
             }
         }
-        return names.enumerated().map { ShaderTexture(name: $1, binding: firstTextureBinding + $0, isTopDown: isTopDown) }
+        return names.enumerated().map { ShaderTexture(name: $1, binding: first + $0, isTopDown: isTopDown) }
     }
 
     /// `Texture` or `pyshader.Texture`, as `ShaderProgram.resolveType` reads

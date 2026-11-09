@@ -20,25 +20,53 @@ build-backend = "pyshader_builder"
 # This repository's PyShader, which carries the backend and its compiler.
 pyshader = { path = "../..", editable = true }
 
-# One table per shader. `format = "gles2"` is GLSL ES 1.00 in a Kivy `.glsl`
-# file, loaded with `Shader.source`; each output sits in the package, so the
-# wheel carries it.
+# One table per shader. `format = "gles2"` is GLSL ES 1.00; each output sits
+# in the package, so the wheel carries it. The other keys fit the stages to
+# the program Kivy links them into:
+#
+#   single-file = true          both stages in one `.glsl`, what `Shader.source` loads
+#   position-attribute,         the vertex attributes Kivy's vertex format has
+#   texcoord-attribute
+#   position-matrices           Kivy's projection and modelview, in that order
+#   uv-varying, color-varying   the varyings Kivy's own shaders pass
+#   color-uniform,              the color Kivy sets from a `Color` instruction,
+#   opacity-uniform             and the widget's opacity
+#   content-sampler             the texture Kivy binds, `layer()`'s image
 
 [tool.pyshader.plasma]
 source = "src/kivy_shaders/shaders/plasma.py"
 output = "src/kivy_shaders/shaders/plasma.glsl"
-format = "gles2"                 # fragment target: Kivy's `tex_coord0` / `frag_color`
+format = "gles2"                 # fragment target: `uv` and `color` from the vertex stage
+single-file = true
+position-attribute = "vPosition"
+texcoord-attribute = "vTexCoords0"
+position-matrices = ["projection_mat", "modelview_mat"]
+uv-varying = "tex_coord0"
+color-varying = "frag_color"
+color-uniform = "color"
+opacity-uniform = "opacity"
 
 [tool.pyshader.aurora]
 source = "src/kivy_shaders/shaders/aurora.py"
 output = "src/kivy_shaders/shaders/aurora.glsl"
 target = "compute"               # one fragment per pixel; `time`, `resolution`, `mouse` uniforms
 format = "gles2"
+single-file = true
+position-attribute = "vPosition"
+texcoord-attribute = "vTexCoords0"
+position-matrices = ["projection_mat", "modelview_mat"]
+uv-varying = "tex_coord0"
 
 [tool.pyshader.ripple]
 source = "src/kivy_shaders/shaders/ripple.py"
 output = "src/kivy_shaders/shaders/ripple.glsl"
 target = "compute"
-content = true                   # layer() reads `texture0`, the image under the shader
+content = true                   # layer() reads the image under the shader
 arguments = ["strength:float"]   # a `strength` uniform the app sets
 format = "gles2"
+single-file = true
+position-attribute = "vPosition"
+texcoord-attribute = "vTexCoords0"
+position-matrices = ["projection_mat", "modelview_mat"]
+uv-varying = "tex_coord0"
+content-sampler = "texture0"

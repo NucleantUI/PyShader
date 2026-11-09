@@ -17,7 +17,14 @@
 //      textures-top-down = true             # optional: the `Texture` parameters, top-down
 //      arguments = ["gain:float", "tint:float4"]
 //      optimize = ["-O"]                    # optional: spirv-opt passes
-//      format = "gles2"                     # optional: spirv | gles2 (OpenGL ES 2, a Kivy .glsl)
+//      format = "gles2"                     # optional: spirv | gles2 (OpenGL ES 2)
+//
+//  With `format = "gles2"`, `output` is where the `.vert` and `.frag` files
+//  go (its extension replaced), or with `single-file = true` the one file
+//  holding both; `position-attribute`, `texcoord-attribute`,
+//  `color-attribute`, `color-uniform`, `opacity-uniform`,
+//  `position-matrices` (an array), `uv-varying`, `color-varying` and
+//  `content-sampler` are pyshaderc's flags of the same names.
 //
 //  Paths are relative to the folder the file is in. Only the TOML this needs
 //  is read: tables, and keys holding strings, booleans or arrays of strings.
@@ -42,12 +49,32 @@ struct PyShaderConfig: Equatable {
         /// The content image stored top-down, as NucleantUI hands a module
         /// every image; implies `content`.
         var contentIsTopDown = false
-        /// `spirv`, or `gles2`: GLSL ES 1.00 for OpenGL ES 2, as one Kivy `.glsl` file.
+        /// `spirv`, or `gles2`: GLSL ES 1.00 for OpenGL ES 2.
         var format = "spirv"
         /// The textures, every `Texture` parameter of the entry points, stored
         /// top-down; y-up by default.
         var texturesAreTopDown = false
+        /// gles2: both stages in one file rather than a `.vert` and a `.frag`.
+        var singleFile = false
+        /// gles2: the names and vertex-stage options given, as pyshaderc's flags.
+        var gles2Arguments: [String] = []
+
+        /// The files the section writes: `output`, or for gles2 without
+        /// `singleFile` the `.vert` and `.frag` beside it, its extension replaced.
+        var outputs: [String] {
+            guard format == "gles2", !singleFile else { return [output] }
+            let stem = (output as NSString).deletingPathExtension
+            return [stem + ".vert", stem + ".frag"]
+        }
     }
+
+    /// The gles2 keys holding one name, each pyshaderc's flag of the same name.
+    static let gles2NameKeys = [
+        "position-attribute", "texcoord-attribute", "color-attribute", "color-uniform",
+        "opacity-uniform", "uv-varying", "color-varying", "content-sampler",
+    ]
+    /// Every gles2-only key.
+    static let gles2Keys = gles2NameKeys + ["position-matrices", "single-file"]
 
     /// The file's name, at the root of the package.
     static let fileName = "pyshader.toml"
@@ -163,7 +190,7 @@ struct PyShaderConfig: Equatable {
         var sections: [Section] = []
         for table in tables {
             let owner = "[\(table.name)] "
-            for (key, (_, line)) in table.keys where !["source", "output", "target", "content", "content-top-down", "textures-top-down", "arguments", "optimize", "format"].contains(key) {
+            for (key, (_, line)) in table.keys where !(["source", "output", "target", "content", "content-top-down", "textures-top-down", "arguments", "optimize", "format"] + Self.gles2Keys).contains(key) {
                 throw ParseError(message: "\(owner)unknown key `\(key)`", line: line)
             }
             guard let source = try string(table.keys, "source", in: owner) else {
@@ -211,13 +238,30 @@ struct PyShaderConfig: Equatable {
             if format == "gles2", !optimize.isEmpty {
                 throw ParseError(message: "\(owner)`optimize` runs spirv-opt, which does not apply to `format = \"gles2\"`", line: table.keys["optimize"]!.1)
             }
-            let output = try string(table.keys, "output", in: owner) ?? "\(table.name).\(format == "gles2" ? "glsl" : "spv")"
-            sections.append(Section(name: table.name, source: source, output: output, target: target, content: content || contentIsTopDown, arguments: arguments, optimize: optimize, contentIsTopDown: contentIsTopDown, format: format, texturesAreTopDown: texturesAreTopDown))
+            if format != "gles2", let key = Self.gles2Keys.first(where: { table.keys[$0] != nil }) {
+                throw ParseError(message: "\(owner)`\(key)` applies to `format = \"gles2\"`", line: table.keys[key]!.1)
+            }
+            var singleFile = false
+            if let (value, line) = table.keys["single-file"] {
+                guard case .bool(let b) = value else { throw ParseError(message: "\(owner)`single-file` must be `true` or `false`", line: line) }
+                singleFile = b
+            }
+            var gles2Arguments: [String] = []
+            for key in Self.gles2NameKeys {
+                if let name = try string(table.keys, key, in: owner) { gles2Arguments += ["--" + key, name] }
+            }
+            if let (value, line) = table.keys["position-matrices"] {
+                guard case .strings(let matrices) = value else { throw ParseError(message: "\(owner)`position-matrices` must be an array of uniform names", line: line) }
+                for matrix in matrices { gles2Arguments += ["--position-matrix", matrix] }
+            }
+            let defaultOutput = format == "spirv" ? "\(table.name).spv" : singleFile ? "\(table.name).glsl" : table.name
+            let output = try string(table.keys, "output", in: owner) ?? defaultOutput
+            sections.append(Section(name: table.name, source: source, output: output, target: target, content: content || contentIsTopDown, arguments: arguments, optimize: optimize, contentIsTopDown: contentIsTopDown, format: format, texturesAreTopDown: texturesAreTopDown, singleFile: singleFile, gles2Arguments: gles2Arguments))
         }
         guard !sections.isEmpty else {
             throw ParseError(message: "no sections: add a `[name]` table with a `source` for each shader", line: 1)
         }
-        let outputs = sections.map(\.output)
+        let outputs = sections.flatMap(\.outputs)
         if let duplicate = outputs.first(where: { o in outputs.filter { $0 == o }.count > 1 }) {
             throw ParseError(message: "two sections write `\(duplicate)`", line: 1)
         }
@@ -232,6 +276,8 @@ struct PyShaderConfig: Equatable {
         for argument in section.arguments { args += ["--arg", argument] }
         for flag in section.optimize { args += ["--optimize", flag] }
         if section.format != "spirv" { args += ["--format", section.format] }
+        if section.singleFile { args.append("--single-file") }
+        args += section.gles2Arguments
         if let sitePackages { args += ["--site-packages", root.appendingPathComponent(sitePackages).path] }
         return args
     }

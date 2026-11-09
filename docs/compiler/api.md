@@ -105,6 +105,7 @@ bindings, `inputs`) are public for other pipelines. See
 
 ```sh
 swift run pyshaderc <input.py> [-o output] [--target fragment|compute|graphics] [--format spirv|gles2] [--content] [--content-top-down] [--textures-top-down] [--arg name:kind]... [--site-packages dir] [--optimize flag]...
+    gles2: [--single-file] [--position-attribute name] [--texcoord-attribute name] [--color-attribute name] [--color-uniform name] [--opacity-uniform name] [--position-matrix name]... [--uv-varying name] [--color-varying name] [--content-sampler name]
 ```
 
 Writes `<input>.spv` next to the input unless `-o` is given and prints the
@@ -116,7 +117,7 @@ above the input. The module carries the input's file name and source lines (see
 [SPIRV-Tools](https://github.com/NucleantUI/SpirvTools) optimizer pass over the
 module, as `spirv-opt` spells it (`-O`, `-Os`, `--strip-debug`, …), in the order
 given, and validates the result; SPIRV-Tools is linked in on macOS only so far,
-elsewhere `--optimize` fails with an error that says so. Every `Texture` parameter is a [texture](../targets/compute.md#textures), bound from 4 in the order declared; `--textures-top-down` reads them top-down. `--format gles2` writes [OpenGL ES 2](gles2.md) instead: a Kivy `.glsl` file, `<input>.glsl` by default. `--optimize` does not apply to it. Under an error, the line of code it points at is printed too. Exit status 1 with the error on stderr when compilation fails,
+elsewhere `--optimize` fails with an error that says so. Every `Texture` parameter is a [texture](../targets/compute.md#textures), bound from 4 in the order declared; `--textures-top-down` reads them top-down. `--format gles2` writes [OpenGL ES 2](gles2.md) instead: `<output>.vert` and `<output>.frag` (by default `<input>.vert` and `<input>.frag`), or with `--single-file` one file holding both, `<input>.glsl` by default; the other gles2 flags are its [options](gles2.md#options). `--optimize` does not apply to it. Under an error, the line of code it points at is printed too. Exit status 1 with the error on stderr when compilation fails,
 2 for a usage error.
 
 ```sh

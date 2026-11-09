@@ -258,6 +258,14 @@ struct TextureTests {
         #expect(topDown.words != upright.spirv)
     }
 
+    @Test("firstTextureBinding is where the inferred bindings start")
+    func inferredFirstBinding() throws {
+        let words = try compileValid(Self.mix, target: .computeImage(ComputeImageInterface(
+            argumentsBinding: 3, arguments: [("blend", .float)], firstTextureBinding: 6
+        )))
+        #expect(bindings(words) == [0, 1, 3, 6, 7])
+    }
+
     @Test("an interface that lists its textures keeps its own bindings")
     func listedKept() throws {
         let words = try compileValid("""

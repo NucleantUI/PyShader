@@ -42,8 +42,11 @@ upright; with `content` alone it reads that view upside down.
 Likewise `textures-top-down` for the [textures](../targets/compute.md#textures)
 it binds: every `Texture` parameter is one, bound from 4 in the order the
 source declares them, and read y-up unless `textures-top-down` is set.
-`format = "gles2"` writes [OpenGL ES 2](gles2.md) instead of SPIR-V: a Kivy
-`.glsl` file, `<section>.glsl` by default; `optimize` does not apply to it.
+`format = "gles2"` writes [OpenGL ES 2](gles2.md) instead of SPIR-V: a
+`.vert` and a `.frag` named after `output`, or with `single-file = true` one
+file holding both, `<section>.glsl` by default; its other
+[options](gles2.md#options) name what the stages declare. `optimize` does not
+apply to it.
 The same table, in a Python project, is read by the
 [Python build backend](build-backend.md).
 

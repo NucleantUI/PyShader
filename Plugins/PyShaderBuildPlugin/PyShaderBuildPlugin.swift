@@ -6,7 +6,8 @@
 //  `pyshader.toml` (to SPIR-V, or to OpenGL ES 2 with `format = "gles2"`) as
 //  part of the build, with `pyshaderc`. Each
 //  output lands in the plugin's work folder under the file name of the
-//  section's `output`, and is rebuilt when the source, a module it may
+//  section's `output` (for gles2 without `single-file`, a `.vert` and a
+//  `.frag` named after it), and is rebuilt when the source, a module it may
 //  import, or the config changes.
 //
 
@@ -31,7 +32,7 @@ struct PyShaderBuildPlugin: BuildToolPlugin {
                 executable: compiler,
                 arguments: config.compilerArguments(for: section, root: root, output: output),
                 inputFiles: config.inputFiles(for: section, root: root, configFile: configFile),
-                outputFiles: [output]
+                outputFiles: section.outputs.map { context.pluginWorkDirectoryURL.appendingPathComponent(($0 as NSString).lastPathComponent) }
             )
         }
     }

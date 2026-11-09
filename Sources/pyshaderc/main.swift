@@ -6,6 +6,10 @@
 //                   [--format spirv|gles2]
 //                   [--content] [--content-top-down] [--textures-top-down] [--arg name:float|float2|float3|float4|floatArray|float2Array|float3Array|float4Array]...
 //                   [--site-packages dir] [--optimize flag]...
+//                   [--single-file] [--position-attribute name] [--texcoord-attribute name]
+//                   [--color-attribute name] [--color-uniform name] [--opacity-uniform name]
+//                   [--position-matrix name]... [--uv-varying name] [--color-varying name]
+//                   [--content-sampler name]
 //
 //  `--target compute` builds for NucleantUI's `Shader` view (storage image),
 //  `--target graphics` for its `VertexShader` view (vertex + fragment, one module);
@@ -14,8 +18,13 @@
 //  hand a module every image; `--arg` a ShaderArgument. Every `Texture`
 //  parameter of the entry point(s) is a texture, bound from 4 in the order
 //  they are declared and read y-up; `--textures-top-down` reads them top-down.
-//  `--format gles2` writes GLSL ES 1.00 for OpenGL ES 2 instead, as one Kivy
-//  `.glsl` file holding both stages (default output `<input>.glsl`).
+//  `--format gles2` writes GLSL ES 1.00 for OpenGL ES 2 instead: the stages as
+//  `<output>.vert` and `<output>.frag` (the output's extension replaced; by
+//  default `<input>.vert` and `<input>.frag`), or with `--single-file` both in
+//  one file, each after a `---VERTEX SHADER---` / `---FRAGMENT SHADER---` line
+//  (default `<input>.glsl`). The other gles2 options name what the stages
+//  declare and how the vertex stage of a fragment or compute target places
+//  its quad; see `GLES2Options`.
 //  Imports are found next to the input, then in `--site-packages` — by default
 //  the site-packages of the nearest uv `.venv` above the input.
 //  `--optimize` runs a spirv-opt pass over the module (`-O`, `-Os`,
@@ -29,6 +38,7 @@ import SpirvTools
 func usage() -> Never {
     FileHandle.standardError.write("""
     usage: pyshaderc <input.py> [-o output] [--target fragment|compute|graphics] [--format spirv|gles2] [--content] [--content-top-down] [--textures-top-down] [--arg name:kind]... [--site-packages dir] [--optimize flag]...
+           gles2: [--single-file] [--position-attribute name] [--texcoord-attribute name] [--color-attribute name] [--color-uniform name] [--opacity-uniform name] [--position-matrix name]... [--uv-varying name] [--color-varying name] [--content-sampler name]
 
     """.data(using: .utf8)!)
     exit(2)
@@ -45,6 +55,15 @@ var arguments: [(name: String, kind: ShaderArgumentKind)] = []
 var inputs: [String] = []
 var sitePackages: String?
 var optimize: [String] = []
+var gles2 = GLES2Options()
+var singleFile = false
+/// The gles2 options given, which `--format spirv` does not take.
+var gles2Flags: [String] = []
+
+@MainActor func value() -> String {
+    guard !args.isEmpty else { usage() }
+    return args.removeFirst()
+}
 
 while !args.isEmpty {
     let a = args.removeFirst()
@@ -72,6 +91,18 @@ while !args.isEmpty {
     case "--optimize":
         guard !args.isEmpty else { usage() }
         optimize.append(args.removeFirst())
+    case "--single-file":
+        singleFile = true
+        gles2Flags.append(a)
+    case "--position-attribute": gles2.positionAttribute = value(); gles2Flags.append(a)
+    case "--texcoord-attribute": gles2.texcoordAttribute = value(); gles2Flags.append(a)
+    case "--color-attribute": gles2.colorAttribute = value(); gles2Flags.append(a)
+    case "--color-uniform": gles2.colorUniform = value(); gles2Flags.append(a)
+    case "--opacity-uniform": gles2.opacityUniform = value(); gles2Flags.append(a)
+    case "--position-matrix": gles2.positionMatrices.append(value()); gles2Flags.append(a)
+    case "--uv-varying": gles2.uvVarying = value(); gles2Flags.append(a)
+    case "--color-varying": gles2.colorVarying = value(); gles2Flags.append(a)
+    case "--content-sampler": gles2.contentSampler = value(); gles2Flags.append(a)
     case "--arg":
         guard !args.isEmpty else { usage() }
         let spec = args.removeFirst().split(separator: ":", maxSplits: 1).map(String.init)
@@ -121,11 +152,22 @@ do {
         guard optimize.isEmpty else {
             throw SpirvDiagnostic(message: "--optimize runs spirv-opt, which only applies to --format spirv")
         }
-        let shader = try PyShader.compileGLES2(contentsOf: URL(fileURLWithPath: input), target: target, modules: sitePackages)
-        let outPath = output ?? base + ".glsl"
-        try Data(shader.kivySource.utf8).write(to: URL(fileURLWithPath: outPath))
-        print("\(outPath): OpenGL ES 2, \(shader.kivySource.split(separator: "\n").count) lines")
+        let shader = try PyShader.compileGLES2(contentsOf: URL(fileURLWithPath: input), target: target, modules: sitePackages, options: gles2)
+        if singleFile {
+            let outPath = output ?? base + ".glsl"
+            try Data(shader.singleFile.utf8).write(to: URL(fileURLWithPath: outPath))
+            print("\(outPath): OpenGL ES 2, \(shader.singleFile.split(separator: "\n").count) lines")
+        } else {
+            let stem = output.map { ($0 as NSString).deletingPathExtension } ?? base
+            for (path, text) in [(stem + ".vert", shader.vertex), (stem + ".frag", shader.fragment)] {
+                try Data(text.utf8).write(to: URL(fileURLWithPath: path))
+                print("\(path): OpenGL ES 2, \(text.split(separator: "\n").count) lines")
+            }
+        }
     } else {
+        if let flag = gles2Flags.first {
+            throw SpirvDiagnostic(message: "\(flag) applies to --format gles2")
+        }
         let shader = try PyShader.compile(contentsOf: URL(fileURLWithPath: input), target: target, modules: sitePackages)
         var words = shader.spirv
         if !optimize.isEmpty {

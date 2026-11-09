@@ -12,7 +12,11 @@
 //    content=1                          (compute/graphics: the shader may call layer())
 //    content-top-down=1                 (as content=1, the image stored top-down)
 //    textures-top-down=1                (the `Texture` parameters' images stored top-down; y-up by default)
-//    format=spirv|gles2                 (default spirv; gles2: OpenGL ES 2, a Kivy .glsl file)
+//    format=spirv|gles2                 (default spirv; gles2: OpenGL ES 2)
+//    single-file=1                      (gles2: both stages in one file)
+//    position-attribute=, texcoord-attribute=, color-attribute=, color-uniform=,
+//    opacity-uniform=, position-matrix= (repeatable), uv-varying=, color-varying=,
+//    content-sampler=                   (gles2: the names the stages declare; see GLES2Options)
 //    file=name.py                       (the source file's name, for line information and headers)
 //    arg=name:float|float2|float3|float4|floatArray|float2Array|float3Array|float4Array
 //                                       (repeatable, in buffer order)
@@ -21,9 +25,11 @@
 //  pyshader_add_module per module (dotted name and source), and stay until
 //  pyshader_clear_modules.
 //
-//  On success the result is the SPIR-V module as bytes (for format=gles2 the
-//  Kivy .glsl file's UTF-8 text), and the entry point
-//  names are readable through pyshader_entry_point / pyshader_vertex_entry_point.
+//  On success the result is the SPIR-V module as bytes. For format=gles2 it is
+//  the fragment stage's UTF-8 text, the vertex stage's readable through
+//  pyshader_vertex_stage; with single-file=1 it is the one file holding both.
+//  The entry point names are readable through pyshader_entry_point /
+//  pyshader_vertex_entry_point.
 //  On failure it is the error text.
 //
 //  pyshader_decompile goes the other way: SPIR-V bytes in, PyShader source
@@ -44,6 +50,7 @@ private nonisolated(unsafe) var resultBuffer: UnsafeMutableRawPointer?
 private nonisolated(unsafe) var resultCount: Int32 = 0
 private nonisolated(unsafe) var entryPointBytes: [UInt8] = []
 private nonisolated(unsafe) var vertexEntryPointBytes: [UInt8] = []
+private nonisolated(unsafe) var vertexStageBytes: [UInt8] = []
 private nonisolated(unsafe) var decompileWarningBytes: [UInt8] = []
 /// The modules `pyshader_compile` can import, by dotted name.
 private nonisolated(unsafe) var moduleSources: [String: String] = [:]
@@ -68,10 +75,13 @@ private func string(from pointer: UnsafeRawPointer?, length: Int32) -> String {
     return String(decoding: UnsafeRawBufferPointer(start: pointer, count: Int(length)), as: UTF8.self)
 }
 
-private func target(from options: String) throws -> (target: ShaderTarget, format: String, file: String?) {
+private func target(from options: String) throws -> (target: ShaderTarget, format: String, file: String?, gles2: GLES2Options, singleFile: Bool) {
     var name = "compute"
     var format = "spirv"
     var file: String?
+    var gles2 = GLES2Options()
+    var singleFile = false
+    var gles2Keys: [String] = []
     var samplesContent = false
     var contentIsTopDown = false
     var texturesAreTopDown = false
@@ -91,6 +101,18 @@ private func target(from options: String) throws -> (target: ShaderTarget, forma
             texturesAreTopDown = parts[1] == "1" || parts[1] == "true"
         case "file":
             file = parts[1]
+        case "single-file":
+            singleFile = parts[1] == "1" || parts[1] == "true"
+            gles2Keys.append(parts[0])
+        case "position-attribute": gles2.positionAttribute = parts[1]; gles2Keys.append(parts[0])
+        case "texcoord-attribute": gles2.texcoordAttribute = parts[1]; gles2Keys.append(parts[0])
+        case "color-attribute": gles2.colorAttribute = parts[1]; gles2Keys.append(parts[0])
+        case "color-uniform": gles2.colorUniform = parts[1]; gles2Keys.append(parts[0])
+        case "opacity-uniform": gles2.opacityUniform = parts[1]; gles2Keys.append(parts[0])
+        case "position-matrix": gles2.positionMatrices.append(parts[1]); gles2Keys.append(parts[0])
+        case "uv-varying": gles2.uvVarying = parts[1]; gles2Keys.append(parts[0])
+        case "color-varying": gles2.colorVarying = parts[1]; gles2Keys.append(parts[0])
+        case "content-sampler": gles2.contentSampler = parts[1]; gles2Keys.append(parts[0])
         case "format":
             guard parts[1] == "spirv" || parts[1] == "gles2" else { throw PyShaderError("unknown format `\(parts[1])`") }
             format = parts[1]
@@ -114,10 +136,13 @@ private func target(from options: String) throws -> (target: ShaderTarget, forma
             throw PyShaderError("unknown option `\(parts[0])`")
         }
     }
+    if format != "gles2", let key = gles2Keys.first {
+        throw PyShaderError("option `\(key)` applies to format=gles2")
+    }
     switch name {
-    case "compute": return (.computeImage(.nucleantUI(samplesContent: samplesContent, contentIsTopDown: contentIsTopDown, arguments: arguments, texturesAreTopDown: texturesAreTopDown)), format, file)
-    case "fragment": return (.nucleant, format, file)
-    case "graphics": return (.graphics(.nucleantUI(samplesContent: samplesContent, contentIsTopDown: contentIsTopDown, arguments: arguments, texturesAreTopDown: texturesAreTopDown)), format, file)
+    case "compute": return (.computeImage(.nucleantUI(samplesContent: samplesContent, contentIsTopDown: contentIsTopDown, arguments: arguments, texturesAreTopDown: texturesAreTopDown)), format, file, gles2, singleFile)
+    case "fragment": return (.nucleant, format, file, gles2, singleFile)
+    case "graphics": return (.graphics(.nucleantUI(samplesContent: samplesContent, contentIsTopDown: contentIsTopDown, arguments: arguments, texturesAreTopDown: texturesAreTopDown)), format, file, gles2, singleFile)
     default: throw PyShaderError("unknown target `\(name)`")
     }
 }
@@ -167,12 +192,18 @@ public func pyshader_compile(
 ) -> Int32 {
     do {
         let source = string(from: sourcePointer, length: sourceLength)
-        let (shaderTarget, format, file) = try target(from: string(from: optionsPointer, length: optionsLength))
+        let (shaderTarget, format, file, gles2, singleFile) = try target(from: string(from: optionsPointer, length: optionsLength))
+        vertexStageBytes = []
         if format == "gles2" {
-            let shader = try PyShader.compileGLES2(source, target: shaderTarget, sourceFile: file, modules: moduleSources)
+            let shader = try PyShader.compileGLES2(source, target: shaderTarget, sourceFile: file, modules: moduleSources, options: gles2)
             entryPointBytes = Array("main".utf8)
             vertexEntryPointBytes = Array("main".utf8)
-            storeResult(Array(shader.kivySource.utf8))
+            if singleFile {
+                storeResult(Array(shader.singleFile.utf8))
+            } else {
+                vertexStageBytes = Array(shader.vertex.utf8)
+                storeResult(Array(shader.fragment.utf8))
+            }
             return 0
         }
         let shader = try PyShader.compile(source, target: shaderTarget, sourceFile: file, modules: moduleSources)
@@ -219,6 +250,15 @@ public func pyshader_entry_point(_ pointer: UnsafeMutableRawPointer?, _ capacity
 @_cdecl("pyshader_vertex_entry_point")
 public func pyshader_vertex_entry_point(_ pointer: UnsafeMutableRawPointer?, _ capacity: Int32) -> Int32 {
     copyOut(vertexEntryPointBytes, to: pointer, capacity: capacity)
+}
+
+/// The vertex stage of the last successful `format=gles2` compile without
+/// `single-file`, copied into `pointer` (at most `capacity` bytes); returns its
+/// whole length, so a call with capacity 0 asks how much room it needs.
+@_expose(wasm, "pyshader_vertex_stage")
+@_cdecl("pyshader_vertex_stage")
+public func pyshader_vertex_stage(_ pointer: UnsafeMutableRawPointer?, _ capacity: Int32) -> Int32 {
+    copyOut(vertexStageBytes, to: pointer, capacity: capacity)
 }
 
 private func decompileOptions(from options: String) throws -> (DecompileOptions, FragmentInterface) {

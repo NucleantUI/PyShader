@@ -111,6 +111,9 @@ public struct GraphicsInterface: Sendable {
     /// `textures` lists none, are stored top-down, as `contentIsTopDown` says
     /// for the content image. A listed `ShaderTexture` says it itself.
     public var texturesAreTopDown: Bool
+    /// Where the first texture taken from the `Texture` parameters is bound;
+    /// the others follow it, in the order the parameters are declared.
+    public var firstTextureBinding: Int
     /// Parameter name -> source. Names that are also arguments, or varyings, are an error.
     public var inputs: [String: Input]
 
@@ -126,6 +129,7 @@ public struct GraphicsInterface: Sendable {
         inputBinding: Int = 3,
         textures: [ShaderTexture] = [],
         texturesAreTopDown: Bool = false,
+        firstTextureBinding: Int = 4,
         inputs: [String: Input] = GraphicsInterface.defaultInputs
     ) {
         self.vertexEntryPoint = vertexEntryPoint
@@ -139,6 +143,7 @@ public struct GraphicsInterface: Sendable {
         self.inputBinding = inputBinding
         self.textures = textures
         self.texturesAreTopDown = texturesAreTopDown
+        self.firstTextureBinding = firstTextureBinding
         self.inputs = inputs
     }
 

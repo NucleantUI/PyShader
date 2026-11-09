@@ -9,7 +9,7 @@
 
 enum GLES2Names {
     /// Keywords and reserved words of GLSL ES 1.00, and the desktop GLSL
-    /// keywords a desktop driver (Kivy on a laptop) would also refuse.
+    /// keywords a desktop driver would also refuse.
     static let reserved: Swift.Set<String> = [
         // GLSL ES 1.00 keywords
         "attribute", "const", "uniform", "varying", "break", "continue", "do", "for", "while",

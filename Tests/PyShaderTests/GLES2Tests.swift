@@ -88,23 +88,100 @@ struct GLES2Tests {
         expectESError(source, example.2, line: example.1)
     }
 
-    // MARK: Kivy's names
+    // MARK: The names the stages declare
 
-    @Test("a fragment target reads Kivy's varyings and writes gl_FragColor")
+    @Test("a fragment target reads the generated vertex stage's varyings and writes gl_FragColor")
     func fragmentInterface() throws {
         let shader = try compileES("""
             def main(uv: float2, color: float4, frag_coord: float4, time: float) -> float4:
                 return color * float4(uv, frag_coord.x * 0.0 + sin(time), 1.0)
             """)
-        #expect(shader.fragment.contains("varying vec2 tex_coord0;"))
-        #expect(shader.fragment.contains("varying vec4 frag_color;"))
+        #expect(shader.fragment.contains("varying vec2 v_uv;"))
+        #expect(shader.fragment.contains("varying vec4 v_color;"))
         #expect(shader.fragment.contains("uniform float time;"))
-        #expect(shader.fragment.contains("gl_FragColor = py_main(tex_coord0, frag_color, gl_FragCoord, time);"))
-        // Kivy's own default vertex stage, written out.
-        #expect(shader.vertex.contains("attribute vec2 vPosition;"))
-        #expect(shader.vertex.contains("tex_coord0 = vTexCoords0;"))
-        #expect(shader.kivySource.hasPrefix("---VERTEX SHADER---\n"))
-        #expect(shader.kivySource.contains("\n---FRAGMENT SHADER---\n"))
+        #expect(shader.fragment.contains("gl_FragColor = py_main(v_uv, v_color, gl_FragCoord, time);"))
+        // A quad already in clip space, its color from an attribute.
+        #expect(shader.vertex.contains("attribute vec2 a_position;"))
+        #expect(shader.vertex.contains("attribute vec4 a_color;"))
+        #expect(shader.vertex.contains("v_color = a_color;"))
+        #expect(shader.vertex.contains("v_uv = a_texcoord;"))
+        #expect(shader.vertex.contains("gl_Position = vec4(a_position.xy, 0.0, 1.0);"))
+        #expect(!shader.vertex.contains("uniform"))
+        #expect(shader.singleFile.hasPrefix("---VERTEX SHADER---\n"))
+        #expect(shader.singleFile.contains("\n---FRAGMENT SHADER---\n"))
+    }
+
+    @Test("the vertex stage passes on only the varyings the fragment stage reads")
+    func onlyReadVaryings() throws {
+        let shader = try compileES("""
+            def main(frag_coord: float4) -> float4:
+                return float4(fract(frag_coord.x), 0.0, 0.0, 1.0)
+            """)
+        #expect(!shader.vertex.contains("varying"))
+        #expect(!shader.vertex.contains("a_texcoord"))
+        #expect(!shader.vertex.contains("a_color"))
+        #expect(shader.vertex.contains("gl_Position = vec4(a_position.xy, 0.0, 1.0);"))
+    }
+
+    @Test("every name, the matrices and the color's source are options")
+    func renamed() throws {
+        let options = GLES2Options(
+            positionAttribute: "vPosition", texcoordAttribute: "vTexCoords0",
+            colorUniform: "color", opacityUniform: "opacity",
+            positionMatrices: ["projection_mat", "modelview_mat"],
+            uvVarying: "tex_coord0", colorVarying: "frag_color", contentSampler: "texture0"
+        )
+        let shader = try PyShader.compileGLES2("""
+            def main(uv: float2, color: float4) -> float4:
+                return color * float4(uv, 0.0, 1.0)
+            """, target: .nucleant, options: options)
+        #expect(try glslang(shader) ?? "" == "")
+        for line in ["attribute vec2 vPosition;", "attribute vec2 vTexCoords0;", "uniform mat4 projection_mat;",
+                     "uniform mat4 modelview_mat;", "uniform vec4 color;", "uniform float opacity;",
+                     "frag_color = color * vec4(1.0, 1.0, 1.0, opacity);", "tex_coord0 = vTexCoords0;",
+                     "gl_Position = projection_mat * modelview_mat * vec4(vPosition.xy, 0.0, 1.0);"] {
+            #expect(shader.vertex.contains(line), "\(line)")
+        }
+        #expect(!shader.vertex.contains("attribute vec4"), "the color is the uniform, not an attribute")
+        #expect(shader.fragment.contains("gl_FragColor = py_main(tex_coord0, frag_color);"))
+        let effect = try PyShader.compileGLES2("""
+            def main(uv: float2) -> float4:
+                return layer(uv)
+            """, target: compute, options: options)
+        #expect(effect.fragment.contains("uniform sampler2D texture0;"))
+        #expect(effect.fragment.contains("texture2D(texture0, "))
+    }
+
+    @Test("a name an option gives must be one GLSL lets a shader declare, and its own")
+    func badNames() {
+        for (options, needle) in [
+            (GLES2Options(uvVarying: "gl_TexCoord"), "`uvVarying` `gl_TexCoord`"),
+            (GLES2Options(contentSampler: "two words"), "`contentSampler` `two words`"),
+            (GLES2Options(colorUniform: "vec4"), "`colorUniform` `vec4`"),
+            (GLES2Options(uvVarying: "v", colorVarying: "v"), "both `v`"),
+        ] {
+            do {
+                _ = try PyShader.compileGLES2("def main(uv: float2) -> float4:\n    return float4(uv, 0.0, 1.0)\n", target: .nucleant, options: options)
+                Issue.record("expected an error containing \(needle)")
+            } catch let error as PyShaderError {
+                #expect(error.message.contains(needle), "got: \(error)")
+            } catch {
+                Issue.record("unexpected error \(error)")
+            }
+        }
+    }
+
+    @Test("a shader's own name that an option takes is renamed")
+    func optionNameTaken() throws {
+        let shader = try compileES("""
+            def v_uv(x: float) -> float:
+                return x * 2.0
+
+            def main(uv: float2) -> float4:
+                return float4(v_uv(uv.x), 0.0, 0.0, 1.0)
+            """)
+        #expect(shader.fragment.contains("varying vec2 v_uv;"))
+        #expect(shader.fragment.contains("float py_v_uv(float x)"))
     }
 
     @Test("a compute target is one fragment per pixel, its inputs uniforms")
@@ -115,13 +192,13 @@ struct GLES2Tests {
                 c = layer(uv) * gain + tint
                 return c + float4(frag_coord, float(pixel.x + frame), time + mouse.x) * 0.0
             """, target: target)
-        for declaration in ["uniform sampler2D texture0;", "uniform vec2 resolution;", "uniform float time;", "uniform int frame;",
-                            "uniform vec2 mouse;", "uniform float gain;", "uniform vec4 tint;", "varying vec2 tex_coord0;"] {
+        for declaration in ["uniform sampler2D u_content;", "uniform vec2 resolution;", "uniform float time;", "uniform int frame;",
+                            "uniform vec2 mouse;", "uniform float gain;", "uniform vec4 tint;", "varying vec2 v_uv;"] {
             #expect(shader.fragment.contains(declaration), "\(declaration)")
         }
         // `content-top-down` reads the texture upright.
         #expect(shader.fragment.contains("1.0 - "))
-        #expect(shader.fragment.contains("= tex_coord0 * resolution;"))
+        #expect(shader.fragment.contains("= v_uv * resolution;"))
     }
 
     @Test("a graphics target writes gl_Position and the varyings")
@@ -148,7 +225,7 @@ struct GLES2Tests {
 
     @Test("Texture parameters are sampler2D uniforms, read y-up unless texturesAreTopDown")
     func transitionTextures() throws {
-        // Kivy's `ShaderTransition`: the screens as `tex_in` and `tex_out`, the progress as `t`.
+        // A transition between two images, `t` its progress.
         let shader = try compileES("""
             def main(uv: float2, t: float, tex_in: Texture, tex_out: Texture) -> float4:
                 return mix(tex_out(uv), tex_in(uv), t)

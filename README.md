@@ -336,9 +336,12 @@ target = "compute"
 
 ### OpenGL ES 2 and Python projects
 
-The same Python compiles to OpenGL ES 2 (GLSL ES 1.00), what Kivy draws with:
+The same Python compiles to OpenGL ES 2 (GLSL ES 1.00):
 `PyShader.compileGLES2(...)`, `pyshaderc --format gles2`, or `format = "gles2"`
-in a section. The result is one Kivy `.glsl` file holding both stages. What
+in a section. The result is a `.vert` and a `.frag`, or with `single-file` one
+file holding both. The names the stages declare (attributes, varyings, the
+content sampler) and the vertex stage's matrices are options, so they link
+into the app's own program; Kivy's settings are in the docs. What
 OpenGL ES 2 cannot express (`while`, unsigned and bitwise integers, indices
 computed at run time…) is an error at its line. See
 [OpenGL ES 2](https://nucleantui.github.io/PyShader/compiler/gles2/).
@@ -356,7 +359,7 @@ build-backend = "pyshader_builder"
 
 [tool.pyshader.glow]
 source = "src/myapp/shaders/glow.py"
-output = "src/myapp/shaders/glow.glsl"
+output = "src/myapp/shaders/glow"      # glow.vert and glow.frag
 target = "compute"
 format = "gles2"
 ```

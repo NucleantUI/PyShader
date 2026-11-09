@@ -52,15 +52,40 @@ struct ConfigTests {
 
     @Test("format = \"gles2\": an OpenGL ES 2 .glsl, by default <section>.glsl")
     func gles2Format() throws {
-        let config = try PyShaderConfig(parsing: "[kivy]\nsource = \"k.py\"\ntarget = \"compute\"\nformat = \"gles2\"\n[vk]\nsource = \"v.py\"\nformat = \"spirv\"\n")
+        let config = try PyShaderConfig(parsing: "[es]\nsource = \"k.py\"\ntarget = \"compute\"\nformat = \"gles2\"\n[vk]\nsource = \"v.py\"\nformat = \"spirv\"\n")
         #expect(config.sections[0].format == "gles2")
-        #expect(config.sections[0].output == "kivy.glsl")
-        #expect(config.sections[1].output == "vk.spv")
+        #expect(config.sections[0].outputs == ["es.vert", "es.frag"])
+        #expect(config.sections[1].outputs == ["vk.spv"])
         let root = URL(fileURLWithPath: "/pkg")
-        #expect(config.compilerArguments(for: config.sections[0], root: root, output: URL(fileURLWithPath: "/out/kivy.glsl")) == [
-            "/pkg/k.py", "-o", "/out/kivy.glsl", "--target", "compute", "--format", "gles2",
+        #expect(config.compilerArguments(for: config.sections[0], root: root, output: URL(fileURLWithPath: "/out/es")) == [
+            "/pkg/k.py", "-o", "/out/es", "--target", "compute", "--format", "gles2",
         ])
         #expect(!config.compilerArguments(for: config.sections[1], root: root, output: URL(fileURLWithPath: "/out/vk.spv")).contains("--format"))
+    }
+
+    @Test("the gles2 names, matrices and single file are pyshaderc's flags")
+    func gles2Options() throws {
+        let config = try PyShaderConfig(parsing: """
+            [fx]
+            source = "fx.py"
+            output = "Shaders/fx.glsl"
+            format = "gles2"
+            single-file = true
+            uv-varying = "tex_coord0"
+            content-sampler = "texture0"
+            position-matrices = ["projection_mat", "modelview_mat"]
+            [two]
+            source = "t.py"
+            output = "Shaders/two.glsl"
+            format = "gles2"
+            """)
+        #expect(config.sections[0].outputs == ["Shaders/fx.glsl"])
+        #expect(config.sections[1].outputs == ["Shaders/two.vert", "Shaders/two.frag"])
+        #expect(config.compilerArguments(for: config.sections[0], root: URL(fileURLWithPath: "/pkg"), output: URL(fileURLWithPath: "/out/fx.glsl")) == [
+            "/pkg/fx.py", "-o", "/out/fx.glsl", "--target", "fragment", "--format", "gles2", "--single-file",
+            "--uv-varying", "tex_coord0", "--content-sampler", "texture0",
+            "--position-matrix", "projection_mat", "--position-matrix", "modelview_mat",
+        ])
     }
 
     @Test("textures-top-down reads the Texture parameters top-down")
@@ -100,6 +125,9 @@ struct ConfigTests {
         expectError("[a]\nsource = \"a.py\"\ncontent = \"yes\"\n", "`true` or `false`", line: 3)
         expectError("[a]\nsource = \"a.py\"\ncontent-top-down = \"yes\"\n", "`content-top-down` must be", line: 3)
         expectError("[a]\nsource = \"a.py\"\ntextures-top-down = \"yes\"\n", "`textures-top-down` must be", line: 3)
+        expectError("[a]\nsource = \"a.py\"\nuv-varying = \"v\"\n", "applies to `format = \"gles2\"`", line: 3)
+        expectError("[a]\nsource = \"a.py\"\nformat = \"gles2\"\nposition-matrices = \"m\"\n", "array of uniform names", line: 4)
+        expectError("[a]\nsource = \"a.py\"\nformat = \"gles2\"\noutput = \"x.glsl\"\n[b]\nsource = \"b.py\"\nformat = \"gles2\"\noutput = \"x.frag\"\n", "two sections write `x.vert`", line: 1)
         expectError("[a]\nsource = \"a.py\"\noptimize = \"-O\"\n", "`optimize` must be an array", line: 3)
         expectError("[a]\nsource = \"a.py\"\noptimize = [\"O\"]\n", "must start with `-`", line: 3)
         expectError("[a]\nsource = a.py\n", "expected a string", line: 2)

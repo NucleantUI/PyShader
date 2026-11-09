@@ -5,10 +5,10 @@
 //  Drives GLSL ES 1.00 generation for one module: every user function, the
 //  monomorphized lambdas and list-taking functions, and a `main()` per
 //  stage that hands the Python entry point what the target promises, from
-//  what an OpenGL ES 2 pipeline as Kivy sets it up provides:
+//  what the OpenGL ES 2 program provides, under the names `GLES2Options` gives:
 //
-//      varying  tex_coord0, frag_color   Kivy's default vertex shader's outputs
-//      uniform  texture0                 the texture Kivy binds (`layer()`)
+//      varying  uv, color                the generated vertex stage's outputs
+//      uniform  the content sampler      the texture `layer()` samples
 //      uniform  time, resolution, …      the inputs the target names, set by the app
 //      uniform  <argument>               each shader argument, by its name
 //
@@ -55,6 +55,7 @@ struct GLDeclaration {
 final class GLES2Compiler {
     let program: ShaderProgram
     let sourceFile: String?
+    let options: GLES2Options
 
     private var declarations: [String: GLDeclaration] = [:]
     private var declarationCount = 0
@@ -79,14 +80,12 @@ final class GLES2Compiler {
     private(set) var variables: [String: (name: String, type: ShaderType)] = [:]
     private var globalsInit: String?
 
-    init(program: ShaderProgram, sourceFile: String?) {
+    init(program: ShaderProgram, sourceFile: String?, options: GLES2Options) {
         self.program = program
         self.sourceFile = sourceFile
-        var names: Swift.Set<String> = [
-            "tex_coord0", "frag_color", "texture0", "frag_modelview_mat",
-            "vPosition", "vTexCoords0", "modelview_mat", "projection_mat", "color", "opacity",
-            "py_globals",
-        ]
+        self.options = options
+        var names = Swift.Set(options.names.map(\.name))
+        names.insert("py_globals")
         names.formUnion(Self.inputUniforms.keys)
         for argument in program.target.arguments { names.insert(argument.name) }
         for texture in program.target.textures { names.insert(texture.name); names.insert(texture.name + "_size") }
@@ -97,13 +96,14 @@ final class GLES2Compiler {
     }
 
     /// The inputs a compute or graphics target reads from uniforms of the
-    /// same name, set by the app (`canvas['time'] = …`).
+    /// same name, set by the app.
     static let inputUniforms: [String: ShaderType] = [
         "time": .float, "time_delta": .float, "frame": .int,
         "resolution": .float(2), "mouse": .float(2), "mouse_click": .float(2),
     ]
 
     func compile() throws -> GLES2Shader {
+        try options.validate()
         try checkEntries()
         for name in program.functionOrder where !program.functions[name]!.isGeneric {
             functionNames[name] = program.isEntry(name) ? globalName("py_" + name) : globalName(name)
@@ -123,9 +123,11 @@ final class GLES2Compiler {
         try checkRecursion()
         switch program.target {
         case .fragment(let interface):
-            return GLES2Shader(vertex: Self.kivyDefaultVertex(header: header("vertex")), fragment: try fragmentStage(interface))
+            let (fragment, uses) = try fragmentStage(interface)
+            return GLES2Shader(vertex: quadVertexStage(for: uses), fragment: fragment)
         case .computeImage(let interface):
-            return GLES2Shader(vertex: Self.kivyDefaultVertex(header: header("vertex")), fragment: try computeStage(interface))
+            let (fragment, uses) = try computeStage(interface)
+            return GLES2Shader(vertex: quadVertexStage(for: uses), fragment: fragment)
         case .graphics(let interface):
             return try graphicsStages(interface)
         }
@@ -199,10 +201,8 @@ final class GLES2Compiler {
     /// Interface names only `main()` reads, which a function's local may
     /// share: `main()` has no locals to hide them.
     private lazy var mainOnly: Swift.Set<String> = {
-        var names: Swift.Set<String> = [
-            "tex_coord0", "frag_color", "frag_modelview_mat", "vPosition", "vTexCoords0",
-            "modelview_mat", "projection_mat", "color", "opacity",
-        ]
+        // The content sampler is the one interface name a function samples.
+        var names = Swift.Set(options.names.map(\.name).filter { $0 != options.contentSampler })
         names.formUnion(Self.inputUniforms.keys)
         for argument in program.target.arguments { names.insert(argument.name) }
         if case .structure(_, let members) = program.varyingsStruct {
@@ -260,7 +260,7 @@ final class GLES2Compiler {
         switch kind {
         case .bool: return "bool"
         // `half` is a float here: GLSL ES says how precise in a qualifier,
-        // which desktop GLSL (Kivy on a computer) would not take.
+        // which desktop GLSL would not take.
         case .float: return "float"
         case .int(32, true): return "int"
         case .int(32, false):
@@ -496,12 +496,12 @@ final class GLES2Compiler {
 
     // MARK: - Host resources
 
-    /// `layer(p)`: the texture Kivy binds as `texture0`, when the target samples content.
+    /// `layer(p)`: the `contentSampler` uniform, when the target samples content.
     func sampleContent(at coordinate: GLValue, from w: GLES2Writer, line: Int) throws -> GLValue {
         guard program.target.contentBinding != nil else {
             throw PyShaderError("layer() needs a content image; this target does not provide one", line: line)
         }
-        let texture = try uniform("texture0", .sampledImage(.sampled2D), line: line, uses: &w.uses)
+        let texture = try uniform(options.contentSampler, .sampledImage(.sampled2D), line: line, uses: &w.uses)
         return try sample(texture.code, at: coordinate, topDown: program.target.contentIsTopDown, from: w, line: line)
     }
 
@@ -586,10 +586,11 @@ final class GLES2Compiler {
         return (text, writer.uses)
     }
 
-    /// A fragment target behind Kivy's default vertex shader: `uv` and
-    /// `color` are its `tex_coord0` and `frag_color`, the built-ins GL's own,
-    /// the push constants uniforms of the same name.
-    private func fragmentStage(_ interface: FragmentInterface) throws -> String {
+    /// A fragment target behind the generated vertex stage: `uv` and `color`
+    /// are its `uvVarying` and `colorVarying`, the built-ins GL's own, the
+    /// push constants uniforms of the same name. Returns what the stage uses
+    /// too, for the vertex stage to write only the varyings it reads.
+    private func fragmentStage(_ interface: FragmentInterface) throws -> (String, Swift.Set<String>) {
         let main = program.functions[interface.entryPoint]!
         let line = main.def.lineno
         guard interface.output.type == .float(4) else {
@@ -604,7 +605,7 @@ final class GLES2Compiler {
                     case .builtIn(.pointCoord): args.append(try w.coerce(GLValue(code: "gl_PointCoord", type: .float(2)), to: param.type, line: line).code)
                     case .builtIn(.frontFacing): args.append("gl_FrontFacing")
                     case .location:
-                        let name = param.name == "uv" ? "tex_coord0" : param.name == "color" ? "frag_color" : param.name
+                        let name = param.name == "uv" ? self.options.uvVarying : param.name == "color" ? self.options.colorVarying : param.name
                         args.append(try self.varying(name, input.type, line: line, uses: &w.uses).code)
                     }
                 } else if let constant = interface.pushConstants.first(where: { $0.name == param.name }) {
@@ -616,20 +617,20 @@ final class GLES2Compiler {
             w.uses.insert("fn:" + self.functionNames[interface.entryPoint]!)
             w.line("gl_FragColor = \(self.functionNames[interface.entryPoint]!)(\(args.joined(separator: ", ")));")
         }
-        return assemble(stage: "fragment", main: text, uses: uses)
+        return (assemble(stage: "fragment", main: text, uses: uses), uses)
     }
 
-    /// A compute target as one fragment per pixel of the widget Kivy draws:
-    /// `uv` is `tex_coord0`, the rest of the inputs uniforms the app sets
-    /// (`resolution` the widget's size in pixels, `mouse` y-up in it).
-    private func computeStage(_ interface: ComputeImageInterface) throws -> String {
+    /// A compute target as one fragment per pixel of the quad drawn: `uv`
+    /// is `uvVarying`, the rest of the inputs uniforms the app sets
+    /// (`resolution` the quad's size in pixels, `mouse` y-up in it).
+    private func computeStage(_ interface: ComputeImageInterface) throws -> (String, Swift.Set<String>) {
         let main = program.functions[interface.entryPoint]!
         let line = main.def.lineno
         let (text, uses) = try mainFunction { w in
             var fragCoord: String?
             func coord() throws -> String {
                 if let fragCoord { return fragCoord }
-                let uv = try self.varying("tex_coord0", .float(2), line: line, uses: &w.uses)
+                let uv = try self.varying(self.options.uvVarying, .float(2), line: line, uses: &w.uses)
                 let resolution = try self.uniform("resolution", .float(2), line: line, uses: &w.uses)
                 let name = try w.temp(.float(2), line: line)
                 w.line("\(name) = \(uv.code) * \(resolution.code);")
@@ -641,7 +642,7 @@ final class GLES2Compiler {
                 if let input = interface.inputs[param.name] {
                     switch input {
                     case .uv:
-                        args.append(try self.varying("tex_coord0", .float(2), line: line, uses: &w.uses).code)
+                        args.append(try self.varying(self.options.uvVarying, .float(2), line: line, uses: &w.uses).code)
                     case .fragCoord:
                         args.append(try coord())
                     case .pixel:
@@ -663,7 +664,7 @@ final class GLES2Compiler {
             w.uses.insert("fn:" + fn)
             w.line("gl_FragColor = \(fn)(\(args.joined(separator: ", ")));")
         }
-        return assemble(stage: "fragment", main: text, uses: uses)
+        return (assemble(stage: "fragment", main: text, uses: uses), uses)
     }
 
     /// Both stages of a graphics target. The vertex stage writes its first
@@ -760,31 +761,35 @@ final class GLES2Compiler {
         )
     }
 
-    /// Kivy's default vertex shader (`default.vs` under its `header.vs`),
-    /// written out so the file needs no `$HEADER$` expansion.
-    static func kivyDefaultVertex(header: String) -> String {
-        header + """
-
-
-        #ifdef GL_ES
-        precision highp float;
-        #endif
-
-        attribute vec2 vPosition;
-        attribute vec2 vTexCoords0;
-        uniform mat4 modelview_mat;
-        uniform mat4 projection_mat;
-        uniform vec4 color;
-        uniform float opacity;
-        varying vec4 frag_color;
-        varying vec2 tex_coord0;
-
-        void main(void) {
-            frag_color = color * vec4(1.0, 1.0, 1.0, opacity);
-            tex_coord0 = vTexCoords0;
-            gl_Position = projection_mat * modelview_mat * vec4(vPosition.xy, 0.0, 1.0);
+    /// The vertex stage of a fragment or compute target: a quad from
+    /// `positionAttribute`, through `positionMatrices`, passing on the
+    /// varyings the fragment stage reads (`fragmentUses`) and no others.
+    private func quadVertexStage(for fragmentUses: Swift.Set<String>) -> String {
+        let o = options
+        let uv = fragmentUses.contains("varying:" + o.uvVarying)
+        let color = fragmentUses.contains("varying:" + o.colorVarying)
+        var declarations = ["attribute vec2 \(o.positionAttribute);"]
+        if uv { declarations.append("attribute vec2 \(o.texcoordAttribute);") }
+        if color, o.colorUniform == nil { declarations.append("attribute vec4 \(o.colorAttribute);") }
+        for matrix in o.positionMatrices { declarations.append("uniform mat4 \(matrix);") }
+        if color, let uniform = o.colorUniform { declarations.append("uniform vec4 \(uniform);") }
+        if color, let opacity = o.opacityUniform { declarations.append("uniform float \(opacity);") }
+        if color { declarations.append("varying vec4 \(o.colorVarying);") }
+        if uv { declarations.append("varying vec2 \(o.uvVarying);") }
+        var body: [String] = []
+        if color {
+            let source = o.colorUniform ?? o.colorAttribute
+            body.append("\(o.colorVarying) = \(source)" + (o.opacityUniform.map { " * vec4(1.0, 1.0, 1.0, \($0))" } ?? "") + ";")
         }
-
-        """
+        if uv { body.append("\(o.uvVarying) = \(o.texcoordAttribute);") }
+        let position = (o.positionMatrices + ["vec4(\(o.positionAttribute).xy, 0.0, 1.0)"]).joined(separator: " * ")
+        body.append("gl_Position = \(position);")
+        var out: String = header("vertex")
+        out += "\n\n#ifdef GL_ES\nprecision highp float;\n#endif\n\n"
+        out += declarations.joined(separator: "\n")
+        out += "\n\nvoid main(void) {\n"
+        for statement in body { out += "    \(statement)\n" }
+        out += "}\n"
+        return out
     }
 }

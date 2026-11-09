@@ -1,20 +1,20 @@
 # OpenGL ES 2
 
 The same PyShader module that compiles to SPIR-V also compiles to OpenGL ES 2,
-in GLSL ES 1.00, the shading language [Kivy](https://kivy.org) draws with.
-It goes through the same parser and the same checks. What OpenGL ES 2 cannot
-express is a compile error at the Python line that needs it, so you find out
-when you build, not when the shader fails to compile on a phone.
+in GLSL ES 1.00. It goes through the same parser and the same checks. What
+OpenGL ES 2 cannot express is a compile error at the Python line that needs
+it, so you find out when you build, not when the shader fails to compile on a
+phone.
 
 ```sh
-swift run pyshaderc shader.py --target compute --format gles2     # -> shader.glsl
+swift run pyshaderc shader.py --target compute --format gles2     # -> shader.vert, shader.frag
 ```
 
 ```swift
 let shader = try PyShader.compileGLES2(contentsOf: url, target: .nucleantUI)
 shader.vertex       // GLSL ES 1.00
 shader.fragment
-shader.kivySource   // both, as one Kivy .glsl file
+shader.singleFile   // both in one file, after ---VERTEX SHADER--- / ---FRAGMENT SHADER--- lines
 ```
 
 In a [`pyshader.toml`](plugins.md#pyshadertoml) or a
@@ -22,8 +22,93 @@ In a [`pyshader.toml`](plugins.md#pyshadertoml) or a
 
 ## What it writes
 
-A Kivy single-file shader: a `---VERTEX SHADER---` and a
-`---FRAGMENT SHADER---` section, which `Shader.source` loads:
+A vertex stage and a fragment stage, `<output>.vert` and `<output>.frag`.
+Each stage is self-contained: it declares what it uses and holds only the
+functions its `main()` reaches.
+
+| target | vertex stage | fragment stage |
+|---|---|---|
+| fragment | written from the [options](#options): a quad passing on `uv` and `color` | `main` with `uv` and `color` from the vertex stage, `frag_coord` = `gl_FragCoord`, `front_facing` = `gl_FrontFacing`; `time`, `resolution`, `mouse` are uniforms |
+| compute | written from the options: a quad passing on `uv` | one fragment per pixel of the quad: `uv` from the vertex stage, `frag_coord` = `uv * resolution`, `pixel` y-down from it; `time`, `time_delta`, `frame`, `resolution`, `mouse`, `mouse_click` are uniforms |
+| graphics | `vertex`, its first field to `gl_Position` (GL's clip space is already y-up), the others to `v_<field>` varyings | `fragment`, taking the varyings by name; `uv` = `gl_FragCoord.xy / resolution` |
+
+With the default options, a compute shader's vertex stage is:
+
+```glsl
+attribute vec2 a_position;
+attribute vec2 a_texcoord;
+varying vec2 v_uv;
+
+void main(void) {
+    v_uv = a_texcoord;
+    gl_Position = vec4(a_position.xy, 0.0, 1.0);
+}
+```
+
+- **The app sets the uniforms.** `resolution` is the quad's size in pixels.
+  `mouse` and `mouse_click` are y-up in it.
+- **Shader arguments** (`arguments = ["gain:float"]`, `--arg gain:float`)
+  become uniforms of the same name.
+- **`layer(uv)`** samples the content sampler, `u_content` by default.
+  `content = true` reads it as stored, as `texture2D` does;
+  `content-top-down` flips the coordinate, as in SPIR-V.
+- **A `Texture` parameter** `a` is a `sampler2D a` uniform, read as stored
+  unless `textures-top-down` flips it, as in SPIR-V. `a_size` is an `ivec2`
+  uniform the app sets, since GLSL ES 1.00 cannot ask a texture its size.
+- **`half`** is a `float`: GLSL ES writes precision as a qualifier, which
+  desktop GLSL would not take. Every stage starts with
+  `precision highp float` under `#ifdef GL_ES`.
+- **`dFdx`, `dFdy`, `fwidth`** turn on `GL_OES_standard_derivatives`.
+- Python names GLSL keeps for itself (`input`, `sample`, `length`, `half`…)
+  are renamed with a `py_` prefix, and so are a shader's own names that an
+  option takes. The Python entry point is `py_main` (`py_vertex`,
+  `py_fragment`), and `main()` calls it.
+
+## Options
+
+The names the stages declare, how the generated vertex stage places its
+quad, and how the stages are written out are options, so the stages link
+into whatever program the app has. Each is a key in a `pyshader.toml`
+section or `[tool.pyshader]`, a `pyshaderc` flag of the same name, and a
+property of `GLES2Options` in Swift:
+
+| key | `pyshaderc` | default | |
+|---|---|---|---|
+| `single-file` | `--single-file` | `false` | both stages in one file, `<output>.glsl` by default, each after a `---VERTEX SHADER---` / `---FRAGMENT SHADER---` line |
+| `position-attribute` | `--position-attribute` | `a_position` | the `vec2` position attribute |
+| `texcoord-attribute` | `--texcoord-attribute` | `a_texcoord` | the `vec2` texture coordinate attribute, passed on as `uv` |
+| `color-attribute` | `--color-attribute` | `a_color` | the `vec4` color attribute, passed on as `color` |
+| `color-uniform` | `--color-uniform` | none | a `vec4` uniform the color is instead |
+| `opacity-uniform` | `--opacity-uniform` | none | a `float` uniform the color's alpha is multiplied by |
+| `position-matrices` | `--position-matrix`, repeated | none | `mat4` uniforms the position is multiplied by, left to right; none: it is already in clip space |
+| `uv-varying` | `--uv-varying` | `v_uv` | the varying `uv` is read from |
+| `color-varying` | `--color-varying` | `v_color` | the varying `color` is read from |
+| `content-sampler` | `--content-sampler` | `u_content` | the `sampler2D` `layer()` samples |
+
+The vertex stage declares only what the fragment stage reads: no
+`a_texcoord` for a shader that never takes `uv`, no color for one that never
+takes `color`. A graphics target writes its own vertex stage and uses only
+`content-sampler`. A name must be one GLSL lets a shader declare, and no two
+options may share one.
+
+### Kivy
+
+[Kivy](https://kivy.org) loads both stages from one file with `Shader.source`,
+and links them with its vertex format and the uniforms its canvas sets. These
+settings fit a shader to it:
+
+```toml
+format = "gles2"
+single-file = true
+position-attribute = "vPosition"
+texcoord-attribute = "vTexCoords0"
+position-matrices = ["projection_mat", "modelview_mat"]
+uv-varying = "tex_coord0"
+color-varying = "frag_color"     # fragment target, `color`
+color-uniform = "color"          # the canvas's `Color`
+opacity-uniform = "opacity"      # the widget's opacity
+content-sampler = "texture0"     # the texture Kivy binds, for layer()
+```
 
 ```python
 from kivy.graphics import RenderContext
@@ -34,35 +119,11 @@ canvas["time"] = 1.5                      # a uniform the shader takes
 canvas["resolution"] = [800.0, 600.0]
 ```
 
-Each stage is self-contained, with no `$HEADER$`. It declares what it uses
-under Kivy's names and holds only the functions its `main()` reaches.
-
-| target | vertex stage | fragment stage |
-|---|---|---|
-| fragment | Kivy's default vertex shader, written out | `main` with `uv` = `tex_coord0`, `color` = `frag_color`, `frag_coord` = `gl_FragCoord`, `front_facing` = `gl_FrontFacing`; `time`, `resolution`, `mouse` are uniforms |
-| compute | Kivy's default vertex shader | one fragment per pixel of the widget: `uv` = `tex_coord0`, `frag_coord` = `uv * resolution`, `pixel` y-down from it; `time`, `time_delta`, `frame`, `resolution`, `mouse`, `mouse_click` are uniforms |
-| graphics | `vertex`, its first field to `gl_Position` (GL's clip space is already y-up), the others to `v_<field>` varyings | `fragment`, taking the varyings by name; `uv` = `gl_FragCoord.xy / resolution` |
-
-- **The app sets the uniforms.** `resolution` is the widget's size in pixels.
-  `mouse` and `mouse_click` are y-up in the widget, as Kivy's touch positions
-  are once the widget's position is subtracted.
-- **Shader arguments** (`arguments = ["gain:float"]`, `--arg gain:float`)
-  become uniforms of the same name.
-- **`layer(uv)`** samples `texture0`, the texture Kivy binds: the
-  `Rectangle`'s, or the `Fbo`'s. `content = true` reads it as stored, as
-  `texture2D` does; `content-top-down` flips the coordinate, as in SPIR-V.
-- **A `Texture` parameter** `a` is a `sampler2D a` uniform, read as stored
-  unless `textures-top-down` flips it, as in SPIR-V. `a_size` is an `ivec2`
-  uniform the app sets, since GLSL ES 1.00 cannot ask a texture its size.
-  A Kivy `ShaderTransition` is one: `def main(uv: float2, t: float, tex_in: Texture, tex_out: Texture)`
-  with `arguments = ["t:float"]` declares the `t`, `tex_in` and `tex_out` it sets.
-- **`half`** is a `float`: GLSL ES writes precision as a qualifier, which the
-  desktop GLSL Kivy compiles on a computer would not take. Every stage
-  starts with Kivy's `precision highp float`.
-- **`dFdx`, `dFdy`, `fwidth`** turn on `GL_OES_standard_derivatives`.
-- Python names GLSL keeps for itself (`input`, `sample`, `length`, `half`…)
-  are renamed with a `py_` prefix. The Python entry point is `py_main`
-  (`py_vertex`, `py_fragment`), and `main()` calls it.
+A Kivy `ShaderTransition` sets a `t` uniform and two textures:
+`def main(uv: float2, t: float, tex_in: Texture, tex_out: Texture)` with
+`arguments = ["t:float"]` declares them.
+[Examples/kivy_shaders](https://github.com/NucleantUI/PyShader/tree/main/Examples/kivy_shaders)
+is a Kivy app built this way.
 
 ## What OpenGL ES 2 cannot express
 

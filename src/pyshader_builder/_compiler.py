@@ -78,8 +78,10 @@ class Compiler:
         self._memory.write(self._store, data, pointer)
         return pointer
 
-    def compile(self, source: str, options: str, modules: dict[str, str]) -> bytes:
-        """The compiled shader: SPIR-V words as bytes, or a ``.glsl`` file's text as UTF-8.
+    def compile(self, source: str, options: str, modules: dict[str, str]) -> tuple[bytes, bytes]:
+        """The compiled shader: SPIR-V words as bytes, or OpenGL ES 2 text as UTF-8,
+        and for gles2 without ``single-file`` the vertex stage too (else ``b""``),
+        the first being the fragment stage.
 
         Raises CompileError with the compiler's message and line.
         """
@@ -100,7 +102,17 @@ class Compiler:
         self._call("pyshader_result_free")
         if failed:
             raise CompileError.parse(result.decode("utf-8", errors="replace"))
-        return result
+        return result, self._vertex_stage()
+
+    def _vertex_stage(self) -> bytes:
+        length = self._call("pyshader_vertex_stage", 0, 0)
+        if not length:
+            return b""
+        pointer = self._call("pyshader_alloc", length)
+        self._call("pyshader_vertex_stage", pointer, length)
+        data = bytes(self._memory.read(self._store, pointer, pointer + length))
+        self._free(pointer, length)
+        return data
 
     def _free(self, pointer: int, length: int) -> None:
         if pointer:
