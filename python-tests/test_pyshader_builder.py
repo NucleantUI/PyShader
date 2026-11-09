@@ -308,6 +308,15 @@ def test_modules_installed_under_pyshader(tmp_path, monkeypatch):
         assert "ramp(" in wheel.read("glow_app/shaders/glow.frag").decode()
 
 
+def test_the_dependencies_are_build_requirements(tmp_path, monkeypatch):
+    # A shader library in `dependencies` is installed where the build runs too.
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "glow"\nversion = "1"\ndependencies = ["pyshader-stdlib>=0.1"]\n')
+    monkeypatch.chdir(tmp_path)
+    assert "pyshader-stdlib>=0.1" in backend.get_requires_for_build_wheel()
+    assert "pyshader-stdlib>=0.1" in backend.get_requires_for_build_editable()
+
+
 def test_an_output_outside_the_packages_is_refused(tmp_path, monkeypatch):
     root = make_project(tmp_path / "p", SHADERS.split("[tool.pyshader.tinted]")[0].replace('output = "src/glow_app/shaders/glow"', 'output = "glow"'))
     monkeypatch.chdir(root)

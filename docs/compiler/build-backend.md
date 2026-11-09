@@ -78,18 +78,19 @@ A shader imports what `pyshaderc` would find:
 2. the packages installed in `site-packages`, or else in the nearest
    `.venv` above the shader, that declare a
    [`pyshader.modules`](../language/modules.md) entry point;
-3. the same, installed in the build environment, for a shader library
-   listed in `[build-system] requires`.
+3. the same, installed in the build environment: the project's
+   `dependencies`, which the backend asks for.
 
-A library the shaders import is a build dependency, so it goes in
-`[build-system] requires`: the build environment always has it, also on the
-first `uv sync` and in `uv build`, where the project's `.venv` may not have it
-yet. List it in `dependencies` (or a dev group) too if the editor should see
-it:
+A library the shaders import is one of the project's `dependencies`. The
+backend asks for them as build requirements too, so the build environment
+has them, also on the first `uv sync` and in `uv build`:
 
 ```toml
+[project]
+dependencies = ["pyshader-stdlib"]
+
 [build-system]
-requires = ["pyshader", "pyshader-stdlib"]
+requires = ["pyshader"]
 build-backend = "pyshader_builder"
 ```
 

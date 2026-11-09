@@ -24,7 +24,9 @@ A shader that does not compile, or uses what its format cannot express
 stops the build with ``file:line: error: …`` and the line of code.
 
 The compiler is PyShader's own, as WebAssembly (``pyshader.wasm``), run with
-wasmtime, which the backend asks the build frontend for.
+wasmtime, which the backend asks the build frontend for, along with the
+project's ``dependencies``: a shader library listed there is installed where
+the build runs, so the shaders can import it.
 """
 
 from __future__ import annotations
@@ -55,11 +57,11 @@ class ShaderBuildError(Exception):
 
 
 def get_requires_for_build_wheel(config_settings=None) -> list[str]:
-    return [WASMTIME]
+    return [WASMTIME, *_dependencies(Path.cwd())]
 
 
 def get_requires_for_build_editable(config_settings=None) -> list[str]:
-    return [WASMTIME]
+    return [WASMTIME, *_dependencies(Path.cwd())]
 
 
 def get_requires_for_build_sdist(config_settings=None) -> list[str]:
@@ -146,6 +148,16 @@ def _describe(error: _compiler.CompileError, section: _config.Section, config: _
 
 
 # MARK: - Helpers
+
+
+def _dependencies(root: Path) -> list[str]:
+    """The project's ``dependencies``, which the shaders' libraries are among:
+    the build environment gets them too, so the shaders can import them."""
+    file = root / "pyproject.toml"
+    if not file.is_file():
+        return []
+    dependencies = tomllib.loads(file.read_text(encoding="utf-8")).get("project", {}).get("dependencies", [])
+    return [d for d in dependencies if isinstance(d, str)]
 
 
 def _load(root: Path) -> tuple[_dist.Project, _config.Config | None]:
