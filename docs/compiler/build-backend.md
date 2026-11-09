@@ -17,12 +17,21 @@ requires-python = ">=3.13"
 requires = ["pyshader"]
 build-backend = "pyshader_builder"
 
+[tool.uv.sources]
+pyshader = { url = "https://github.com/NucleantUI/PyShader/releases/download/0.0.7/pyshader-0.0.7-py3-none-any.whl" }
+
 [tool.pyshader.glow]
 source = "src/myapp/shaders/glow.py"
 output = "src/myapp/shaders/glow"       # glow.vert and glow.frag
 target = "compute"
 format = "gles2"
 ```
+
+The backend's compiler comes in the `pyshader` wheel attached to each
+[release](https://github.com/NucleantUI/PyShader/releases), which
+`[tool.uv.sources]` points at. A `pyshader` installed from git has the stubs
+only, not the compiler. Without uv, name the wheel in the requirement itself:
+`requires = ["pyshader @ https://github.com/NucleantUI/PyShader/releases/download/0.0.7/pyshader-0.0.7-py3-none-any.whl"]`.
 
 | command | what happens to the shaders |
 |---|---|
@@ -95,6 +104,10 @@ build-backend = "pyshader_builder"
 
 [dependency-groups]
 dev = ["pyshader", "pyshader-stdlib"]
+
+[tool.uv.sources]
+pyshader = { url = "https://github.com/NucleantUI/PyShader/releases/download/0.0.7/pyshader-0.0.7-py3-none-any.whl" }
+pyshader-stdlib = { git = "https://github.com/NucleantUI/pyshader-stdlib" }
 ```
 
 `pyshader-stdlib` installs as `pyshader/stdlib/`, next to the stubs, so
@@ -120,7 +133,7 @@ src/myapp/shaders/glow.py:2: error: OpenGL ES 2 has no bitwise operators (`&`)
 
 The compiler is PyShader's Swift one, built to WebAssembly
 (`pyshader.wasm`, the module the docs' previews run). It ships inside the
-`pyshader` package and runs through [wasmtime](https://pypi.org/project/wasmtime/),
+`pyshader` wheel of each release and runs through [wasmtime](https://pypi.org/project/wasmtime/),
 which the backend asks the build frontend to install. No Swift toolchain is
 needed on the machine that builds. `PYSHADER_WASM` points the backend at
 another build of the module.
