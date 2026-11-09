@@ -225,6 +225,7 @@ xcuserdata/
 DerivedData/
 *.spv
 Package.resolved
+uv.lock
 
 # Docs: built site and the wasm modules scripts/build_wasm.py produces
 site/
