@@ -12,13 +12,22 @@ dependencies = ["kivy>=2.3.1"]
 [project.scripts]
 kivy-shaders = "kivy_shaders.app:main"
 
+# What the shaders compile with, and the library they may import.
 [build-system]
-requires = ["pyshader"]
+requires = ["pyshader", "pyshader-stdlib"]
 build-backend = "pyshader_builder"
 
+# The same in .venv, which `uv sync` installs by default: the editor sees the
+# pyshader stubs and pyshader.stdlib while you work on the shaders.
+[dependency-groups]
+dev = ["pyshader", "pyshader-stdlib"]
+
 [tool.uv.sources]
-# This repository's PyShader, which carries the backend and its compiler.
-pyshader = { path = "../..", editable = true }
+# This repository's PyShader, which carries the backend and its compiler. Not
+# editable: an editable `pyshader` would hide `pyshader/stdlib/`, which the
+# library installs next to the stubs in site-packages.
+pyshader = { path = "../.." }
+pyshader-stdlib = { git = "https://github.com/NucleantUI/pyshader-stdlib" }
 
 # One table per shader. `format = "gles2"` is GLSL ES 1.00; each output sits
 # in the package, so the wheel carries it. The other keys fit the stages to

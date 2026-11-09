@@ -78,21 +78,28 @@ A shader imports what `pyshaderc` would find:
 2. the packages installed in `site-packages`, or else in the nearest
    `.venv` above the shader, that declare a
    [`pyshader.modules`](../language/modules.md) entry point;
-3. the same, installed in the build environment: the project's
-   `dependencies`, which the backend asks for.
+3. the same, installed in the build environment, for a shader library
+   listed in `[build-system] requires`.
 
-A library the shaders import is one of the project's `dependencies`. The
-backend asks for them as build requirements too, so the build environment
-has them, also on the first `uv sync` and in `uv build`:
+A library the shaders import is a build dependency, so it goes in
+`[build-system] requires`: the build environment always has it, also on the
+first `uv sync` and in `uv build`, where the project's `.venv` may not have it
+yet. `pyshader` and the library go in the `dev` group too, which `uv sync`
+installs into `.venv` by default, so the editor sees the stubs and the
+library's functions while you work on the shaders:
 
 ```toml
-[project]
-dependencies = ["pyshader-stdlib"]
-
 [build-system]
-requires = ["pyshader"]
+requires = ["pyshader", "pyshader-stdlib"]
 build-backend = "pyshader_builder"
+
+[dependency-groups]
+dev = ["pyshader", "pyshader-stdlib"]
 ```
+
+`pyshader-stdlib` installs as `pyshader/stdlib/`, next to the stubs, so
+`pyshader` must not be an editable install: an editable one is imported from
+its source folder, which has no `stdlib`.
 
 ```py
 import pyshader.stdlib.fragment.noise as noise
