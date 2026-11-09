@@ -699,12 +699,14 @@ final class GLES2Compiler {
                 return "ivec2(int(floor(gl_FragCoord.x)), int(floor(\(resolution.code).y - gl_FragCoord.y)))"
             case .frontFacing:
                 return "gl_FrontFacing"
-            case .positionAttribute:
-                return try self.attribute(self.options.positionAttribute, .float(2), line: line, uses: &w.uses).code
+            case .positionAttribute(let size):
+                return try self.attribute(self.options.positionAttribute, .float(size), line: line, uses: &w.uses).code
             case .texcoordAttribute:
                 return try self.attribute(self.options.texcoordAttribute, .float(2), line: line, uses: &w.uses).code
             case .colorAttribute:
                 return try self.attribute(self.options.colorAttribute, .float(4), line: line, uses: &w.uses).code
+            case .attribute(let type):
+                return try self.attribute(name, type, line: line, uses: &w.uses).code
             default:
                 return try self.uniform(name, input.type, line: line, uses: &w.uses).code
             }
@@ -755,7 +757,7 @@ final class GLES2Compiler {
                     args.append(try self.varying("v_" + varying.0, varying.1, line: fragmentLine, uses: &w.uses).code)
                 } else if let i = interface.inputs[param.name] {
                     switch i {
-                    case .vertexIndex, .instanceIndex, .positionAttribute, .texcoordAttribute, .colorAttribute:
+                    case .vertexIndex, .instanceIndex, .positionAttribute, .texcoordAttribute, .colorAttribute, .attribute:
                         throw PyShaderError("`\(param.name)` is a vertex input, not available in `\(interface.fragmentEntryPoint)`", line: fragmentLine)
                     default:
                         args.append(try input(param.name, i, w, line: fragmentLine))
@@ -785,7 +787,7 @@ final class GLES2Compiler {
         let o = options
         let uv = fragmentUses.contains("varying:" + o.uvVarying)
         let color = fragmentUses.contains("varying:" + o.colorVarying)
-        var declarations = ["attribute vec2 \(o.positionAttribute);"]
+        var declarations = ["attribute vec\(o.positionSize) \(o.positionAttribute);"]
         if uv { declarations.append("attribute vec2 \(o.texcoordAttribute);") }
         if color, o.colorUniform == nil { declarations.append("attribute vec4 \(o.colorAttribute);") }
         for matrix in o.positionMatrices { declarations.append("uniform mat4 \(matrix);") }
@@ -802,7 +804,9 @@ final class GLES2Compiler {
             let t = o.texcoordAttribute
             body.append("\(o.uvVarying) = " + (o.uvIsTopDown ? "vec2(\(t).x, 1.0 - \(t).y)" : t) + ";")
         }
-        let position = (o.positionMatrices + ["vec4(\(o.positionAttribute).xy, 0.0, 1.0)"]).joined(separator: " * ")
+        let p = o.positionAttribute
+        let clip = o.positionSize == 4 ? p : o.positionSize == 3 ? "vec4(\(p).xyz, 1.0)" : "vec4(\(p).xy, 0.0, 1.0)"
+        let position = (o.positionMatrices + [clip]).joined(separator: " * ")
         body.append("gl_Position = \(position);")
         var out: String = header("vertex")
         out += "\n\n#ifdef GL_ES\nprecision highp float;\n#endif\n\n"

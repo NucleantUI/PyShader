@@ -18,6 +18,8 @@
 //    position-attribute=, texcoord-attribute=, color-attribute=, color-uniform=,
 //    opacity-uniform=, position-matrix= (repeatable), uv-varying=, color-varying=,
 //    content-sampler=                   (gles2: the names the stages declare; see GLES2Options)
+//    position-size=2|3|4                (gles2: the floats in the position attribute)
+//    attribute=name:float|float2|float3|float4  (gles2, repeatable: a graphics vertex stage's attributes)
 //    file=name.py                       (the source file's name, for line information and headers)
 //    arg=name:float|float2|float3|float4|floatArray|float2Array|float3Array|float4Array
 //                                       (repeatable, in buffer order)
@@ -117,6 +119,16 @@ private func target(from options: String) throws -> (target: ShaderTarget, forma
         case "uv-varying": gles2.uvVarying = parts[1]; gles2Keys.append(parts[0])
         case "color-varying": gles2.colorVarying = parts[1]; gles2Keys.append(parts[0])
         case "content-sampler": gles2.contentSampler = parts[1]; gles2Keys.append(parts[0])
+        case "position-size":
+            guard let size = Int(parts[1]) else { throw PyShaderError("bad position-size `\(parts[1])`, want 2, 3 or 4") }
+            gles2.positionSize = size
+            gles2Keys.append(parts[0])
+        case "attribute":
+            let spec = parts[1].split(separator: ":", maxSplits: 1).map(String.init)
+            let kinds: [String: ShaderArgumentKind] = ["float": .float, "float2": .float2, "float3": .float3, "float4": .float4]
+            guard spec.count == 2, let kind = kinds[spec[1]] else { throw PyShaderError("bad attribute `\(parts[1])`, want name:float|float2|float3|float4") }
+            gles2.attributes[spec[0]] = kind
+            gles2Keys.append(parts[0])
         case "format":
             guard parts[1] == "spirv" || parts[1] == "gles2" else { throw PyShaderError("unknown format `\(parts[1])`") }
             format = parts[1]

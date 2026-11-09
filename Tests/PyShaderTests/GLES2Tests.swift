@@ -196,6 +196,72 @@ struct GLES2Tests {
         #expect(!shader.fragment.contains("attribute"))
     }
 
+    @Test("any vertex attributes, and a position of 3 floats, for a custom vertex format")
+    func customAttributes() throws {
+        let options = GLES2Options(
+            positionAttribute: "v_pos", positionSize: 3,
+            attributes: ["v_normal": .float3, "size": .float],
+            positionMatrices: ["projection_mat", "modelview_mat"]
+        )
+        let shader = try PyShader.compileGLES2("""
+            class V:
+                position: float4
+                light: float
+
+            def vertex(position: float3, v_normal: float3, size: float, time: float) -> V:
+                light = max(dot(normalize(v_normal), float3(0.0, 0.0, 1.0)), 0.0)
+                return V(float4(position * size, 1.0), light)
+
+            def fragment(light: float) -> float4:
+                return float4(float3(light), 1.0)
+            """, target: .graphics(.nucleantUI(arguments: [])), options: options)
+        #expect(try glslang(shader) ?? "" == "")
+        for line in ["attribute vec3 v_pos;", "attribute vec3 v_normal;", "attribute float size;",
+                     "py_vertex(v_pos, v_normal, size, time)",
+                     "gl_Position = projection_mat * modelview_mat * pyt0.position;"] {
+            #expect(shader.vertex.contains(line), "\(line)")
+        }
+        // The generated vertex stage of the other targets takes the position's size too.
+        let quad = try compileES("""
+            def main(uv: float2) -> float4:
+                return float4(uv, 0.0, 1.0)
+            """, target: compute)
+        #expect(quad.vertex.contains("vec4(a_position.xy, 0.0, 1.0)"))
+        let quad3 = try PyShader.compileGLES2("def main(uv: float2) -> float4:\n    return float4(uv, 0.0, 1.0)\n", target: compute, options: GLES2Options(positionSize: 3))
+        #expect(quad3.vertex.contains("attribute vec3 a_position;"))
+        #expect(quad3.vertex.contains("gl_Position = vec4(a_position.xyz, 1.0);"))
+    }
+
+    @Test("attributes must fit: a float to float4, a free name, a graphics target, a position of 2 to 4 floats")
+    func attributeMistakes() {
+        let graphics = """
+            class V:
+                position: float4
+
+            def vertex(position: float2) -> V:
+                return V(float4(position, 0.0, 1.0))
+
+            def fragment() -> float4:
+                return float4(1.0)
+            """
+        for (source, target, options, needle) in [
+            (graphics, ShaderTarget.graphics(.nucleantUI(arguments: [])), GLES2Options(attributes: ["time": .float]), "attribute `time` clashes"),
+            (graphics, .graphics(.nucleantUI(arguments: [])), GLES2Options(attributes: ["w": .floatArray]), "an attribute is a float"),
+            (graphics, .graphics(.nucleantUI(arguments: [])), GLES2Options(positionSize: 5), "`positionSize` is 2, 3 or 4"),
+            ("def main(uv: float2) -> float4:\n    return float4(uv, 0.0, 1.0)\n", compute, GLES2Options(attributes: ["w": .float]), "only a graphics target"),
+            (graphics, .graphics(.nucleantUI(arguments: [])), GLES2Options(positionSize: 3), "is a `float3` input, not `float2`"),
+        ] {
+            do {
+                _ = try PyShader.compileGLES2(source, target: target, options: options)
+                Issue.record("expected an error containing \(needle)")
+            } catch let error as PyShaderError {
+                #expect(error.message.contains(needle), "got: \(error)")
+            } catch {
+                Issue.record("unexpected error \(error)")
+            }
+        }
+    }
+
     @Test("the vertex attributes are vertex inputs, and OpenGL ES 2 ones")
     func attributesOnlyInTheVertexStage() throws {
         let module = """

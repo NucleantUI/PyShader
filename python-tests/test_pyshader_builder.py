@@ -309,6 +309,8 @@ def test_configuration_mistakes():
     assert "two sections write" in error({"a": {"source": "a.py", "output": "x"}, "b": {"source": "b.py", "output": "x"}})
     assert 'applies to `format = "gles2"`' in error({"a": {"source": "a.py", "uv-varying": "v"}})
     assert "array of uniform names" in error({"a": {"source": "a.py", "format": "gles2", "position-matrices": "m"}})
+    assert "`position-size` is 2, 3 or 4" in error({"a": {"source": "a.py", "format": "gles2", "position-size": 5}})
+    assert "kind one of float" in error({"a": {"source": "a.py", "format": "gles2", "attributes": ["n:vec3"]}})
     assert "must be a GLSL name" in error({"a": {"source": "a.py", "format": "gles2", "uv-varying": "two words"}})
     assert "two sections write `x.vert`" in error({"a": {"source": "a.py", "format": "gles2", "output": "x.glsl"},
                                                    "b": {"source": "b.py", "format": "gles2", "output": "x.frag"}})
@@ -316,11 +318,12 @@ def test_configuration_mistakes():
     assert config.sections[0].outputs() == ("a.vert", "a.frag")
     assert config.sections[0].options() == "target=fragment format=gles2 content-top-down=1 arg=g:float file=a.py"
     config = _config.parse({"a": {"source": "a.py", "format": "gles2", "single-file": True, "content-sampler": "texture0",
-                                  "position-matrices": ["p", "m"], "uv-top-down": True}}, "x")
+                                  "position-matrices": ["p", "m"], "uv-top-down": True, "position-size": 3,
+                                  "attributes": ["n:float3"]}}, "x")
     assert config.sections[0].outputs() == ("a.glsl",)
     assert config.sections[0].options() == (
         "target=fragment format=gles2 single-file=1 uv-top-down=1 content-sampler=texture0 "
-        "position-matrix=p position-matrix=m file=a.py"
+        "position-matrix=p position-matrix=m position-size=3 attribute=n:float3 file=a.py"
     )
 
 

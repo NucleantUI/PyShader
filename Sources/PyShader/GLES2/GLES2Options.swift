@@ -29,12 +29,22 @@
 /// ```
 ///
 /// A graphics target's `vertex` takes the attributes as parameters instead:
-/// `position: float2`, `texcoord: float2` and `color: float4` read
-/// `positionAttribute`, `texcoordAttribute` and `colorAttribute`, and the
-/// position it returns goes through `positionMatrices` too.
+/// `position` (a `float2` by default, see `positionSize`), `texcoord: float2`
+/// and `color: float4` read `positionAttribute`, `texcoordAttribute` and
+/// `colorAttribute`, each of `attributes` the attribute of its own name, and
+/// the position it returns goes through `positionMatrices` too.
 public struct GLES2Options: Sendable, Hashable {
-    /// The `vec2` position each vertex comes with.
+    /// The position each vertex comes with.
     public var positionAttribute: String
+    /// How many floats the position attribute holds: 2 (`vec2`, the
+    /// default), 3 or 4. A graphics target's `position` is a `float2`,
+    /// `float3` or `float4` to match; the generated vertex stage fills in
+    /// `z = 0` and `w = 1`.
+    public var positionSize: Int
+    /// More vertex attributes a graphics target's `vertex` takes, each a
+    /// parameter of the attribute's name: `["normal": .float3]`. A `float`,
+    /// `float2`, `float3` or `float4`.
+    public var attributes: [String: ShaderArgumentKind]
     /// The `vec2` texture coordinate each vertex comes with, passed on as `uvVarying`.
     public var texcoordAttribute: String
     /// The texture coordinates run top-down, so the generated vertex stage
@@ -61,6 +71,8 @@ public struct GLES2Options: Sendable, Hashable {
 
     public init(
         positionAttribute: String = "a_position",
+        positionSize: Int = 2,
+        attributes: [String: ShaderArgumentKind] = [:],
         texcoordAttribute: String = "a_texcoord",
         uvIsTopDown: Bool = false,
         colorAttribute: String = "a_color",
@@ -72,6 +84,8 @@ public struct GLES2Options: Sendable, Hashable {
         contentSampler: String = "u_content"
     ) {
         self.positionAttribute = positionAttribute
+        self.positionSize = positionSize
+        self.attributes = attributes
         self.texcoordAttribute = texcoordAttribute
         self.uvIsTopDown = uvIsTopDown
         self.colorAttribute = colorAttribute
@@ -93,12 +107,22 @@ public struct GLES2Options: Sendable, Hashable {
         if let colorUniform { all.append(("colorUniform", colorUniform)) }
         if let opacityUniform { all.append(("opacityUniform", opacityUniform)) }
         for matrix in positionMatrices { all.append(("positionMatrices", matrix)) }
+        for name in attributes.keys.sorted() { all.append(("attributes", name)) }
         return all
     }
 
     /// Each name is a GLSL identifier GLSL does not keep for itself, and no
     /// two options share one.
     func validate() throws {
+        guard (2...4).contains(positionSize) else {
+            throw PyShaderError("`positionSize` is 2, 3 or 4, not \(positionSize)")
+        }
+        for (name, kind) in attributes.sorted(by: { $0.key < $1.key }) {
+            switch kind {
+            case .float, .float2, .float3, .float4: break
+            default: throw PyShaderError("attribute `\(name)` is a `\(kind)`; an attribute is a float, float2, float3 or float4")
+            }
+        }
         var seen: [String: String] = [:]
         for (option, name) in names {
             let isIdentifier = name.first.map { $0 == "_" || ($0.isASCII && $0.isLetter) } == true

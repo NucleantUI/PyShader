@@ -66,12 +66,25 @@ extension PyShader {
 
     static func compileGLES2(_ source: String, target: ShaderTarget, sourceFile: String?, searching modules: ShaderModules, options: GLES2Options) throws -> GLES2Shader {
         let linker = ModuleLinker(modules: modules)
+        try options.validate()
         let module = try linker.link(parse(source))
         var target = target.inferringTextures(from: module)
         // The graphics target's vertex stage reads the vertex attributes.
         if case .graphics(var i) = target {
-            for (name, input) in GraphicsInterface.Input.attributes where i.inputs[name] == nil { i.inputs[name] = input }
+            let builtIn: [(String, GraphicsInterface.Input)] = [
+                ("position", .positionAttribute(size: options.positionSize)),
+                ("texcoord", .texcoordAttribute), ("color", .colorAttribute),
+            ]
+            for (name, input) in builtIn where i.inputs[name] == nil { i.inputs[name] = input }
+            for (name, kind) in options.attributes.sorted(by: { $0.key < $1.key }) {
+                if i.inputs[name] != nil || i.arguments.contains(where: { $0.name == name }) || i.textures.contains(where: { $0.name == name }) {
+                    throw PyShaderError("attribute `\(name)` clashes with an input, argument or texture of the same name")
+                }
+                i.inputs[name] = .attribute(kind.type)
+            }
             target = .graphics(i)
+        } else if let name = options.attributes.keys.sorted().first {
+            throw PyShaderError("attribute `\(name)`: only a graphics target's vertex stage takes attributes")
         }
         let program = try ShaderProgram(module: module, target: target, origins: linker.origins)
         return try GLES2Compiler(program: program, sourceFile: sourceFile, options: options).compile()

@@ -16,6 +16,7 @@ Both hold what the SwiftPM plugins read from ``pyshader.toml``: an optional
     uv-top-down = true                         # gles2: the texture coordinates run top-down
     uv-varying = "v_uv"                        # gles2: the names the stages declare, and
     position-matrices = []                     #   how the vertex stage places its quad
+    attributes = ["normal:float3"]             # gles2 graphics: more vertex attributes
     content = true                             # or content-top-down = true
     textures-top-down = true                   # the `Texture` parameters top-down; y-up by default
     arguments = ["gain:float", "tint:float4"]
@@ -38,7 +39,8 @@ GLES2_NAME_KEYS = (
     "position-attribute", "texcoord-attribute", "color-attribute", "color-uniform",
     "opacity-uniform", "uv-varying", "color-varying", "content-sampler",
 )
-GLES2_KEYS = GLES2_NAME_KEYS + ("position-matrices", "single-file", "uv-top-down")
+GLES2_KEYS = GLES2_NAME_KEYS + ("position-matrices", "single-file", "uv-top-down", "position-size", "attributes")
+ATTRIBUTE_KINDS = ("float", "float2", "float3", "float4")
 SECTION_KEYS = ("source", "output", "target", "content", "content-top-down", "textures-top-down", "arguments", "optimize", "format") + GLES2_KEYS
 
 
@@ -204,6 +206,19 @@ def _section(name: str, table: dict, fail) -> Section:
     if not isinstance(matrices, list) or not all(isinstance(m, str) and m and not any(c.isspace() or c == "=" for c in m) for m in matrices):
         raise fail(f"{owner}`position-matrices` must be an array of uniform names")
     gles2_options += [f"position-matrix={m}" for m in matrices]
+    if "position-size" in table:
+        size = table["position-size"]
+        if isinstance(size, bool) or size not in (2, 3, 4):
+            raise fail(f"{owner}`position-size` is 2, 3 or 4")
+        gles2_options.append(f"position-size={size}")
+    attributes = table.get("attributes", [])
+    if not isinstance(attributes, list) or not all(isinstance(a, str) for a in attributes):
+        raise fail(f'{owner}`attributes` must be an array of `"name:kind"`')
+    for attribute in attributes:
+        parts = attribute.split(":")
+        if len(parts) != 2 or parts[1] not in ATTRIBUTE_KINDS or not parts[0] or any(c.isspace() or c == "=" for c in parts[0]):
+            raise fail(f"{owner}attribute `{attribute}` must be `\"name:kind\"`, kind one of {', '.join(ATTRIBUTE_KINDS)}")
+        gles2_options.append(f"attribute={attribute}")
     single_file = boolean("single-file")
     default_output = f"{name}.spv" if format == "spirv" else f"{name}.glsl" if single_file else name
     return Section(

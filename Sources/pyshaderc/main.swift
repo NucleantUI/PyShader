@@ -9,6 +9,7 @@
 //                   [--single-file] [--uv-top-down] [--position-attribute name] [--texcoord-attribute name]
 //                   [--color-attribute name] [--color-uniform name] [--opacity-uniform name]
 //                   [--position-matrix name]... [--uv-varying name] [--color-varying name]
+//                   [--position-size 2|3|4] [--attribute name:float|float2|float3|float4]...
 //                   [--content-sampler name]
 //
 //  `--target compute` builds for NucleantUI's `Shader` view (storage image),
@@ -38,7 +39,7 @@ import SpirvTools
 func usage() -> Never {
     FileHandle.standardError.write("""
     usage: pyshaderc <input.py> [-o output] [--target fragment|compute|graphics] [--format spirv|gles2] [--content] [--content-top-down] [--textures-top-down] [--arg name:kind]... [--site-packages dir] [--optimize flag]...
-           gles2: [--single-file] [--uv-top-down] [--position-attribute name] [--texcoord-attribute name] [--color-attribute name] [--color-uniform name] [--opacity-uniform name] [--position-matrix name]... [--uv-varying name] [--color-varying name] [--content-sampler name]
+           gles2: [--single-file] [--uv-top-down] [--position-attribute name] [--texcoord-attribute name] [--color-attribute name] [--color-uniform name] [--opacity-uniform name] [--position-matrix name]... [--uv-varying name] [--color-varying name] [--content-sampler name] [--position-size 2|3|4] [--attribute name:kind]...
 
     """.data(using: .utf8)!)
     exit(2)
@@ -59,6 +60,10 @@ var gles2 = GLES2Options()
 var singleFile = false
 /// The gles2 options given, which `--format spirv` does not take.
 var gles2Flags: [String] = []
+
+func attributeKind(_ name: String) -> ShaderArgumentKind? {
+    ["float": .float, "float2": .float2, "float3": .float3, "float4": .float4][name]
+}
 
 @MainActor func value() -> String {
     guard !args.isEmpty else { usage() }
@@ -106,6 +111,15 @@ while !args.isEmpty {
     case "--uv-varying": gles2.uvVarying = value(); gles2Flags.append(a)
     case "--color-varying": gles2.colorVarying = value(); gles2Flags.append(a)
     case "--content-sampler": gles2.contentSampler = value(); gles2Flags.append(a)
+    case "--position-size":
+        guard let size = Int(value()) else { usage() }
+        gles2.positionSize = size
+        gles2Flags.append(a)
+    case "--attribute":
+        let spec = value().split(separator: ":", maxSplits: 1).map(String.init)
+        guard spec.count == 2, let kind = attributeKind(spec[1]) else { usage() }
+        gles2.attributes[spec[0]] = kind
+        gles2Flags.append(a)
     case "--arg":
         guard !args.isEmpty else { usage() }
         let spec = args.removeFirst().split(separator: ":", maxSplits: 1).map(String.init)

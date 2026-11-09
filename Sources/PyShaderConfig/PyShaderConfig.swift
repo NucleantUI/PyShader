@@ -23,8 +23,9 @@
 //  go (its extension replaced), or with `single-file = true` the one file
 //  holding both; `uv-top-down` (a boolean), `position-attribute`, `texcoord-attribute`,
 //  `color-attribute`, `color-uniform`, `opacity-uniform`,
-//  `position-matrices` (an array), `uv-varying`, `color-varying` and
-//  `content-sampler` are pyshaderc's flags of the same names.
+//  `position-matrices` (an array), `uv-varying`, `color-varying`,
+//  `content-sampler`, `position-size` (2, 3 or 4) and `attributes` (an array
+//  of `"name:kind"`, `--attribute`) are pyshaderc's flags of the same names.
 //
 //  Paths are relative to the folder the file is in. Only the TOML this needs
 //  is read: tables, and keys holding strings, booleans or arrays of strings.
@@ -74,7 +75,7 @@ struct PyShaderConfig: Equatable {
         "opacity-uniform", "uv-varying", "color-varying", "content-sampler",
     ]
     /// Every gles2-only key.
-    static let gles2Keys = gles2NameKeys + ["position-matrices", "single-file", "uv-top-down"]
+    static let gles2Keys = gles2NameKeys + ["position-matrices", "single-file", "uv-top-down", "position-size", "attributes"]
 
     /// The file's name, at the root of the package.
     static let fileName = "pyshader.toml"
@@ -101,7 +102,7 @@ struct PyShaderConfig: Equatable {
     }
 
     init(parsing text: String) throws {
-        enum Value { case string(String), bool(Bool), strings([String]) }
+        enum Value { case string(String), bool(Bool), strings([String]), int(Int) }
         var top: [String: (Value, Int)] = [:]
         var tables: [(name: String, line: Int, keys: [String: (Value, Int)])] = []
 
@@ -145,6 +146,8 @@ struct PyShaderConfig: Equatable {
                 value = .bool(true)
             } else if line == "false" {
                 value = .bool(false)
+            } else if let n = Int(line) {
+                value = .int(n)
             } else if line.hasPrefix("[") {
                 guard line.hasSuffix("]") else { throw ParseError(message: "`\(key)`: unterminated array", line: number) }
                 var items: [String] = []
@@ -165,7 +168,7 @@ struct PyShaderConfig: Equatable {
             } else if let (string, after) = Self.string(Substring(line)), after.allSatisfy(\.isWhitespace) {
                 value = .string(string)
             } else {
-                throw ParseError(message: "`\(key)`: expected a string, `true` / `false` or an array of strings", line: number)
+                throw ParseError(message: "`\(key)`: expected a string, `true` / `false`, a whole number or an array of strings", line: number)
             }
             if tables.isEmpty {
                 guard top[key] == nil else { throw ParseError(message: "`\(key)` is set twice", line: number) }
@@ -257,6 +260,20 @@ struct PyShaderConfig: Equatable {
             if let (value, line) = table.keys["position-matrices"] {
                 guard case .strings(let matrices) = value else { throw ParseError(message: "\(owner)`position-matrices` must be an array of uniform names", line: line) }
                 for matrix in matrices { gles2Arguments += ["--position-matrix", matrix] }
+            }
+            if let (value, line) = table.keys["position-size"] {
+                guard case .int(let n) = value, (2...4).contains(n) else { throw ParseError(message: "\(owner)`position-size` is 2, 3 or 4", line: line) }
+                gles2Arguments += ["--position-size", String(n)]
+            }
+            if let (value, line) = table.keys["attributes"] {
+                guard case .strings(let attributes) = value else { throw ParseError(message: "\(owner)`attributes` must be an array of `\"name:kind\"`", line: line) }
+                for attribute in attributes {
+                    let parts = attribute.split(separator: ":")
+                    guard parts.count == 2, ["float", "float2", "float3", "float4"].contains(String(parts[1])) else {
+                        throw ParseError(message: "\(owner)attribute `\(attribute)` must be `\"name:kind\"`, kind one of float, float2, float3, float4", line: line)
+                    }
+                    gles2Arguments += ["--attribute", attribute]
+                }
             }
             let defaultOutput = format == "spirv" ? "\(table.name).spv" : singleFile ? "\(table.name).glsl" : table.name
             let output = try string(table.keys, "output", in: owner) ?? defaultOutput

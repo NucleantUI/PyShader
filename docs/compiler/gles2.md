@@ -46,9 +46,10 @@ void main(void) {
 ```
 
 - **A graphics target's vertices** come from attributes: `vertex` may take
-  `position: float2`, `texcoord: float2` and `color: float4`, read from
-  `position-attribute`, `texcoord-attribute` and `color-attribute`, beside
-  uniforms and shader arguments. `vertex_index` and `instance_index` have no
+  `position` (a `float2`, or as many floats as `position-size` says),
+  `texcoord: float2` and `color: float4`, read from `position-attribute`,
+  `texcoord-attribute` and `color-attribute`, and each of `attributes` by its
+  own name, beside uniforms and shader arguments. `vertex_index` and `instance_index` have no
   OpenGL ES 2 counterpart. A vertex stage that takes no attribute computes
   the same position for every vertex.
 - **The app sets the uniforms.** `resolution` is the quad's size in pixels.
@@ -82,7 +83,9 @@ property of `GLES2Options` in Swift:
 |---|---|---|---|
 | `single-file` | `--single-file` | `false` | both stages in one file, `<output>.glsl` by default, each after a `---VERTEX SHADER---` / `---FRAGMENT SHADER---` line |
 | `uv-top-down` | `--uv-top-down` | `false` | the texture coordinates run top-down: the generated vertex stage passes on `(x, 1 - y)`, so `uv`, and `frag_coord` and `pixel` from it, run up. A graphics target's `texcoord` is the attribute as it is |
-| `position-attribute` | `--position-attribute` | `a_position` | the `vec2` position attribute; a graphics target's `position` |
+| `position-attribute` | `--position-attribute` | `a_position` | the position attribute; a graphics target's `position` |
+| `position-size` | `--position-size` | `2` | the floats the position attribute holds, 2, 3 or 4; the generated vertex stage fills in `z = 0`, `w = 1` |
+| `attributes` | `--attribute name:kind`, repeated | none | more attributes a graphics target's `vertex` takes, each a parameter of its own name: `["normal:float3", "size:float"]`, kinds `float` to `float4` |
 | `texcoord-attribute` | `--texcoord-attribute` | `a_texcoord` | the `vec2` texture coordinate attribute, passed on as `uv`; a graphics target's `texcoord` |
 | `color-attribute` | `--color-attribute` | `a_color` | the `vec4` color attribute, passed on as `color`; a graphics target's `color` |
 | `color-uniform` | `--color-uniform` | none | a `vec4` uniform the color is instead |
@@ -130,7 +133,18 @@ canvas["resolution"] = [800.0, 600.0]
 A graphics target draws a `Mesh` in a `RenderContext`: its default vertex
 format is `vPosition` and `vTexCoords0`, which `vertex` takes as `position`
 and `texcoord`, in the widget's coordinates, which `position-matrices` takes
-to the screen.
+to the screen. A mesh with its own `fmt` names its attributes:
+
+```toml
+# Mesh(fmt=[(b"v_pos", 3, "float"), (b"v_normal", 3, "float"), (b"size", 1, "float")])
+position-attribute = "v_pos"
+position-size = 3
+attributes = ["v_normal:float3", "size:float"]
+```
+
+```py
+def vertex(position: float3, v_normal: float3, size: float) -> V: ...
+```
 
 A Kivy `ShaderTransition` sets a `t` uniform and two textures:
 `def main(uv: float2, t: float, tex_in: Texture, tex_out: Texture)` with

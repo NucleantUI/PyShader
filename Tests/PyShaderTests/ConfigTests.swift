@@ -75,6 +75,8 @@ struct ConfigTests {
             uv-varying = "tex_coord0"
             content-sampler = "texture0"
             position-matrices = ["projection_mat", "modelview_mat"]
+            position-size = 3
+            attributes = ["v_normal:float3"]
             [two]
             source = "t.py"
             output = "Shaders/two.glsl"
@@ -86,6 +88,7 @@ struct ConfigTests {
             "/pkg/fx.py", "-o", "/out/fx.glsl", "--target", "fragment", "--format", "gles2", "--single-file",
             "--uv-top-down", "--uv-varying", "tex_coord0", "--content-sampler", "texture0",
             "--position-matrix", "projection_mat", "--position-matrix", "modelview_mat",
+            "--position-size", "3", "--attribute", "v_normal:float3",
         ])
     }
 
@@ -127,6 +130,8 @@ struct ConfigTests {
         expectError("[a]\nsource = \"a.py\"\ncontent-top-down = \"yes\"\n", "`content-top-down` must be", line: 3)
         expectError("[a]\nsource = \"a.py\"\ntextures-top-down = \"yes\"\n", "`textures-top-down` must be", line: 3)
         expectError("[a]\nsource = \"a.py\"\nuv-varying = \"v\"\n", "applies to `format = \"gles2\"`", line: 3)
+        expectError("[a]\nsource = \"a.py\"\nformat = \"gles2\"\nposition-size = 5\n", "`position-size` is 2, 3 or 4", line: 4)
+        expectError("[a]\nsource = \"a.py\"\nformat = \"gles2\"\nattributes = [\"n:vec3\"]\n", "kind one of float, float2", line: 4)
         expectError("[a]\nsource = \"a.py\"\nformat = \"gles2\"\nposition-matrices = \"m\"\n", "array of uniform names", line: 4)
         expectError("[a]\nsource = \"a.py\"\nformat = \"gles2\"\noutput = \"x.glsl\"\n[b]\nsource = \"b.py\"\nformat = \"gles2\"\noutput = \"x.frag\"\n", "two sections write `x.vert`", line: 1)
         expectError("[a]\nsource = \"a.py\"\noptimize = \"-O\"\n", "`optimize` must be an array", line: 3)
