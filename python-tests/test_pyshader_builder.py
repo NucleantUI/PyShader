@@ -287,6 +287,27 @@ def test_modules_from_a_site_packages_declaring_them(tmp_path, monkeypatch):
         backend.build_wheel(str(tmp_path))
 
 
+def test_modules_installed_under_pyshader(tmp_path, monkeypatch):
+    # A library installed as `pyshader/stdlib/`, next to the pyshader stubs,
+    # declaring `pyshader.stdlib`: its modules are imported like any other.
+    site = tmp_path / "site"
+    (site / "pyshader" / "stdlib" / "fragment").mkdir(parents=True)
+    (site / "pyshader" / "__init__.py").write_text("# the stubs, never read\nthis is not a shader\n")
+    (site / "pyshader" / "stdlib" / "__init__.py").write_text("")
+    (site / "pyshader" / "stdlib" / "fragment" / "__init__.py").write_text("")
+    (site / "pyshader" / "stdlib" / "fragment" / "palette.py").write_text(PALETTE)
+    (site / "pyshader_stdlib-0.1.0.dist-info").mkdir()
+    (site / "pyshader_stdlib-0.1.0.dist-info" / "entry_points.txt").write_text(
+        "[pyshader.modules]\nstdlib = pyshader.stdlib\n")
+    shaders = f'[tool.pyshader]\nsite-packages = "{site}"\n\n' + SHADERS.split("[tool.pyshader.tinted]")[0]
+    root = make_project(tmp_path / "p", shaders)
+    (root / "src/glow_app/shaders/glow.py").write_text(
+        TINTED.replace("from palette", "from pyshader.stdlib.fragment.palette"))
+    monkeypatch.chdir(root)
+    with zipfile.ZipFile(tmp_path / backend.build_wheel(str(tmp_path))) as wheel:
+        assert "ramp(" in wheel.read("glow_app/shaders/glow.frag").decode()
+
+
 def test_an_output_outside_the_packages_is_refused(tmp_path, monkeypatch):
     root = make_project(tmp_path / "p", SHADERS.split("[tool.pyshader.tinted]")[0].replace('output = "src/glow_app/shaders/glow"', 'output = "glow"'))
     monkeypatch.chdir(root)

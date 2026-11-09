@@ -59,7 +59,9 @@ def _add_tree(modules: dict[str, str], folder: Path, prefix: tuple[str, ...]) ->
         elif entry.suffix == ".py":
             stem = entry.stem
             parts = prefix if stem == "__init__" else (*prefix, stem)
-            if parts and all(p.isidentifier() for p in parts) and parts[0] != "pyshader":
+            # `pyshader` itself is the compiler's builtin; what is installed
+            # under it (`pyshader.stdlib`) is modules like any other.
+            if parts and all(p.isidentifier() for p in parts) and parts != ("pyshader",):
                 modules.setdefault(".".join(parts), entry.read_text(encoding="utf-8"))
 
 

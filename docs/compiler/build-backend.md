@@ -81,6 +81,22 @@ A shader imports what `pyshaderc` would find:
 3. the same, installed in the build environment, for a shader library
    listed in `[build-system] requires`.
 
+A library the shaders import is a build dependency, so it goes in
+`[build-system] requires`: the build environment always has it, also on the
+first `uv sync` and in `uv build`, where the project's `.venv` may not have it
+yet. List it in `dependencies` (or a dev group) too if the editor should see
+it:
+
+```toml
+[build-system]
+requires = ["pyshader", "pyshader-stdlib"]
+build-backend = "pyshader_builder"
+```
+
+```py
+import pyshader.stdlib.fragment.noise as noise
+```
+
 ## Errors
 
 A shader that does not compile stops the build. The message gives its file,
