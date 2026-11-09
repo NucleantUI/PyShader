@@ -21,6 +21,7 @@ source = "Shaders/clouds.py"
 output = "Resources/clouds.spv"      # default: <section>.spv
 target = "compute"                   # fragment (default) | compute | graphics
 content-top-down = true              # pyshaderc --content-top-down (or content = true: --content)
+textures-top-down = true             # pyshaderc --textures-top-down: the `Texture` parameters, top-down
 arguments = ["gain:float", "tint:float4"]   # pyshaderc --arg, in order
 optimize = ["-O"]                    # pyshaderc --optimize: spirv-opt passes, in order
 # format = "gles2"                   # pyshaderc --format: spirv (default) or gles2, OpenGL ES 2
@@ -28,8 +29,9 @@ optimize = ["-O"]                    # pyshaderc --optimize: spirv-opt passes, i
 
 Each `[section]` is one shader. Paths are relative to the file. The keys
 are `pyshaderc`'s options: `target`, `content`, `content-top-down`,
-`arguments` and `optimize` mean what `--target`, `--content`,
-`--content-top-down`, `--arg` and `--optimize` do; `site-packages` is
+`textures-top-down`, `arguments` and `optimize` mean what `--target`,
+`--content`, `--content-top-down`, `--textures-top-down`, `--arg` and
+`--optimize` do; `site-packages` is
 `--site-packages`, and like it, only the packages that declare a
 `pyshader.modules` entry point can be imported from it (see
 [Modules](../language/modules.md)). A module beside the source is always
@@ -37,6 +39,9 @@ importable. The build plugin uses only the file name of `output`.
 `content-top-down` is the one for NucleantUI's `.shader(_:)`: it hands a
 module the view top-down, as it is stored, and `layer(uv)` then reads it
 upright; with `content` alone it reads that view upside down.
+Likewise `textures-top-down` for the [textures](../targets/compute.md#textures)
+it binds: every `Texture` parameter is one, bound from 4 in the order the
+source declares them, and read y-up unless `textures-top-down` is set.
 `format = "gles2"` writes [OpenGL ES 2](gles2.md) instead of SPIR-V: a Kivy
 `.glsl` file, `<section>.glsl` by default; `optimize` does not apply to it.
 The same table, in a Python project, is read by the

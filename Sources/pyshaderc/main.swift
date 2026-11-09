@@ -4,14 +4,16 @@
 //
 //  usage: pyshaderc <input.py> [-o output] [--target fragment|compute|graphics]
 //                   [--format spirv|gles2]
-//                   [--content] [--content-top-down] [--arg name:float|float2|float3|float4|floatArray|float2Array|float3Array|float4Array]...
+//                   [--content] [--content-top-down] [--textures-top-down] [--arg name:float|float2|float3|float4|floatArray|float2Array|float3Array|float4Array]...
 //                   [--site-packages dir] [--optimize flag]...
 //
 //  `--target compute` builds for NucleantUI's `Shader` view (storage image),
 //  `--target graphics` for its `VertexShader` view (vertex + fragment, one module);
 //  `--content` adds the sampled content image (`layer()`), stored y-up;
 //  `--content-top-down` adds it stored top-down, as NucleantUI 0.0.3 and later
-//  hand a module every image; `--arg` a ShaderArgument.
+//  hand a module every image; `--arg` a ShaderArgument. Every `Texture`
+//  parameter of the entry point(s) is a texture, bound from 4 in the order
+//  they are declared and read y-up; `--textures-top-down` reads them top-down.
 //  `--format gles2` writes GLSL ES 1.00 for OpenGL ES 2 instead, as one Kivy
 //  `.glsl` file holding both stages (default output `<input>.glsl`).
 //  Imports are found next to the input, then in `--site-packages` — by default
@@ -26,7 +28,7 @@ import SpirvTools
 
 func usage() -> Never {
     FileHandle.standardError.write("""
-    usage: pyshaderc <input.py> [-o output] [--target fragment|compute|graphics] [--format spirv|gles2] [--content] [--content-top-down] [--arg name:kind]... [--site-packages dir] [--optimize flag]...
+    usage: pyshaderc <input.py> [-o output] [--target fragment|compute|graphics] [--format spirv|gles2] [--content] [--content-top-down] [--textures-top-down] [--arg name:kind]... [--site-packages dir] [--optimize flag]...
 
     """.data(using: .utf8)!)
     exit(2)
@@ -38,6 +40,7 @@ var targetName = "fragment"
 var format = "spirv"
 var samplesContent = false
 var contentIsTopDown = false
+var texturesAreTopDown = false
 var arguments: [(name: String, kind: ShaderArgumentKind)] = []
 var inputs: [String] = []
 var sitePackages: String?
@@ -61,6 +64,8 @@ while !args.isEmpty {
     case "--content-top-down":
         samplesContent = true
         contentIsTopDown = true
+    case "--textures-top-down":
+        texturesAreTopDown = true
     case "--site-packages":
         guard !args.isEmpty else { usage() }
         sitePackages = args.removeFirst()
@@ -95,8 +100,8 @@ let input = inputs[0]
 let target: ShaderTarget
 switch targetName {
 case "fragment": target = .nucleant
-case "compute": target = .computeImage(.nucleantUI(samplesContent: samplesContent, contentIsTopDown: contentIsTopDown, arguments: arguments))
-case "graphics": target = .graphics(.nucleantUI(samplesContent: samplesContent, contentIsTopDown: contentIsTopDown, arguments: arguments))
+case "compute": target = .computeImage(.nucleantUI(samplesContent: samplesContent, contentIsTopDown: contentIsTopDown, arguments: arguments, texturesAreTopDown: texturesAreTopDown))
+case "graphics": target = .graphics(.nucleantUI(samplesContent: samplesContent, contentIsTopDown: contentIsTopDown, arguments: arguments, texturesAreTopDown: texturesAreTopDown))
 default: usage()
 }
 

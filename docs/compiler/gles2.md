@@ -49,10 +49,13 @@ under Kivy's names and holds only the functions its `main()` reaches.
 - **Shader arguments** (`arguments = ["gain:float"]`, `--arg gain:float`)
   become uniforms of the same name.
 - **`layer(uv)`** samples `texture0`, the texture Kivy binds: the
-  `Rectangle`'s, or the `Fbo`'s. Kivy textures are y-up, so `content = true`
-  fits them. `content-top-down` flips the coordinate, as in SPIR-V.
-- **A named texture** `a` is a `sampler2D a` uniform. `a_size` is an `ivec2`
+  `Rectangle`'s, or the `Fbo`'s. `content = true` reads it as stored, as
+  `texture2D` does; `content-top-down` flips the coordinate, as in SPIR-V.
+- **A `Texture` parameter** `a` is a `sampler2D a` uniform, read as stored
+  unless `textures-top-down` flips it, as in SPIR-V. `a_size` is an `ivec2`
   uniform the app sets, since GLSL ES 1.00 cannot ask a texture its size.
+  A Kivy `ShaderTransition` is one: `def main(uv: float2, t: float, tex_in: Texture, tex_out: Texture)`
+  with `arguments = ["t:float"]` declares the `t`, `tex_in` and `tex_out` it sets.
 - **`half`** is a `float`: GLSL ES writes precision as a qualifier, which the
   desktop GLSL Kivy compiles on a computer would not take. Every stage
   starts with Kivy's `precision highp float`.

@@ -107,6 +107,10 @@ public struct GraphicsInterface: Sendable {
     /// either stage — `a(uv)` and `a_size` in the body, as in the compute
     /// target.
     public var textures: [ShaderTexture]
+    /// Whether the textures taken from the entry points' `Texture` parameters, when
+    /// `textures` lists none, are stored top-down, as `contentIsTopDown` says
+    /// for the content image. A listed `ShaderTexture` says it itself.
+    public var texturesAreTopDown: Bool
     /// Parameter name -> source. Names that are also arguments, or varyings, are an error.
     public var inputs: [String: Input]
 
@@ -121,6 +125,7 @@ public struct GraphicsInterface: Sendable {
         arguments: [(name: String, kind: ShaderArgumentKind)] = [],
         inputBinding: Int = 3,
         textures: [ShaderTexture] = [],
+        texturesAreTopDown: Bool = false,
         inputs: [String: Input] = GraphicsInterface.defaultInputs
     ) {
         self.vertexEntryPoint = vertexEntryPoint
@@ -133,6 +138,7 @@ public struct GraphicsInterface: Sendable {
         self.arguments = arguments
         self.inputBinding = inputBinding
         self.textures = textures
+        self.texturesAreTopDown = texturesAreTopDown
         self.inputs = inputs
     }
 
@@ -171,14 +177,16 @@ public struct GraphicsInterface: Sendable {
         samplesContent: Bool = false,
         contentIsTopDown: Bool = false,
         arguments: [(name: String, kind: ShaderArgumentKind)],
-        textures: [ShaderTexture] = []
+        textures: [ShaderTexture] = [],
+        texturesAreTopDown: Bool = false
     ) -> GraphicsInterface {
         GraphicsInterface(
             contentBinding: samplesContent ? 2 : nil,
             contentIsTopDown: contentIsTopDown,
             argumentsBinding: arguments.isEmpty ? nil : 3,
             arguments: arguments,
-            textures: textures
+            textures: textures,
+            texturesAreTopDown: texturesAreTopDown
         )
     }
 

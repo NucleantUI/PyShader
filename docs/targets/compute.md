@@ -17,7 +17,7 @@
 | `mouse`        | `float2` | `Uniforms.mouseInfo.xy`, y flipped |
 | `mouse_click`  | `float2` | `Uniforms.mouseInfo.zw`, y flipped |
 | *argument*     | `float` / `float2` / `float3` / `float4` / `FloatArray` / `Float2Array` … `Float4Array` | the `ShaderArgument` of that name |
-| *texture*      | `Texture` | the `ShaderTexture` of that name — see [Textures](#textures) |
+| *texture*      | `Texture` | the image bound for it — see [Textures](#textures) |
 | *any name*     | a module class | the [class input](#a-class-as-input), read whole |
 | *any name*     | `list[` a module class `]` | the [list input](#a-list-of-a-class-as-input), read an element at a time |
 
@@ -31,7 +31,7 @@ Descriptor set 0, local size 8 × 8:
 | 1 | `Uniforms { vec4 timeInfo; vec4 res; vec4 mouseInfo; }`, std140 |
 | 2 | `sampler2D` of the view under the effect — only with `samplesContent: true`; enables `layer()` |
 | 3 | `readonly buffer { float data[]; }` — only with arguments; or the [class input](#a-class-as-input) or [list input](#a-list-of-a-class-as-input), at `inputBinding` |
-| 4 and up | `sampler2D` per named texture, at the binding its `ShaderTexture` gives |
+| 4 and up | `sampler2D` per `Texture` parameter, in the order `main` declares them (or at the binding a listed `ShaderTexture` gives) |
 
 The argument buffer starts with an `(offset, count)` float pair per argument,
 then the values, an array's elements packed one after another; `a[i]` on an
@@ -147,22 +147,32 @@ image's size in pixels. A texture is a handle, not a value: it cannot be
 stored, returned or passed to a helper, and reading `a` without calling it is
 an error that says how to sample it.
 
-The interface declares each texture with its binding and orientation:
+The `Texture` parameters are the textures: nothing else declares them. Each
+gets the next binding from 4, in the order `main` declares them, so `a` above
+is at 4 and `b` at 5, and the host binds its images in that order.
+
+By default `a(p)` reads the image at `p` as stored, y-up, as OpenGL and
+Vulkan sample. When the host stores its images top-down, as NucleantUI's
+`RenderTexture`s are, `texturesAreTopDown` reads them at `(p.x, 1 - p.y)`, so
+they are upright:
 
 ```swift
 let interface = ComputeImageInterface.nucleantUI(
     samplesContent: false,
     arguments: [("blend", .float)],
-    textures: [ShaderTexture(name: "a", binding: 4), ShaderTexture(name: "b", binding: 5)]
+    texturesAreTopDown: true
 )
 ```
 
-`isTopDown` (default `true`) says the image is stored top-down, as a
-`RenderTexture` is, so `a(p)` reads it at `(p.x, 1 - p.y)` and sees it
-upright. A texture name that is also an input or an argument is an error.
+It is `--textures-top-down` for `pyshaderc` and `textures-top-down = true` in a
+[`pyshader.toml`](../compiler/plugins.md#pyshadertoml) section. A host with
+another layout lists its textures instead, each with its own binding and
+orientation, `textures: [ShaderTexture(name: "a", binding: 7, isTopDown: false)]`;
+then only those are textures. A texture name that is also an input or an
+argument is an error.
 
-In NucleantUI the declaration comes from the `RenderTexture`s handed to the
-view or effect:
+In NucleantUI the images are the `RenderTexture`s handed to the view or
+effect, in the same order:
 
 ```swift
 Shader(mix, arguments: [.float("blend", t)], textures: [.init("a", layerA), .init("b", layerB)])

@@ -14,6 +14,7 @@
 //      target = "compute"                   # optional: fragment | compute | graphics
 //      content = true                       # optional: the content image, y-up
 //      content-top-down = true              # optional: the content image, top-down
+//      textures-top-down = true             # optional: the `Texture` parameters, top-down
 //      arguments = ["gain:float", "tint:float4"]
 //      optimize = ["-O"]                    # optional: spirv-opt passes
 //      format = "gles2"                     # optional: spirv | gles2 (OpenGL ES 2, a Kivy .glsl)
@@ -43,6 +44,9 @@ struct PyShaderConfig: Equatable {
         var contentIsTopDown = false
         /// `spirv`, or `gles2`: GLSL ES 1.00 for OpenGL ES 2, as one Kivy `.glsl` file.
         var format = "spirv"
+        /// The textures, every `Texture` parameter of the entry points, stored
+        /// top-down; y-up by default.
+        var texturesAreTopDown = false
     }
 
     /// The file's name, at the root of the package.
@@ -159,7 +163,7 @@ struct PyShaderConfig: Equatable {
         var sections: [Section] = []
         for table in tables {
             let owner = "[\(table.name)] "
-            for (key, (_, line)) in table.keys where !["source", "output", "target", "content", "content-top-down", "arguments", "optimize", "format"].contains(key) {
+            for (key, (_, line)) in table.keys where !["source", "output", "target", "content", "content-top-down", "textures-top-down", "arguments", "optimize", "format"].contains(key) {
                 throw ParseError(message: "\(owner)unknown key `\(key)`", line: line)
             }
             guard let source = try string(table.keys, "source", in: owner) else {
@@ -178,6 +182,11 @@ struct PyShaderConfig: Equatable {
             if let (value, line) = table.keys["content-top-down"] {
                 guard case .bool(let b) = value else { throw ParseError(message: "\(owner)`content-top-down` must be `true` or `false`", line: line) }
                 contentIsTopDown = b
+            }
+            var texturesAreTopDown = false
+            if let (value, line) = table.keys["textures-top-down"] {
+                guard case .bool(let b) = value else { throw ParseError(message: "\(owner)`textures-top-down` must be `true` or `false`", line: line) }
+                texturesAreTopDown = b
             }
             var arguments: [String] = []
             if let (value, line) = table.keys["arguments"] {
@@ -203,7 +212,7 @@ struct PyShaderConfig: Equatable {
                 throw ParseError(message: "\(owner)`optimize` runs spirv-opt, which does not apply to `format = \"gles2\"`", line: table.keys["optimize"]!.1)
             }
             let output = try string(table.keys, "output", in: owner) ?? "\(table.name).\(format == "gles2" ? "glsl" : "spv")"
-            sections.append(Section(name: table.name, source: source, output: output, target: target, content: content || contentIsTopDown, arguments: arguments, optimize: optimize, contentIsTopDown: contentIsTopDown, format: format))
+            sections.append(Section(name: table.name, source: source, output: output, target: target, content: content || contentIsTopDown, arguments: arguments, optimize: optimize, contentIsTopDown: contentIsTopDown, format: format, texturesAreTopDown: texturesAreTopDown))
         }
         guard !sections.isEmpty else {
             throw ParseError(message: "no sections: add a `[name]` table with a `source` for each shader", line: 1)
@@ -219,6 +228,7 @@ struct PyShaderConfig: Equatable {
     func compilerArguments(for section: Section, root: URL, output: URL) -> [String] {
         var args = [root.appendingPathComponent(section.source).path, "-o", output.path, "--target", section.target]
         if section.contentIsTopDown { args.append("--content-top-down") } else if section.content { args.append("--content") }
+        if section.texturesAreTopDown { args.append("--textures-top-down") }
         for argument in section.arguments { args += ["--arg", argument] }
         for flag in section.optimize { args += ["--optimize", flag] }
         if section.format != "spirv" { args += ["--format", section.format] }

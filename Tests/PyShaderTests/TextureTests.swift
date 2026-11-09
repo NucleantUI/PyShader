@@ -14,6 +14,7 @@ struct TextureTests {
 
     static func interface(
         textures: [ShaderTexture],
+        texturesAreTopDown: Bool = false,
         samplesContent: Bool = false,
         arguments: [(name: String, kind: ShaderArgumentKind)] = []
     ) -> ShaderTarget {
@@ -21,7 +22,8 @@ struct TextureTests {
             samplesContent: samplesContent,
             contentIsTopDown: true,
             arguments: arguments,
-            textures: textures
+            textures: textures,
+            texturesAreTopDown: texturesAreTopDown
         ))
     }
 
@@ -190,5 +192,90 @@ struct TextureTests {
         """, target: Self.interface(textures: []))
         #expect(!words.has(.opTypeSampledImage))
         #expect(bindings(words) == [0, 1])
+    }
+
+    // MARK: Bindings from the `Texture` parameters
+
+    @Test("with none listed, the Texture parameters are the textures, bound from 4 in order, y-up")
+    func inferred() throws {
+        let inferred = try compileValid(Self.mix, target: Self.interface(textures: [], arguments: [("blend", .float)]))
+        let listed = try PyShader.compile(Self.mix, target: Self.interface(
+            textures: [ShaderTexture(name: "a", binding: 4, isTopDown: false), ShaderTexture(name: "b", binding: 5, isTopDown: false)],
+            arguments: [("blend", .float)]
+        ))
+        #expect(inferred.words == listed.spirv)
+        #expect(bindings(inferred) == [0, 1, 3, 4, 5])
+    }
+
+    @Test("inferred bindings follow the order the parameters are declared in")
+    func inferredOrder() throws {
+        let source = """
+        def main(uv: float2, b: Texture, blend: float, a: Texture) -> float4:
+            return mix(a(uv), b(uv), blend)
+        """
+        let inferred = try compileValid(source, target: Self.interface(textures: [], arguments: [("blend", .float)]))
+        let listed = try PyShader.compile(source, target: Self.interface(
+            textures: [ShaderTexture(name: "b", binding: 4, isTopDown: false), ShaderTexture(name: "a", binding: 5, isTopDown: false)],
+            arguments: [("blend", .float)]
+        ))
+        #expect(inferred.words == listed.spirv)
+    }
+
+    @Test("a vertex + fragment module has one set, in the order the names first appear")
+    func inferredGraphics() throws {
+        let source = """
+        class Varyings:
+            position: float4
+            uv: float2
+
+        def vertex(vertex_index: int, height: Texture) -> Varyings:
+            x = -1.0 + 2.0 * float(vertex_index % 2)
+            y = -1.0 + 2.0 * float(vertex_index // 2)
+            uv = float2(x, y) * 0.5 + 0.5
+            return Varyings(float4(x, y, height(uv).x, 1.0), uv)
+
+        def fragment(uv: float2, albedo: Texture, height: Texture) -> float4:
+            return albedo(uv) * height(uv)
+        """
+        let inferred = try compileValid(source, target: .graphics(.nucleantUI(arguments: [])))
+        let listed = try PyShader.compile(source, target: .graphics(.nucleantUI(
+            arguments: [],
+            textures: [ShaderTexture(name: "height", binding: 4, isTopDown: false), ShaderTexture(name: "albedo", binding: 5, isTopDown: false)]
+        )))
+        #expect(inferred.words == listed.spirv)
+        #expect(bindings(inferred) == [1, 4, 5])
+    }
+
+    @Test("texturesAreTopDown reads the inferred textures top-down")
+    func inferredTopDown() throws {
+        let topDown = try compileValid(Self.mix, target: Self.interface(textures: [], texturesAreTopDown: true, arguments: [("blend", .float)]))
+        let listed = try PyShader.compile(Self.mix, target: Self.interface(
+            textures: [ShaderTexture(name: "a", binding: 4, isTopDown: true), ShaderTexture(name: "b", binding: 5, isTopDown: true)],
+            arguments: [("blend", .float)]
+        ))
+        let upright = try PyShader.compile(Self.mix, target: Self.interface(textures: [], arguments: [("blend", .float)]))
+        #expect(topDown.words == listed.spirv)
+        #expect(topDown.words != upright.spirv)
+    }
+
+    @Test("an interface that lists its textures keeps its own bindings")
+    func listedKept() throws {
+        let words = try compileValid("""
+        def main(uv: float2, noise: Texture) -> float4:
+            return noise(uv)
+        """, target: Self.interface(textures: [ShaderTexture(name: "noise", binding: 9)]))
+        #expect(bindings(words) == [0, 1, 9])
+    }
+
+    @Test("a class of the module's own called Texture is a class, not a texture")
+    func classNamedTexture() throws {
+        let words = try compileValid("""
+        class Texture:
+            tint: float4
+
+        def main(uv: float2, settings: Texture) -> float4:
+            return settings.tint
+        """, target: Self.interface(textures: []))
+        #expect(!words.has(.opTypeSampledImage))
     }
 }

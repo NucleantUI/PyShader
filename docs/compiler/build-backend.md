@@ -51,6 +51,7 @@ same, with paths relative to the project's root:
 | `format` | `spirv` (default), for Vulkan, or `gles2`: [OpenGL ES 2](gles2.md), a Kivy `.glsl` file |
 | `target` | `fragment` (default), `compute` or `graphics` |
 | `content`, `content-top-down` | `layer()` reads the content image (`texture0` in OpenGL ES 2) |
+| `textures-top-down` | the `Texture` parameters' images are stored top-down; y-up by default |
 | `arguments` | the shader arguments, `["gain:float", "tint:float4"]` |
 
 Outside the sections, `site-packages` names where imported shader libraries

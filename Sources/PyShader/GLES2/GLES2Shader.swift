@@ -67,6 +67,7 @@ extension PyShader {
     static func compileGLES2(_ source: String, target: ShaderTarget, sourceFile: String?, searching modules: ShaderModules) throws -> GLES2Shader {
         let linker = ModuleLinker(modules: modules)
         let module = try linker.link(parse(source))
+        let target = target.inferringTextures(from: module)
         let program = try ShaderProgram(module: module, target: target, origins: linker.origins)
         return try GLES2Compiler(program: program, sourceFile: sourceFile).compile()
     }

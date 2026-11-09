@@ -88,10 +88,15 @@ public struct ShaderTexture {
 }
 ```
 
-`ComputeImageInterface.nucleantUI(samplesContent:contentIsTopDown:arguments:textures:)`
-and `GraphicsInterface.nucleantUI(samplesContent:contentIsTopDown:arguments:textures:)`
+The `Texture` parameters of the entry point(s) are the textures, bound from 4
+in the order they are declared, when the interface lists none; listed
+`ShaderTexture`s are for a host with another layout.
+
+`ComputeImageInterface.nucleantUI(samplesContent:contentIsTopDown:arguments:textures:texturesAreTopDown:)`
+and `GraphicsInterface.nucleantUI(samplesContent:contentIsTopDown:arguments:textures:texturesAreTopDown:)`
 build the NucleantUI layouts: an optional content sampler, an argument
-buffer, and a sampler per [named texture](../targets/compute.md#textures).
+buffer, and a sampler per [named texture](../targets/compute.md#textures),
+read top-down with `texturesAreTopDown`.
 The structs' other properties (`entryPoint`, `localSize`, `descriptorSet`,
 bindings, `inputs`) are public for other pipelines. See
 [Targets](../targets/index.md).
@@ -99,7 +104,7 @@ bindings, `inputs`) are public for other pipelines. See
 ## `pyshaderc`
 
 ```sh
-swift run pyshaderc <input.py> [-o output] [--target fragment|compute|graphics] [--format spirv|gles2] [--content] [--content-top-down] [--arg name:kind]... [--site-packages dir] [--optimize flag]...
+swift run pyshaderc <input.py> [-o output] [--target fragment|compute|graphics] [--format spirv|gles2] [--content] [--content-top-down] [--textures-top-down] [--arg name:kind]... [--site-packages dir] [--optimize flag]...
 ```
 
 Writes `<input>.spv` next to the input unless `-o` is given and prints the
@@ -111,7 +116,7 @@ above the input. The module carries the input's file name and source lines (see
 [SPIRV-Tools](https://github.com/NucleantUI/SpirvTools) optimizer pass over the
 module, as `spirv-opt` spells it (`-O`, `-Os`, `--strip-debug`, …), in the order
 given, and validates the result; SPIRV-Tools is linked in on macOS only so far,
-elsewhere `--optimize` fails with an error that says so. `--format gles2` writes [OpenGL ES 2](gles2.md) instead: a Kivy `.glsl` file, `<input>.glsl` by default. `--optimize` does not apply to it. Under an error, the line of code it points at is printed too. Exit status 1 with the error on stderr when compilation fails,
+elsewhere `--optimize` fails with an error that says so. Every `Texture` parameter is a [texture](../targets/compute.md#textures), bound from 4 in the order declared; `--textures-top-down` reads them top-down. `--format gles2` writes [OpenGL ES 2](gles2.md) instead: a Kivy `.glsl` file, `<input>.glsl` by default. `--optimize` does not apply to it. Under an error, the line of code it points at is printed too. Exit status 1 with the error on stderr when compilation fails,
 2 for a usage error.
 
 ```sh

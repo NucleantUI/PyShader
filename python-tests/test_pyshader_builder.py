@@ -188,6 +188,45 @@ def test_the_same_shader_compiles_to_spirv(tmp_path, monkeypatch):
         assert wheel.read("glow_app/shaders/glow.spv")[:4] == bytes.fromhex("03022307")
 
 
+FADE = """\
+from pyshader import *
+
+
+def main(uv: float2, t: float, tex_in: Texture, tex_out: Texture) -> float4:
+    return mix(tex_out(uv), tex_in(uv), t)
+"""
+
+FADE_SHADERS = """\
+[tool.pyshader.fade]
+source = "src/glow_app/transitions/fade.py"
+output = "src/glow_app/transitions/fade.glsl"
+target = "compute"
+format = "gles2"
+arguments = ["t:float"]
+"""
+
+
+def test_texture_parameters_are_the_textures(tmp_path, monkeypatch):
+    """Issue #11: a Kivy ShaderTransition's `tex_in` and `tex_out`, sampled as stored."""
+    root = make_project(tmp_path / "p", FADE_SHADERS, {"src/glow_app/transitions/fade.py": FADE})
+    monkeypatch.chdir(root)
+    with zipfile.ZipFile(tmp_path / backend.build_wheel(str(tmp_path))) as wheel:
+        fragment = wheel.read("glow_app/transitions/fade.glsl").decode().split("---FRAGMENT SHADER---")[1]
+    for declaration in ("uniform float t;", "uniform sampler2D tex_in;", "uniform sampler2D tex_out;"):
+        assert declaration in fragment
+    assert "texture2D(tex_in, uv)" in fragment
+    assert "1.0 - " not in fragment
+
+
+def test_textures_top_down_flips_them(tmp_path, monkeypatch):
+    shaders = FADE_SHADERS + "textures-top-down = true\n"
+    root = make_project(tmp_path / "p", shaders, {"src/glow_app/transitions/fade.py": FADE})
+    monkeypatch.chdir(root)
+    with zipfile.ZipFile(tmp_path / backend.build_wheel(str(tmp_path))) as wheel:
+        fragment = wheel.read("glow_app/transitions/fade.glsl").decode().split("---FRAGMENT SHADER---")[1]
+    assert "1.0 - " in fragment
+
+
 def test_pyshader_toml_is_read_like_the_swiftpm_plugins_read_it(tmp_path, monkeypatch):
     root = make_project(tmp_path / "p", "")
     (root / "pyshader.toml").write_text(

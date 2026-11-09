@@ -13,6 +13,7 @@ Both hold what the SwiftPM plugins read from ``pyshader.toml``: an optional
     target = "compute"                         # fragment (default) | compute | graphics
     format = "gles2"                           # spirv (default) | gles2
     content = true                             # or content-top-down = true
+    textures-top-down = true                   # the `Texture` parameters top-down; y-up by default
     arguments = ["gain:float", "tint:float4"]
 
 Paths are relative to the project's root.
@@ -28,7 +29,7 @@ CONFIG_FILE = "pyshader.toml"
 TARGETS = ("fragment", "compute", "graphics")
 FORMATS = ("spirv", "gles2")
 ARGUMENT_KINDS = ("float", "float2", "float3", "float4", "floatArray", "float2Array", "float3Array", "float4Array")
-SECTION_KEYS = ("source", "output", "target", "content", "content-top-down", "arguments", "optimize", "format")
+SECTION_KEYS = ("source", "output", "target", "content", "content-top-down", "textures-top-down", "arguments", "optimize", "format")
 
 
 class ConfigError(Exception):
@@ -44,6 +45,7 @@ class Section:
     format: str = "spirv"
     content: bool = False
     content_top_down: bool = False
+    textures_top_down: bool = False
     arguments: tuple[str, ...] = ()
 
     def options(self) -> str:
@@ -53,6 +55,8 @@ class Section:
             parts.append("content-top-down=1")
         elif self.content:
             parts.append("content=1")
+        if self.textures_top_down:
+            parts.append("textures-top-down=1")
         parts += [f"arg={a}" for a in self.arguments]
         file = self.source.replace("\\", "/").rsplit("/", 1)[-1]
         if file and not any(c.isspace() for c in file):
@@ -165,5 +169,6 @@ def _section(name: str, table: dict, fail) -> Section:
         format=format,
         content=boolean("content") or content_top_down,
         content_top_down=content_top_down,
+        textures_top_down=boolean("textures-top-down"),
         arguments=tuple(arguments),
     )

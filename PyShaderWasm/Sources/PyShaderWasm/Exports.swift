@@ -11,6 +11,7 @@
 //    target=compute|fragment|graphics   (default compute)
 //    content=1                          (compute/graphics: the shader may call layer())
 //    content-top-down=1                 (as content=1, the image stored top-down)
+//    textures-top-down=1                (the `Texture` parameters' images stored top-down; y-up by default)
 //    format=spirv|gles2                 (default spirv; gles2: OpenGL ES 2, a Kivy .glsl file)
 //    file=name.py                       (the source file's name, for line information and headers)
 //    arg=name:float|float2|float3|float4|floatArray|float2Array|float3Array|float4Array
@@ -73,6 +74,7 @@ private func target(from options: String) throws -> (target: ShaderTarget, forma
     var file: String?
     var samplesContent = false
     var contentIsTopDown = false
+    var texturesAreTopDown = false
     var arguments: [(name: String, kind: ShaderArgumentKind)] = []
     for pair in options.split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" }) {
         let parts = pair.split(separator: "=", maxSplits: 1).map(String.init)
@@ -85,6 +87,8 @@ private func target(from options: String) throws -> (target: ShaderTarget, forma
         case "content-top-down":
             contentIsTopDown = parts[1] == "1" || parts[1] == "true"
             samplesContent = samplesContent || contentIsTopDown
+        case "textures-top-down":
+            texturesAreTopDown = parts[1] == "1" || parts[1] == "true"
         case "file":
             file = parts[1]
         case "format":
@@ -111,9 +115,9 @@ private func target(from options: String) throws -> (target: ShaderTarget, forma
         }
     }
     switch name {
-    case "compute": return (.computeImage(.nucleantUI(samplesContent: samplesContent, contentIsTopDown: contentIsTopDown, arguments: arguments)), format, file)
+    case "compute": return (.computeImage(.nucleantUI(samplesContent: samplesContent, contentIsTopDown: contentIsTopDown, arguments: arguments, texturesAreTopDown: texturesAreTopDown)), format, file)
     case "fragment": return (.nucleant, format, file)
-    case "graphics": return (.graphics(.nucleantUI(samplesContent: samplesContent, contentIsTopDown: contentIsTopDown, arguments: arguments)), format, file)
+    case "graphics": return (.graphics(.nucleantUI(samplesContent: samplesContent, contentIsTopDown: contentIsTopDown, arguments: arguments, texturesAreTopDown: texturesAreTopDown)), format, file)
     default: throw PyShaderError("unknown target `\(name)`")
     }
 }

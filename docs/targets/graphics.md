@@ -56,8 +56,9 @@ but not an argument.
 Bindings match the compute target: `Uniforms` at set 0 binding 1, the
 content image at binding 2 with `samplesContent`, the argument buffer at
 binding 3, and named [textures](compute.md#textures) at 4 and up. A texture
-is one uniform that either stage may declare, given as
-`GraphicsInterface.nucleantUI(arguments:textures:)`.
+is one uniform that either stage may declare: the `Texture` parameters of
+both stages are one set, bound in the order their names first appear, the
+vertex stage's first.
 
 The fragment stage has no derivatives (`dfdx`, `dfdy`, `fwidth`) and no
 `discard()` yet: those are refused in this target. Only the

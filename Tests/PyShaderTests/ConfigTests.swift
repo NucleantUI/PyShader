@@ -63,6 +63,18 @@ struct ConfigTests {
         #expect(!config.compilerArguments(for: config.sections[1], root: root, output: URL(fileURLWithPath: "/out/vk.spv")).contains("--format"))
     }
 
+    @Test("textures-top-down reads the Texture parameters top-down")
+    func texturesTopDown() throws {
+        let config = try PyShaderConfig(parsing: "[fx]\nsource = \"fx.py\"\ntarget = \"compute\"\ntextures-top-down = true\n[plain]\nsource = \"p.py\"\n")
+        #expect(config.sections[0].texturesAreTopDown)
+        #expect(!config.sections[1].texturesAreTopDown)
+        let root = URL(fileURLWithPath: "/pkg")
+        #expect(config.compilerArguments(for: config.sections[0], root: root, output: URL(fileURLWithPath: "/out/fx.spv")) == [
+            "/pkg/fx.py", "-o", "/out/fx.spv", "--target", "compute", "--textures-top-down",
+        ])
+        #expect(!config.compilerArguments(for: config.sections[1], root: root, output: URL(fileURLWithPath: "/out/plain.spv")).contains("--textures-top-down"))
+    }
+
     @Test("mistakes are reported with their line")
     func errors() {
         func expectError(_ text: String, _ needle: String, line: Int, sourceLocation: SourceLocation = #_sourceLocation) {
@@ -87,6 +99,7 @@ struct ConfigTests {
         expectError("[a]\nsource = \"a.py\"\narguments = [\"gain\"]\n", "name:kind", line: 3)
         expectError("[a]\nsource = \"a.py\"\ncontent = \"yes\"\n", "`true` or `false`", line: 3)
         expectError("[a]\nsource = \"a.py\"\ncontent-top-down = \"yes\"\n", "`content-top-down` must be", line: 3)
+        expectError("[a]\nsource = \"a.py\"\ntextures-top-down = \"yes\"\n", "`textures-top-down` must be", line: 3)
         expectError("[a]\nsource = \"a.py\"\noptimize = \"-O\"\n", "`optimize` must be an array", line: 3)
         expectError("[a]\nsource = \"a.py\"\noptimize = [\"O\"]\n", "must start with `-`", line: 3)
         expectError("[a]\nsource = a.py\n", "expected a string", line: 2)

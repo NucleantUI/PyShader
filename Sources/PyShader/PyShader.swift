@@ -86,6 +86,7 @@ public enum PyShader {
     static func compile(_ source: String, target: ShaderTarget, sourceFile: String?, searching modules: ShaderModules) throws -> CompiledShader {
         let linker = ModuleLinker(modules: modules)
         let module = try linker.link(parse(source))
+        let target = target.inferringTextures(from: module)
         let program = try ShaderProgram(module: module, target: target, origins: linker.origins)
         let compiler = ShaderCompiler(program: program, sourceFile: sourceFile)
         let words = try compiler.compile()

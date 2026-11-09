@@ -146,6 +146,26 @@ struct GLES2Tests {
         #expect(shader.fragment.contains("gl_FragCoord.xy / resolution"))
     }
 
+    @Test("Texture parameters are sampler2D uniforms, read y-up unless texturesAreTopDown")
+    func transitionTextures() throws {
+        // Kivy's `ShaderTransition`: the screens as `tex_in` and `tex_out`, the progress as `t`.
+        let shader = try compileES("""
+            def main(uv: float2, t: float, tex_in: Texture, tex_out: Texture) -> float4:
+                return mix(tex_out(uv), tex_in(uv), t)
+            """, target: .computeImage(.nucleantUI(samplesContent: false, arguments: [("t", .float)])))
+        for declaration in ["uniform float t;", "uniform sampler2D tex_in;", "uniform sampler2D tex_out;"] {
+            #expect(shader.fragment.contains(declaration), "\(declaration)")
+        }
+        #expect(shader.fragment.contains("texture2D(tex_in, uv)"))
+        #expect(shader.fragment.contains("texture2D(tex_out, uv)"))
+        #expect(!shader.fragment.contains("1.0 - "))
+        let topDown = try compileES("""
+            def main(uv: float2, t: float, tex_in: Texture, tex_out: Texture) -> float4:
+                return mix(tex_out(uv), tex_in(uv), t)
+            """, target: .computeImage(.nucleantUI(samplesContent: false, arguments: [("t", .float)], texturesAreTopDown: true)))
+        #expect(topDown.fragment.contains("1.0 - "))
+    }
+
     // MARK: The language
 
     @Test("match, lists, tuples, swaps, module variables, lambdas and list functions")

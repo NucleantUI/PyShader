@@ -204,10 +204,12 @@ def main(uv: float2, blend: float, a: Texture, b: Texture) -> float4:
 ```
 
 `a(p)` samples at `p` in `uv` space with explicit LOD 0, like `layer(p)`, and
-`a_size` is the image's size in pixels. The target declares each texture as
-`ShaderTexture(name:binding:isTopDown:)` (4 and up in NucleantUI's layout);
-in NucleantUI, `Shader(fn, textures: [.init("a", renderTexture)])` and
-`.shader(fn, textures: …)` do it. The fragment target has no textures.
+`a_size` is the image's size in pixels. Each `Texture` parameter is bound
+from 4, in the order `main` declares them, and read y-up unless
+`texturesAreTopDown` (`--textures-top-down`, `textures-top-down = true`) says
+the images are stored top-down. In NucleantUI,
+`Shader(fn, textures: [.init("a", renderTexture)])` and `.shader(fn, textures: …)`
+bind them in that order. The fragment target has no textures.
 
 ### Vertex + fragment
 
