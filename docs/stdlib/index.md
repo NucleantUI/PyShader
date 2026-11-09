@@ -47,6 +47,7 @@ packages the usual way, not editable: two editable packages under one
 | [`pyshader.stdlib.fragment.shaping`, `.easing`](shaping.md) | curves that bend a 0..1 value, and animation easing |
 | [`pyshader.stdlib.fragment.color`, `.blend`](color.md) | HSB, YUV, palettes, sRGB; layer blend modes |
 | [`pyshader.stdlib.fragment.shapes`, `.sdf`](shapes.md) | shapes as masks, and 2D signed distance functions |
+| [`pyshader.stdlib.fragment.light`](light.md) | glows from any shape, neon, LEDs and LED rings, shading, soft shadows, tone mapping |
 | [`pyshader.stdlib.fragment.coords`, `.matrix`, `.pattern`](patterns.md) | centering and polar coordinates, 2D rotation, tiling |
 | [`pyshader.stdlib.fragment.random`, `.noise`, `.cellular`](noise.md) | hashes, value / gradient / simplex noise, fBm, Voronoi |
 | [`pyshader.stdlib.vertex.*`](vertex.md) | 4x4 transforms, quads from `vertex_index`, deformations |

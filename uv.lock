@@ -461,7 +461,7 @@ test = [
 [[package]]
 name = "pyshader-stdlib"
 version = "0.1.0"
-source = { git = "https://github.com/NucleantUI/pyshader-stdlib?branch=master#ef3f12b93f204199e40871cce05d8db6fff62964" }
+source = { git = "https://github.com/NucleantUI/pyshader-stdlib?branch=master#fecb54f700c57aa6bf3ce6e966fda0b6e662b4ce" }
 
 [[package]]
 name = "pytest"
