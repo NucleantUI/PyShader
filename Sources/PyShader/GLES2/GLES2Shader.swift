@@ -67,7 +67,12 @@ extension PyShader {
     static func compileGLES2(_ source: String, target: ShaderTarget, sourceFile: String?, searching modules: ShaderModules, options: GLES2Options) throws -> GLES2Shader {
         let linker = ModuleLinker(modules: modules)
         let module = try linker.link(parse(source))
-        let target = target.inferringTextures(from: module)
+        var target = target.inferringTextures(from: module)
+        // The graphics target's vertex stage reads the vertex attributes.
+        if case .graphics(var i) = target {
+            for (name, input) in GraphicsInterface.Input.attributes where i.inputs[name] == nil { i.inputs[name] = input }
+            target = .graphics(i)
+        }
         let program = try ShaderProgram(module: module, target: target, origins: linker.origins)
         return try GLES2Compiler(program: program, sourceFile: sourceFile, options: options).compile()
     }

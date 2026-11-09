@@ -341,6 +341,15 @@ final class GLES2Compiler {
         return GLValue(code: name, type: type)
     }
 
+    /// `attribute <type> <name>;` — a vertex stage's per-vertex input.
+    func attribute(_ name: String, _ type: ShaderType, line: Int, uses: inout Swift.Set<String>) throws -> GLValue {
+        var own: Swift.Set<String> = []
+        let text = "attribute " + (try declaration(name, type, line: line, uses: &own)) + ";"
+        declare("attribute:" + name, kind: .attribute, text: text, uses: own)
+        uses.insert("attribute:" + name)
+        return GLValue(code: name, type: type)
+    }
+
     func varying(_ name: String, _ type: ShaderType, line: Int, uses: inout Swift.Set<String>) throws -> GLValue {
         var own: Swift.Set<String> = []
         let text = "varying " + (try declaration(name, type, line: line, uses: &own)) + ";"
@@ -690,6 +699,12 @@ final class GLES2Compiler {
                 return "ivec2(int(floor(gl_FragCoord.x)), int(floor(\(resolution.code).y - gl_FragCoord.y)))"
             case .frontFacing:
                 return "gl_FrontFacing"
+            case .positionAttribute:
+                return try self.attribute(self.options.positionAttribute, .float(2), line: line, uses: &w.uses).code
+            case .texcoordAttribute:
+                return try self.attribute(self.options.texcoordAttribute, .float(2), line: line, uses: &w.uses).code
+            case .colorAttribute:
+                return try self.attribute(self.options.colorAttribute, .float(4), line: line, uses: &w.uses).code
             default:
                 return try self.uniform(name, input.type, line: line, uses: &w.uses).code
             }
@@ -717,7 +732,9 @@ final class GLES2Compiler {
             w.uses.insert("fn:" + fn)
             let result = try w.temp(vertex.returnType, line: vertexLine)
             w.line("\(result) = \(fn)(\(args.joined(separator: ", ")));")
-            w.line("gl_Position = \(result).\(self.member(vertex.returnType, 0));")
+            let position = "\(result).\(self.member(vertex.returnType, 0))"
+            for matrix in self.options.positionMatrices { _ = try self.uniform(matrix, .matrix(.float(bits: 32), columns: 4, rows: 4), line: vertexLine, uses: &w.uses) }
+            w.line("gl_Position = " + (self.options.positionMatrices + [position]).joined(separator: " * ") + ";")
             for (index, (name, type)) in varyings.enumerated() {
                 let v = try self.varying("v_" + name, type, line: vertexLine, uses: &w.uses)
                 w.line("\(v.code) = \(result).\(self.member(vertex.returnType, index + 1));")
@@ -738,7 +755,7 @@ final class GLES2Compiler {
                     args.append(try self.varying("v_" + varying.0, varying.1, line: fragmentLine, uses: &w.uses).code)
                 } else if let i = interface.inputs[param.name] {
                     switch i {
-                    case .vertexIndex, .instanceIndex:
+                    case .vertexIndex, .instanceIndex, .positionAttribute, .texcoordAttribute, .colorAttribute:
                         throw PyShaderError("`\(param.name)` is a vertex input, not available in `\(interface.fragmentEntryPoint)`", line: fragmentLine)
                     default:
                         args.append(try input(param.name, i, w, line: fragmentLine))
@@ -781,7 +798,10 @@ final class GLES2Compiler {
             let source = o.colorUniform ?? o.colorAttribute
             body.append("\(o.colorVarying) = \(source)" + (o.opacityUniform.map { " * vec4(1.0, 1.0, 1.0, \($0))" } ?? "") + ";")
         }
-        if uv { body.append("\(o.uvVarying) = \(o.texcoordAttribute);") }
+        if uv {
+            let t = o.texcoordAttribute
+            body.append("\(o.uvVarying) = " + (o.uvIsTopDown ? "vec2(\(t).x, 1.0 - \(t).y)" : t) + ";")
+        }
         let position = (o.positionMatrices + ["vec4(\(o.positionAttribute).xy, 0.0, 1.0)"]).joined(separator: " * ")
         body.append("gl_Position = \(position);")
         var out: String = header("vertex")

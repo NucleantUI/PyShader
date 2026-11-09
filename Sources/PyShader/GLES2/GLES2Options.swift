@@ -13,9 +13,7 @@
 /// content sampler, and how the generated vertex stage transforms and colors
 /// its vertices.
 ///
-/// A graphics target writes its own vertex stage and uses only
-/// `contentSampler`; a fragment or compute target gets a vertex stage
-/// written from the rest:
+/// A fragment or compute target gets a vertex stage written from them:
 ///
 /// ```glsl
 /// attribute vec2 a_position;              // positionAttribute
@@ -25,15 +23,24 @@
 /// varying vec4 v_color;                   // colorVarying
 /// void main(void) {
 ///     v_color = a_color;                  // colorUniform instead, times opacityUniform as alpha
-///     v_uv = a_texcoord;
+///     v_uv = a_texcoord;                  // vec2(a_texcoord.x, 1.0 - a_texcoord.y) with uvIsTopDown
 ///     gl_Position = vec4(a_position.xy, 0.0, 1.0);   // positionMatrices first, left to right
 /// }
 /// ```
+///
+/// A graphics target's `vertex` takes the attributes as parameters instead:
+/// `position: float2`, `texcoord: float2` and `color: float4` read
+/// `positionAttribute`, `texcoordAttribute` and `colorAttribute`, and the
+/// position it returns goes through `positionMatrices` too.
 public struct GLES2Options: Sendable, Hashable {
     /// The `vec2` position each vertex comes with.
     public var positionAttribute: String
     /// The `vec2` texture coordinate each vertex comes with, passed on as `uvVarying`.
     public var texcoordAttribute: String
+    /// The texture coordinates run top-down, so the generated vertex stage
+    /// passes on `(x, 1 - y)` and `uv` (and `frag_coord`, `pixel` from it) is
+    /// y-up. A graphics target's `texcoord` is the attribute as it is.
+    public var uvIsTopDown: Bool
     /// The `vec4` color each vertex comes with, passed on as `colorVarying`;
     /// not used when `colorUniform` is set.
     public var colorAttribute: String
@@ -55,6 +62,7 @@ public struct GLES2Options: Sendable, Hashable {
     public init(
         positionAttribute: String = "a_position",
         texcoordAttribute: String = "a_texcoord",
+        uvIsTopDown: Bool = false,
         colorAttribute: String = "a_color",
         colorUniform: String? = nil,
         opacityUniform: String? = nil,
@@ -65,6 +73,7 @@ public struct GLES2Options: Sendable, Hashable {
     ) {
         self.positionAttribute = positionAttribute
         self.texcoordAttribute = texcoordAttribute
+        self.uvIsTopDown = uvIsTopDown
         self.colorAttribute = colorAttribute
         self.colorUniform = colorUniform
         self.opacityUniform = opacityUniform

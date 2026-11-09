@@ -6,7 +6,7 @@
 //                   [--format spirv|gles2]
 //                   [--content] [--content-top-down] [--textures-top-down] [--arg name:float|float2|float3|float4|floatArray|float2Array|float3Array|float4Array]...
 //                   [--site-packages dir] [--optimize flag]...
-//                   [--single-file] [--position-attribute name] [--texcoord-attribute name]
+//                   [--single-file] [--uv-top-down] [--position-attribute name] [--texcoord-attribute name]
 //                   [--color-attribute name] [--color-uniform name] [--opacity-uniform name]
 //                   [--position-matrix name]... [--uv-varying name] [--color-varying name]
 //                   [--content-sampler name]
@@ -38,7 +38,7 @@ import SpirvTools
 func usage() -> Never {
     FileHandle.standardError.write("""
     usage: pyshaderc <input.py> [-o output] [--target fragment|compute|graphics] [--format spirv|gles2] [--content] [--content-top-down] [--textures-top-down] [--arg name:kind]... [--site-packages dir] [--optimize flag]...
-           gles2: [--single-file] [--position-attribute name] [--texcoord-attribute name] [--color-attribute name] [--color-uniform name] [--opacity-uniform name] [--position-matrix name]... [--uv-varying name] [--color-varying name] [--content-sampler name]
+           gles2: [--single-file] [--uv-top-down] [--position-attribute name] [--texcoord-attribute name] [--color-attribute name] [--color-uniform name] [--opacity-uniform name] [--position-matrix name]... [--uv-varying name] [--color-varying name] [--content-sampler name]
 
     """.data(using: .utf8)!)
     exit(2)
@@ -93,6 +93,9 @@ while !args.isEmpty {
         optimize.append(args.removeFirst())
     case "--single-file":
         singleFile = true
+        gles2Flags.append(a)
+    case "--uv-top-down":
+        gles2.uvIsTopDown = true
         gles2Flags.append(a)
     case "--position-attribute": gles2.positionAttribute = value(); gles2Flags.append(a)
     case "--texcoord-attribute": gles2.texcoordAttribute = value(); gles2Flags.append(a)

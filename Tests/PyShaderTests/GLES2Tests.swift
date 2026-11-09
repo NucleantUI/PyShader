@@ -152,6 +152,81 @@ struct GLES2Tests {
         #expect(effect.fragment.contains("texture2D(texture0, "))
     }
 
+    @Test("uvIsTopDown flips the texture coordinate the generated vertex stage passes on")
+    func uvTopDown() throws {
+        let source = """
+            def main(uv: float2, frag_coord: float2, resolution: float2) -> float4:
+                return float4(uv, frag_coord.x / resolution.x, 1.0)
+            """
+        let upright = try compileES(source, target: compute)
+        #expect(upright.vertex.contains("v_uv = a_texcoord;"))
+        let flipped = try PyShader.compileGLES2(source, target: compute, options: GLES2Options(uvIsTopDown: true))
+        #expect(try glslang(flipped) ?? "" == "")
+        #expect(flipped.vertex.contains("v_uv = vec2(a_texcoord.x, 1.0 - a_texcoord.y);"))
+        // `frag_coord` follows `uv`; the fragment stage itself is the same.
+        #expect(flipped.fragment == upright.fragment)
+    }
+
+    @Test("a graphics target's vertex stage takes the vertex attributes, its position through the matrices")
+    func graphicsAttributes() throws {
+        let options = GLES2Options(
+            positionAttribute: "vPosition", texcoordAttribute: "vTexCoords0", colorAttribute: "vColor",
+            positionMatrices: ["projection_mat", "modelview_mat"]
+        )
+        let shader = try PyShader.compileGLES2("""
+            class V:
+                position: float4
+                st: float2
+                tint: float4
+
+            def vertex(position: float2, texcoord: float2, color: float4, time: float) -> V:
+                wave = sin(position.x * 0.02 + time) * 20.0
+                return V(float4(position.x, position.y + wave, 0.0, 1.0), texcoord, color)
+
+            def fragment(st: float2, tint: float4) -> float4:
+                return tint * float4(st, 0.0, 1.0)
+            """, target: .graphics(.nucleantUI(arguments: [])), options: options)
+        #expect(try glslang(shader) ?? "" == "")
+        for line in ["attribute vec2 vPosition;", "attribute vec2 vTexCoords0;", "attribute vec4 vColor;",
+                     "uniform mat4 projection_mat;", "uniform mat4 modelview_mat;", "uniform float time;",
+                     "gl_Position = projection_mat * modelview_mat * pyt0.position;", "varying vec2 v_st;"] {
+            #expect(shader.vertex.contains(line), "\(line)")
+        }
+        #expect(shader.vertex.contains("py_vertex(vPosition, vTexCoords0, vColor, time)"))
+        #expect(!shader.fragment.contains("attribute"))
+    }
+
+    @Test("the vertex attributes are vertex inputs, and OpenGL ES 2 ones")
+    func attributesOnlyInTheVertexStage() throws {
+        let module = """
+            class V:
+                position: float4
+
+            def vertex(position: float2) -> V:
+                return V(float4(position, 0.0, 1.0))
+
+            def fragment(position: float2) -> float4:
+                return float4(position, 0.0, 1.0)
+            """
+        expectESError(module, target: .graphics(.nucleantUI(arguments: [])), "is not a shader input", line: 7)
+        // The SPIR-V graphics target has no vertex buffers to read them from.
+        do {
+            _ = try PyShader.compile("""
+                class V:
+                    position: float4
+
+                def vertex(position: float2) -> V:
+                    return V(float4(position, 0.0, 1.0))
+
+                def fragment() -> float4:
+                    return float4(1.0)
+                """, target: .graphics(.nucleantUI(arguments: [])))
+            Issue.record("expected an error")
+        } catch let error as PyShaderError {
+            #expect(error.message.contains("is not a shader input"), "got: \(error)")
+        }
+    }
+
     @Test("a name an option gives must be one GLSL lets a shader declare, and its own")
     func badNames() {
         for (options, needle) in [

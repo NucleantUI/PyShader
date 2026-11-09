@@ -13,6 +13,7 @@ Both hold what the SwiftPM plugins read from ``pyshader.toml``: an optional
     target = "compute"                         # fragment (default) | compute | graphics
     format = "gles2"                           # spirv (default) | gles2
     single-file = true                         # gles2: both stages in one file (<section>.glsl)
+    uv-top-down = true                         # gles2: the texture coordinates run top-down
     uv-varying = "v_uv"                        # gles2: the names the stages declare, and
     position-matrices = []                     #   how the vertex stage places its quad
     content = true                             # or content-top-down = true
@@ -37,7 +38,7 @@ GLES2_NAME_KEYS = (
     "position-attribute", "texcoord-attribute", "color-attribute", "color-uniform",
     "opacity-uniform", "uv-varying", "color-varying", "content-sampler",
 )
-GLES2_KEYS = GLES2_NAME_KEYS + ("position-matrices", "single-file")
+GLES2_KEYS = GLES2_NAME_KEYS + ("position-matrices", "single-file", "uv-top-down")
 SECTION_KEYS = ("source", "output", "target", "content", "content-top-down", "textures-top-down", "arguments", "optimize", "format") + GLES2_KEYS
 
 
@@ -191,6 +192,8 @@ def _section(name: str, table: dict, fail) -> Section:
             if key in table:
                 raise fail(f'{owner}`{key}` applies to `format = "gles2"`')
     gles2_options: list[str] = []
+    if boolean("uv-top-down"):
+        gles2_options.append("uv-top-down=1")
     for key in GLES2_NAME_KEYS:
         value = string(key)
         if value is not None:

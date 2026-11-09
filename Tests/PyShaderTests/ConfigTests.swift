@@ -71,6 +71,7 @@ struct ConfigTests {
             output = "Shaders/fx.glsl"
             format = "gles2"
             single-file = true
+            uv-top-down = true
             uv-varying = "tex_coord0"
             content-sampler = "texture0"
             position-matrices = ["projection_mat", "modelview_mat"]
@@ -83,7 +84,7 @@ struct ConfigTests {
         #expect(config.sections[1].outputs == ["Shaders/two.vert", "Shaders/two.frag"])
         #expect(config.compilerArguments(for: config.sections[0], root: URL(fileURLWithPath: "/pkg"), output: URL(fileURLWithPath: "/out/fx.glsl")) == [
             "/pkg/fx.py", "-o", "/out/fx.glsl", "--target", "fragment", "--format", "gles2", "--single-file",
-            "--uv-varying", "tex_coord0", "--content-sampler", "texture0",
+            "--uv-top-down", "--uv-varying", "tex_coord0", "--content-sampler", "texture0",
             "--position-matrix", "projection_mat", "--position-matrix", "modelview_mat",
         ])
     }

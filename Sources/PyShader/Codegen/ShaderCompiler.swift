@@ -394,6 +394,8 @@ final class ShaderCompiler {
                     case .mouseClick: value = self.flipped(mouseInfo, 2, 3, resolution: resolution, e)
                     case .uv, .fragCoord, .pixel, .frontFacing:
                         throw PyShaderError("`\(param.name)` is a fragment input, not available in `\(interface.vertexEntryPoint)`", line: vertexLine)
+                    case .positionAttribute, .texcoordAttribute, .colorAttribute:
+                        throw PyShaderError("`\(param.name)` is a vertex attribute, which only the OpenGL ES 2 graphics target reads; this one has no vertex buffers", line: vertexLine)
                     }
                     args.append(value.id)
                 } else if let index = interface.arguments.firstIndex(where: { $0.name == param.name }) {
@@ -502,7 +504,7 @@ final class ShaderCompiler {
                     case .resolution: value = resolution
                     case .mouse: value = self.flipped(mouseInfo, 0, 1, resolution: resolution, e)
                     case .mouseClick: value = self.flipped(mouseInfo, 2, 3, resolution: resolution, e)
-                    case .vertexIndex, .instanceIndex:
+                    case .vertexIndex, .instanceIndex, .positionAttribute, .texcoordAttribute, .colorAttribute:
                         throw PyShaderError("`\(param.name)` is a vertex input, not available in `\(interface.fragmentEntryPoint)`", line: fragmentLine)
                     }
                     args.append(value.id)

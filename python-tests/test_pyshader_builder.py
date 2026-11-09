@@ -316,10 +316,11 @@ def test_configuration_mistakes():
     assert config.sections[0].outputs() == ("a.vert", "a.frag")
     assert config.sections[0].options() == "target=fragment format=gles2 content-top-down=1 arg=g:float file=a.py"
     config = _config.parse({"a": {"source": "a.py", "format": "gles2", "single-file": True, "content-sampler": "texture0",
-                                  "position-matrices": ["p", "m"]}}, "x")
+                                  "position-matrices": ["p", "m"], "uv-top-down": True}}, "x")
     assert config.sections[0].outputs() == ("a.glsl",)
     assert config.sections[0].options() == (
-        "target=fragment format=gles2 single-file=1 content-sampler=texture0 position-matrix=p position-matrix=m file=a.py"
+        "target=fragment format=gles2 single-file=1 uv-top-down=1 content-sampler=texture0 "
+        "position-matrix=p position-matrix=m file=a.py"
     )
 
 

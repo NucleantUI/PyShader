@@ -30,7 +30,7 @@ functions its `main()` reaches.
 |---|---|---|
 | fragment | written from the [options](#options): a quad passing on `uv` and `color` | `main` with `uv` and `color` from the vertex stage, `frag_coord` = `gl_FragCoord`, `front_facing` = `gl_FrontFacing`; `time`, `resolution`, `mouse` are uniforms |
 | compute | written from the options: a quad passing on `uv` | one fragment per pixel of the quad: `uv` from the vertex stage, `frag_coord` = `uv * resolution`, `pixel` y-down from it; `time`, `time_delta`, `frame`, `resolution`, `mouse`, `mouse_click` are uniforms |
-| graphics | `vertex`, its first field to `gl_Position` (GL's clip space is already y-up), the others to `v_<field>` varyings | `fragment`, taking the varyings by name; `uv` = `gl_FragCoord.xy / resolution` |
+| graphics | `vertex`, taking the vertex attributes as `position`, `texcoord` and `color` and uniforms; its first field, through `position-matrices`, to `gl_Position` (GL's clip space is already y-up), the others to `v_<field>` varyings | `fragment`, taking the varyings by name; `uv` = `gl_FragCoord.xy / resolution` |
 
 With the default options, a compute shader's vertex stage is:
 
@@ -45,6 +45,12 @@ void main(void) {
 }
 ```
 
+- **A graphics target's vertices** come from attributes: `vertex` may take
+  `position: float2`, `texcoord: float2` and `color: float4`, read from
+  `position-attribute`, `texcoord-attribute` and `color-attribute`, beside
+  uniforms and shader arguments. `vertex_index` and `instance_index` have no
+  OpenGL ES 2 counterpart. A vertex stage that takes no attribute computes
+  the same position for every vertex.
 - **The app sets the uniforms.** `resolution` is the quad's size in pixels.
   `mouse` and `mouse_click` are y-up in it.
 - **Shader arguments** (`arguments = ["gain:float"]`, `--arg gain:float`)
@@ -75,20 +81,20 @@ property of `GLES2Options` in Swift:
 | key | `pyshaderc` | default | |
 |---|---|---|---|
 | `single-file` | `--single-file` | `false` | both stages in one file, `<output>.glsl` by default, each after a `---VERTEX SHADER---` / `---FRAGMENT SHADER---` line |
-| `position-attribute` | `--position-attribute` | `a_position` | the `vec2` position attribute |
-| `texcoord-attribute` | `--texcoord-attribute` | `a_texcoord` | the `vec2` texture coordinate attribute, passed on as `uv` |
-| `color-attribute` | `--color-attribute` | `a_color` | the `vec4` color attribute, passed on as `color` |
+| `uv-top-down` | `--uv-top-down` | `false` | the texture coordinates run top-down: the generated vertex stage passes on `(x, 1 - y)`, so `uv`, and `frag_coord` and `pixel` from it, run up. A graphics target's `texcoord` is the attribute as it is |
+| `position-attribute` | `--position-attribute` | `a_position` | the `vec2` position attribute; a graphics target's `position` |
+| `texcoord-attribute` | `--texcoord-attribute` | `a_texcoord` | the `vec2` texture coordinate attribute, passed on as `uv`; a graphics target's `texcoord` |
+| `color-attribute` | `--color-attribute` | `a_color` | the `vec4` color attribute, passed on as `color`; a graphics target's `color` |
 | `color-uniform` | `--color-uniform` | none | a `vec4` uniform the color is instead |
 | `opacity-uniform` | `--opacity-uniform` | none | a `float` uniform the color's alpha is multiplied by |
-| `position-matrices` | `--position-matrix`, repeated | none | `mat4` uniforms the position is multiplied by, left to right; none: it is already in clip space |
+| `position-matrices` | `--position-matrix`, repeated | none | `mat4` uniforms the position is multiplied by, left to right, in the generated vertex stage and after a graphics target's `vertex`; none: it is already in clip space |
 | `uv-varying` | `--uv-varying` | `v_uv` | the varying `uv` is read from |
 | `color-varying` | `--color-varying` | `v_color` | the varying `color` is read from |
 | `content-sampler` | `--content-sampler` | `u_content` | the `sampler2D` `layer()` samples |
 
 The vertex stage declares only what the fragment stage reads: no
 `a_texcoord` for a shader that never takes `uv`, no color for one that never
-takes `color`. A graphics target writes its own vertex stage and uses only
-`content-sampler`. A name must be one GLSL lets a shader declare, and no two
+takes `color`. A name must be one GLSL lets a shader declare, and no two
 options may share one.
 
 ### Kivy
@@ -100,6 +106,7 @@ settings fit a shader to it:
 ```toml
 format = "gles2"
 single-file = true
+uv-top-down = true               # a Rectangle's tex_coords, and an image's, run top-down
 position-attribute = "vPosition"
 texcoord-attribute = "vTexCoords0"
 position-matrices = ["projection_mat", "modelview_mat"]
@@ -108,6 +115,7 @@ color-varying = "frag_color"     # fragment target, `color`
 color-uniform = "color"          # the canvas's `Color`
 opacity-uniform = "opacity"      # the widget's opacity
 content-sampler = "texture0"     # the texture Kivy binds, for layer()
+content-top-down = true          # an image Kivy loads is stored top-down
 ```
 
 ```python
@@ -118,6 +126,11 @@ canvas.shader.source = "shader.glsl"
 canvas["time"] = 1.5                      # a uniform the shader takes
 canvas["resolution"] = [800.0, 600.0]
 ```
+
+A graphics target draws a `Mesh` in a `RenderContext`: its default vertex
+format is `vPosition` and `vTexCoords0`, which `vertex` takes as `position`
+and `texcoord`, in the widget's coordinates, which `position-matrices` takes
+to the screen.
 
 A Kivy `ShaderTransition` sets a `t` uniform and two textures:
 `def main(uv: float2, t: float, tex_in: Texture, tex_out: Texture)` with
@@ -144,7 +157,7 @@ rules these out. Each one is an error at its line:
 | `isnan`, `isinf`, `modf`, `frexp`, `ldexp`, packing, bit functions | not in GLSL ES 1.00 |
 | fine and coarse derivatives | only `dFdx`, `dFdy`, `fwidth` |
 | array arguments (`FloatArray`), class and list inputs | uniforms have a fixed size, and there are no storage buffers |
-| `vertex_index`, `instance_index` | no `gl_VertexID`, no instancing |
+| `vertex_index`, `instance_index` | no `gl_VertexID`, no instancing: take the vertex attributes, `position`, `texcoord`, `color` |
 | integer or bool varyings | only floats are interpolated |
 | a function returning a list, a class or tuple holding one | arrays cannot be returned, nor structs holding them assigned |
 

@@ -14,6 +14,7 @@
 //    textures-top-down=1                (the `Texture` parameters' images stored top-down; y-up by default)
 //    format=spirv|gles2                 (default spirv; gles2: OpenGL ES 2)
 //    single-file=1                      (gles2: both stages in one file)
+//    uv-top-down=1                      (gles2: the texture coordinates run top-down; uv is flipped)
 //    position-attribute=, texcoord-attribute=, color-attribute=, color-uniform=,
 //    opacity-uniform=, position-matrix= (repeatable), uv-varying=, color-varying=,
 //    content-sampler=                   (gles2: the names the stages declare; see GLES2Options)
@@ -103,6 +104,9 @@ private func target(from options: String) throws -> (target: ShaderTarget, forma
             file = parts[1]
         case "single-file":
             singleFile = parts[1] == "1" || parts[1] == "true"
+            gles2Keys.append(parts[0])
+        case "uv-top-down":
+            gles2.uvIsTopDown = parts[1] == "1" || parts[1] == "true"
             gles2Keys.append(parts[0])
         case "position-attribute": gles2.positionAttribute = parts[1]; gles2Keys.append(parts[0])
         case "texcoord-attribute": gles2.texcoordAttribute = parts[1]; gles2Keys.append(parts[0])

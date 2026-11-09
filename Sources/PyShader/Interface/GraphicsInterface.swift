@@ -31,6 +31,15 @@ public struct GraphicsInterface: Sendable {
         case vertexIndex
         /// `int` — `gl_InstanceIndex`.
         case instanceIndex
+        /// `float2` — the vertex's position attribute. OpenGL ES 2 only:
+        /// its graphics target takes `position`, `texcoord` and `color`
+        /// from the attributes `GLES2Options` names. The SPIR-V target has
+        /// no vertex buffers.
+        case positionAttribute
+        /// `float2` — the vertex's texture coordinate attribute (OpenGL ES 2).
+        case texcoordAttribute
+        /// `float4` — the vertex's color attribute (OpenGL ES 2).
+        case colorAttribute
 
         // Fragment stage only.
         /// `float2` in [0, 1], y-up.
@@ -58,7 +67,8 @@ public struct GraphicsInterface: Sendable {
 
         var type: ShaderType {
             switch self {
-            case .uv, .fragCoord, .resolution, .mouse, .mouseClick: return .float(2)
+            case .uv, .fragCoord, .resolution, .mouse, .mouseClick, .positionAttribute, .texcoordAttribute: return .float(2)
+            case .colorAttribute: return .float(4)
             case .pixel: return .int(2)
             case .time, .timeDelta: return .float
             case .frame, .vertexIndex, .instanceIndex: return .int
@@ -75,10 +85,16 @@ public struct GraphicsInterface: Sendable {
 
         var inFragment: Bool {
             switch self {
-            case .vertexIndex, .instanceIndex: return false
+            case .vertexIndex, .instanceIndex, .positionAttribute, .texcoordAttribute, .colorAttribute: return false
             default: return true
             }
         }
+
+        /// The vertex attributes OpenGL ES 2's graphics target adds to the
+        /// inputs, by the parameter name that takes each.
+        static let attributes: [(name: String, input: Input)] = [
+            ("position", .positionAttribute), ("texcoord", .texcoordAttribute), ("color", .colorAttribute),
+        ]
     }
 
     public var vertexEntryPoint: String

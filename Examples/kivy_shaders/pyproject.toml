@@ -25,19 +25,22 @@ pyshader = { path = "../..", editable = true }
 # the program Kivy links them into:
 #
 #   single-file = true          both stages in one `.glsl`, what `Shader.source` loads
+#   uv-top-down = true          a Rectangle's tex_coords run top-down, its image's too
 #   position-attribute,         the vertex attributes Kivy's vertex format has
 #   texcoord-attribute
 #   position-matrices           Kivy's projection and modelview, in that order
 #   uv-varying, color-varying   the varyings Kivy's own shaders pass
 #   color-uniform,              the color Kivy sets from a `Color` instruction,
 #   opacity-uniform             and the widget's opacity
-#   content-sampler             the texture Kivy binds, `layer()`'s image
+#   content-sampler             the texture Kivy binds, `layer()`'s image; an
+#                               image Kivy loads is stored top-down (content-top-down)
 
 [tool.pyshader.plasma]
 source = "src/kivy_shaders/shaders/plasma.py"
 output = "src/kivy_shaders/shaders/plasma.glsl"
 format = "gles2"                 # fragment target: `uv` and `color` from the vertex stage
 single-file = true
+uv-top-down = true
 position-attribute = "vPosition"
 texcoord-attribute = "vTexCoords0"
 position-matrices = ["projection_mat", "modelview_mat"]
@@ -52,6 +55,7 @@ output = "src/kivy_shaders/shaders/aurora.glsl"
 target = "compute"               # one fragment per pixel; `time`, `resolution`, `mouse` uniforms
 format = "gles2"
 single-file = true
+uv-top-down = true
 position-attribute = "vPosition"
 texcoord-attribute = "vTexCoords0"
 position-matrices = ["projection_mat", "modelview_mat"]
@@ -61,10 +65,11 @@ uv-varying = "tex_coord0"
 source = "src/kivy_shaders/shaders/ripple.py"
 output = "src/kivy_shaders/shaders/ripple.glsl"
 target = "compute"
-content = true                   # layer() reads the image under the shader
+content-top-down = true          # layer() reads the image under the shader, stored top-down
 arguments = ["strength:float"]   # a `strength` uniform the app sets
 format = "gles2"
 single-file = true
+uv-top-down = true
 position-attribute = "vPosition"
 texcoord-attribute = "vTexCoords0"
 position-matrices = ["projection_mat", "modelview_mat"]

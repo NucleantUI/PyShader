@@ -21,7 +21,7 @@
 //
 //  With `format = "gles2"`, `output` is where the `.vert` and `.frag` files
 //  go (its extension replaced), or with `single-file = true` the one file
-//  holding both; `position-attribute`, `texcoord-attribute`,
+//  holding both; `uv-top-down` (a boolean), `position-attribute`, `texcoord-attribute`,
 //  `color-attribute`, `color-uniform`, `opacity-uniform`,
 //  `position-matrices` (an array), `uv-varying`, `color-varying` and
 //  `content-sampler` are pyshaderc's flags of the same names.
@@ -74,7 +74,7 @@ struct PyShaderConfig: Equatable {
         "opacity-uniform", "uv-varying", "color-varying", "content-sampler",
     ]
     /// Every gles2-only key.
-    static let gles2Keys = gles2NameKeys + ["position-matrices", "single-file"]
+    static let gles2Keys = gles2NameKeys + ["position-matrices", "single-file", "uv-top-down"]
 
     /// The file's name, at the root of the package.
     static let fileName = "pyshader.toml"
@@ -247,6 +247,10 @@ struct PyShaderConfig: Equatable {
                 singleFile = b
             }
             var gles2Arguments: [String] = []
+            if let (value, line) = table.keys["uv-top-down"] {
+                guard case .bool(let b) = value else { throw ParseError(message: "\(owner)`uv-top-down` must be `true` or `false`", line: line) }
+                if b { gles2Arguments.append("--uv-top-down") }
+            }
             for key in Self.gles2NameKeys {
                 if let name = try string(table.keys, key, in: owner) { gles2Arguments += ["--" + key, name] }
             }
