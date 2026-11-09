@@ -10,6 +10,9 @@
 //  Options are whitespace-separated `key=value` pairs:
 //    target=compute|fragment|graphics   (default compute)
 //    content=1                          (compute/graphics: the shader may call layer())
+//    content-top-down=1                 (as content=1, the image stored top-down)
+//    format=spirv|gles2                 (default spirv; gles2: OpenGL ES 2, a Kivy .glsl file)
+//    file=name.py                       (the source file's name, for line information and headers)
 //    arg=name:float|float2|float3|float4|floatArray|float2Array|float3Array|float4Array
 //                                       (repeatable, in buffer order)
 //
@@ -17,7 +20,8 @@
 //  pyshader_add_module per module (dotted name and source), and stay until
 //  pyshader_clear_modules.
 //
-//  On success the result is the SPIR-V module as bytes, and the entry point
+//  On success the result is the SPIR-V module as bytes (for format=gles2 the
+//  Kivy .glsl file's UTF-8 text), and the entry point
 //  names are readable through pyshader_entry_point / pyshader_vertex_entry_point.
 //  On failure it is the error text.
 //
@@ -63,9 +67,12 @@ private func string(from pointer: UnsafeRawPointer?, length: Int32) -> String {
     return String(decoding: UnsafeRawBufferPointer(start: pointer, count: Int(length)), as: UTF8.self)
 }
 
-private func target(from options: String) throws -> ShaderTarget {
+private func target(from options: String) throws -> (target: ShaderTarget, format: String, file: String?) {
     var name = "compute"
+    var format = "spirv"
+    var file: String?
     var samplesContent = false
+    var contentIsTopDown = false
     var arguments: [(name: String, kind: ShaderArgumentKind)] = []
     for pair in options.split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" }) {
         let parts = pair.split(separator: "=", maxSplits: 1).map(String.init)
@@ -74,7 +81,15 @@ private func target(from options: String) throws -> ShaderTarget {
         case "target":
             name = parts[1]
         case "content":
-            samplesContent = parts[1] == "1" || parts[1] == "true"
+            samplesContent = samplesContent || parts[1] == "1" || parts[1] == "true"
+        case "content-top-down":
+            contentIsTopDown = parts[1] == "1" || parts[1] == "true"
+            samplesContent = samplesContent || contentIsTopDown
+        case "file":
+            file = parts[1]
+        case "format":
+            guard parts[1] == "spirv" || parts[1] == "gles2" else { throw PyShaderError("unknown format `\(parts[1])`") }
+            format = parts[1]
         case "arg":
             let spec = parts[1].split(separator: ":", maxSplits: 1).map(String.init)
             guard spec.count == 2 else { throw PyShaderError("bad arg `\(parts[1])`, want name:kind") }
@@ -96,9 +111,9 @@ private func target(from options: String) throws -> ShaderTarget {
         }
     }
     switch name {
-    case "compute": return .computeImage(.nucleantUI(samplesContent: samplesContent, arguments: arguments))
-    case "fragment": return .nucleant
-    case "graphics": return .graphics(.nucleantUI(arguments: arguments))
+    case "compute": return (.computeImage(.nucleantUI(samplesContent: samplesContent, contentIsTopDown: contentIsTopDown, arguments: arguments)), format, file)
+    case "fragment": return (.nucleant, format, file)
+    case "graphics": return (.graphics(.nucleantUI(samplesContent: samplesContent, contentIsTopDown: contentIsTopDown, arguments: arguments)), format, file)
     default: throw PyShaderError("unknown target `\(name)`")
     }
 }
@@ -147,11 +162,16 @@ public func pyshader_compile(
     _ optionsLength: Int32
 ) -> Int32 {
     do {
-        let shader = try PyShader.compile(
-            string(from: sourcePointer, length: sourceLength),
-            target: try target(from: string(from: optionsPointer, length: optionsLength)),
-            modules: moduleSources
-        )
+        let source = string(from: sourcePointer, length: sourceLength)
+        let (shaderTarget, format, file) = try target(from: string(from: optionsPointer, length: optionsLength))
+        if format == "gles2" {
+            let shader = try PyShader.compileGLES2(source, target: shaderTarget, sourceFile: file, modules: moduleSources)
+            entryPointBytes = Array("main".utf8)
+            vertexEntryPointBytes = Array("main".utf8)
+            storeResult(Array(shader.kivySource.utf8))
+            return 0
+        }
+        let shader = try PyShader.compile(source, target: shaderTarget, sourceFile: file, modules: moduleSources)
         entryPointBytes = Array(shader.entryPoint.utf8)
         vertexEntryPointBytes = Array((shader.vertexEntryPoint ?? "").utf8)
         storeResult(shader.spirv.withUnsafeBytes { Array($0) })

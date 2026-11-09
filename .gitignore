@@ -235,3 +235,6 @@ mkdocs-pyshader/mkdocs_pyshader/assets/*.wasm
 
 # Swift compiler diagnostics
 *.dia
+
+# The compiler wasm the build backend ships (scripts/build_wasm.py)
+src/pyshader_builder/*.wasm

@@ -105,6 +105,8 @@ nav:
   - Compiler:
       - Swift API & CLI: compiler/api.md
       - Package plugins: compiler/plugins.md
+      - OpenGL ES 2: compiler/gles2.md
+      - Python build backend: compiler/build-backend.md
       - How it works: compiler/internals.md
       - Decompiling SPIR-V: compiler/decompiler.md
   - Docs plugin: plugin.md

@@ -1,0 +1,44 @@
+# A Kivy app whose shaders are PyShader modules, compiled to OpenGL ES 2 by
+# PyShader's build backend whenever the app is built or installed: `uv sync`
+# writes each `.glsl` beside its `.py`, `uv build` puts them in the wheel.
+[project]
+name = "kivy-shaders"
+version = "0.1.0"
+description = "A gallery of PyShader shaders, drawn by Kivy"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = ["kivy>=2.3.1"]
+
+[project.scripts]
+kivy-shaders = "kivy_shaders.app:main"
+
+[build-system]
+requires = ["pyshader"]
+build-backend = "pyshader_builder"
+
+[tool.uv.sources]
+# This repository's PyShader, which carries the backend and its compiler.
+pyshader = { path = "../..", editable = true }
+
+# One table per shader. `format = "gles2"` is GLSL ES 1.00 in a Kivy `.glsl`
+# file, loaded with `Shader.source`; each output sits in the package, so the
+# wheel carries it.
+
+[tool.pyshader.plasma]
+source = "src/kivy_shaders/shaders/plasma.py"
+output = "src/kivy_shaders/shaders/plasma.glsl"
+format = "gles2"                 # fragment target: Kivy's `tex_coord0` / `frag_color`
+
+[tool.pyshader.aurora]
+source = "src/kivy_shaders/shaders/aurora.py"
+output = "src/kivy_shaders/shaders/aurora.glsl"
+target = "compute"               # one fragment per pixel; `time`, `resolution`, `mouse` uniforms
+format = "gles2"
+
+[tool.pyshader.ripple]
+source = "src/kivy_shaders/shaders/ripple.py"
+output = "src/kivy_shaders/shaders/ripple.glsl"
+target = "compute"
+content = true                   # layer() reads `texture0`, the image under the shader
+arguments = ["strength:float"]   # a `strength` uniform the app sets
+format = "gles2"

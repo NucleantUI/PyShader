@@ -3,8 +3,9 @@
 //  PyShaderBuildPlugin
 //
 //  Build tool plugin: compiles every section of the package's
-//  `pyshader.toml` to SPIR-V as part of the build, with `pyshaderc`. Each
-//  `.spv` lands in the plugin's work folder under the file name of the
+//  `pyshader.toml` (to SPIR-V, or to OpenGL ES 2 with `format = "gles2"`) as
+//  part of the build, with `pyshaderc`. Each
+//  output lands in the plugin's work folder under the file name of the
 //  section's `output`, and is rebuilt when the source, a module it may
 //  import, or the config changes.
 //

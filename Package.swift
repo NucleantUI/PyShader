@@ -79,8 +79,8 @@ let package = Package(
         .plugin(
             name: "PyShaderCommandPlugin",
             capability: .command(
-                intent: .custom(verb: "pyshader-compile", description: "Compile the shaders in pyshader.toml to SPIR-V"),
-                permissions: [.writeToPackageDirectory(reason: "Writes each section's SPIR-V to its `output` path")]
+                intent: .custom(verb: "pyshader-compile", description: "Compile the shaders in pyshader.toml to SPIR-V or OpenGL ES 2"),
+                permissions: [.writeToPackageDirectory(reason: "Writes each section's compiled shader to its `output` path")]
             ),
             dependencies: ["pyshaderc"]
         ),

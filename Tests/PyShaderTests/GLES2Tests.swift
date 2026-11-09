@@ -1,0 +1,288 @@
+import Foundation
+import Testing
+@testable import PyShader
+
+/// glslangValidator on both stages, which takes a shader without `#version`
+/// as GLSL ES 1.00; nil when the tool is not installed.
+private func glslang(_ shader: GLES2Shader) throws -> String? {
+    guard let tool = ["/usr/local/bin/glslangValidator", "/opt/homebrew/bin/glslangValidator"].first(where: FileManager.default.isExecutableFile(atPath:)) else {
+        return nil
+    }
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pyshader-gles2-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let vertex = dir.appendingPathComponent("shader.vert"), fragment = dir.appendingPathComponent("shader.frag")
+    try Data(shader.vertex.utf8).write(to: vertex)
+    try Data(shader.fragment.utf8).write(to: fragment)
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: tool)
+    p.arguments = [vertex.path, fragment.path]
+    let pipe = Pipe()
+    p.standardOutput = pipe
+    p.standardError = pipe
+    try p.run()
+    p.waitUntilExit()
+    let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    return p.terminationStatus == 0 ? "" : output
+}
+
+/// Compiles for OpenGL ES 2 and checks both stages with glslang when it is there.
+@discardableResult
+private func compileES(_ source: String, target: ShaderTarget = .nucleant, modules: [String: String] = [:], sourceLocation: SourceLocation = #_sourceLocation) throws -> GLES2Shader {
+    let shader = try PyShader.compileGLES2(source, target: target, modules: modules)
+    if let result = try glslang(shader) {
+        #expect(result.isEmpty, "glslang:\n\(result)\n--- fragment ---\n\(shader.fragment)", sourceLocation: sourceLocation)
+    }
+    return shader
+}
+
+private func expectESError(_ source: String, target: ShaderTarget = .nucleant, _ needle: String, line: Int, sourceLocation: SourceLocation = #_sourceLocation) {
+    do {
+        _ = try PyShader.compileGLES2(source, target: target)
+        Issue.record("expected an error containing \"\(needle)\"", sourceLocation: sourceLocation)
+    } catch let error as PyShaderError {
+        #expect(error.message.contains(needle), "got: \(error)", sourceLocation: sourceLocation)
+        #expect(error.line == line, "line of: \(error)", sourceLocation: sourceLocation)
+    } catch {
+        Issue.record("unexpected error \(error)", sourceLocation: sourceLocation)
+    }
+}
+
+private let compute = ShaderTarget.computeImage(.nucleantUI(samplesContent: true))
+
+@Suite("OpenGL ES 2")
+struct GLES2Tests {
+
+    // MARK: Examples
+
+    @Test("the examples OpenGL ES 2 can express compile and validate", arguments: [
+        ("plasma.py", ShaderTarget.nucleant),
+        ("forward_color.py", .nucleant),
+        ("plan_example.py", .nucleant),
+        ("compute/effect_ripple.py", .computeImage(.nucleantUI(samplesContent: true))),
+        ("compute/effect_bloom.py", .computeImage(.nucleantUI(samplesContent: true, contentIsTopDown: true))),
+    ])
+    func examples(_ example: (String, ShaderTarget)) throws {
+        let source = try String(contentsOf: examplesDirectory.appendingPathComponent(example.0), encoding: .utf8)
+        let shader = try compileES(source, target: example.1)
+        #expect(shader.fragment.contains("gl_FragColor = py_main("))
+    }
+
+    @Test("an example importing modules beside it")
+    func imports() throws {
+        let file = examplesDirectory.appendingPathComponent("imports/orbit.py")
+        let shader = try PyShader.compileGLES2(contentsOf: file, target: compute)
+        #expect(try glslang(shader) ?? "" == "")
+        #expect(shader.fragment.contains("palette_ramp("))
+        #expect(!shader.fragment.contains("palette.ramp"))
+    }
+
+    @Test("the examples it cannot express fail at the line that needs more", arguments: [
+        ("builtins.py", 13, "isnan"),
+        ("control_flow.py", 40, "`while`"),
+        ("lambdas_and_types.py", 8, "unsigned"),
+        ("module_style.py", 20, "computed at run time"),
+    ])
+    func unsupportedExamples(_ example: (String, Int, String)) throws {
+        let source = try String(contentsOf: examplesDirectory.appendingPathComponent(example.0), encoding: .utf8)
+        expectESError(source, example.2, line: example.1)
+    }
+
+    // MARK: Kivy's names
+
+    @Test("a fragment target reads Kivy's varyings and writes gl_FragColor")
+    func fragmentInterface() throws {
+        let shader = try compileES("""
+            def main(uv: float2, color: float4, frag_coord: float4, time: float) -> float4:
+                return color * float4(uv, frag_coord.x * 0.0 + sin(time), 1.0)
+            """)
+        #expect(shader.fragment.contains("varying vec2 tex_coord0;"))
+        #expect(shader.fragment.contains("varying vec4 frag_color;"))
+        #expect(shader.fragment.contains("uniform float time;"))
+        #expect(shader.fragment.contains("gl_FragColor = py_main(tex_coord0, frag_color, gl_FragCoord, time);"))
+        // Kivy's own default vertex stage, written out.
+        #expect(shader.vertex.contains("attribute vec2 vPosition;"))
+        #expect(shader.vertex.contains("tex_coord0 = vTexCoords0;"))
+        #expect(shader.kivySource.hasPrefix("---VERTEX SHADER---\n"))
+        #expect(shader.kivySource.contains("\n---FRAGMENT SHADER---\n"))
+    }
+
+    @Test("a compute target is one fragment per pixel, its inputs uniforms")
+    func computeInterface() throws {
+        let target = ShaderTarget.computeImage(.nucleantUI(samplesContent: true, contentIsTopDown: true, arguments: [("gain", .float), ("tint", .float4)]))
+        let shader = try compileES("""
+            def main(uv: float2, frag_coord: float2, pixel: int2, time: float, frame: int, mouse: float2, gain: float, tint: float4) -> float4:
+                c = layer(uv) * gain + tint
+                return c + float4(frag_coord, float(pixel.x + frame), time + mouse.x) * 0.0
+            """, target: target)
+        for declaration in ["uniform sampler2D texture0;", "uniform vec2 resolution;", "uniform float time;", "uniform int frame;",
+                            "uniform vec2 mouse;", "uniform float gain;", "uniform vec4 tint;", "varying vec2 tex_coord0;"] {
+            #expect(shader.fragment.contains(declaration), "\(declaration)")
+        }
+        // `content-top-down` reads the texture upright.
+        #expect(shader.fragment.contains("1.0 - "))
+        #expect(shader.fragment.contains("= tex_coord0 * resolution;"))
+    }
+
+    @Test("a graphics target writes gl_Position and the varyings")
+    func graphicsInterface() throws {
+        let target = ShaderTarget.graphics(.nucleantUI(arguments: [("size", .float)]))
+        let shader = try compileES("""
+            class V:
+                position: float4
+                shade: float
+
+            def vertex(time: float, size: float) -> V:
+                return V(float4(sin(time) * size, 0.0, 0.0, 1.0), 0.5)
+
+            def fragment(shade: float, uv: float2) -> float4:
+                return float4(shade, uv, 1.0)
+            """, target: target)
+        #expect(shader.vertex.contains("gl_Position = pyt0.position;"))
+        #expect(shader.vertex.contains("varying float v_shade;"))
+        #expect(shader.vertex.contains("uniform float size;"))
+        #expect(!shader.vertex.contains("resolution"))
+        #expect(shader.fragment.contains("varying float v_shade;"))
+        #expect(shader.fragment.contains("gl_FragCoord.xy / resolution"))
+    }
+
+    // MARK: The language
+
+    @Test("match, lists, tuples, swaps, module variables, lambdas and list functions")
+    func language() throws {
+        let shader = try compileES("""
+            WEIGHTS = [0.25, 0.5, 0.25]
+            count = 0
+            scale = lambda x: x * 2.0
+
+            def total(xs: list[float]) -> float:
+                s = 0.0
+                for i in range(len(xs)):
+                    s += xs[i]
+                return s
+
+            def split(v: float2) -> tuple[float, float]:
+                return v.x, v.y
+
+            def main(uv: float2, time: float) -> float4:
+                global count
+                count += 1
+                a, b = split(uv)
+                a, b = b, a
+                k = int(time)
+                match k:
+                    case 0 | 1:
+                        a = 0.0
+                    case 2:
+                        b = 1.0
+                    case _:
+                        pass
+                w = 0.0
+                for i in range(3):
+                    w += WEIGHTS[i]
+                    if i == 1:
+                        break
+                return float4(a, b, total(WEIGHTS) + w, scale(float(count)))
+            """)
+        #expect(shader.fragment.contains("if (k == 0 || k == 1) {"))
+        #expect(shader.fragment.contains("} else if (k == 2) {"))
+        #expect(shader.fragment.contains("for (int i = 0; i < 3; i++)"))
+        #expect(shader.fragment.contains("void py_globals()"))
+        #expect(shader.fragment.contains("py_globals();"))
+        #expect(shader.fragment.contains("float total(float xs[3])"))
+    }
+
+    @Test("elif, conditional values, structs by keyword, matrices, helpers")
+    func more() throws {
+        try compileES("""
+            class Light:
+                dir: float3
+                power: float
+
+            def main(uv: float2, time: float) -> float4:
+                l = Light(power=2.0, dir=float3(0.0, 0.0, 1.0))
+                m = float3x3(1.0)
+                r = float2x2(float3x3(2.0))
+                n = m * l.dir
+                v = n.z if uv.x > 0.5 else -n.z
+                if uv.y < 0.25:
+                    v = round(v) + trunc(v)
+                elif length(uv * r[0]) > sinh(time):
+                    v = tanh(v)
+                else:
+                    v = abs(int(v)) + min(1, 2, 3) + clamp(v, 0, 1)
+                for j in range(8, 0, -2):
+                    v += float(j // 3) + float(j % 3) + mod(v, 2.0)
+                return float4(v * l.power, outerProduct(uv, uv)[1], 1.0)
+            """)
+    }
+
+    @Test("Python names GLSL keeps for itself are renamed")
+    func reservedNames() throws {
+        let shader = try compileES("""
+            def sample(input: float2) -> float:
+                return input.x
+
+            def main(uv: float2) -> float4:
+                output = sample(uv)
+                length = 2.0
+                texture = float3(length, output, 0.0)
+                return float4(texture, 1.0)
+            """)
+        #expect(shader.fragment.contains("float py_sample(vec2 py_input)"))
+        #expect(!shader.fragment.contains(" output ="))
+    }
+
+    @Test("dFdx through GL_OES_standard_derivatives, discard as a statement")
+    func derivatives() throws {
+        let shader = try compileES("""
+            def main(uv: float2) -> float4:
+                if uv.x < 0.1:
+                    discard()
+                return float4(fwidth(uv), dFdx(uv.x), 1.0)
+            """)
+        #expect(shader.fragment.contains("#extension GL_OES_standard_derivatives : enable"))
+        #expect(shader.fragment.contains("discard;"))
+    }
+
+    // MARK: What OpenGL ES 2 cannot do
+
+    @Test("what OpenGL ES 2 cannot express is an error at its line")
+    func errors() {
+        expectESError("def main(uv: float2) -> float4:\n    i = 0\n    while i < 3:\n        i += 1\n    return float4(0.0)\n", "`while`", line: 3)
+        expectESError("def main(uv: float2) -> float4:\n    k = int(uv.x) & 3\n    return float4(0.0)\n", "bitwise", line: 2)
+        expectESError("def main(uv: float2) -> float4:\n    k = ~int(uv.x)\n    return float4(0.0)\n", "bitwise", line: 2)
+        expectESError("def main(uv: float2) -> float4:\n    u = uint(3)\n    return float4(0.0)\n", "unsigned", line: 2)
+        expectESError("def main(uv: float2, time: float) -> float4:\n    s = 0.0\n    for i in range(int(time)):\n        s += 1.0\n    return float4(s)\n", "constant bounds", line: 3)
+        expectESError("def main(uv: float2) -> float4:\n    xs = [1.0, 2.0]\n    k = int(uv.x)\n    return float4(xs[k])\n", "computed at run time", line: 4)
+        expectESError("def main(uv: float2) -> float4:\n    for i in range(3):\n        i = 2\n    return float4(0.0)\n", "counter", line: 3)
+        expectESError("def main(uv: float2) -> float4:\n    for i in range(3):\n        pass\n    return float4(float(i))\n", "counter of a loop above", line: 4)
+        expectESError("def main(uv: float2) -> float4:\n    m = float2x3(1.0)\n    return float4(0.0)\n", "square", line: 2)
+        expectESError("def main(uv: float2) -> float4:\n    return float4(float(isnan(uv.x)))\n", "isnan", line: 2)
+        expectESError("pair = lambda x: [x, x]\n\ndef main(uv: float2) -> float4:\n    return float4(pair(uv.x)[0])\n", "functions cannot return arrays", line: 1)
+    }
+
+    @Test("target inputs OpenGL ES 2 has no counterpart for")
+    func unsupportedInputs() {
+        expectESError("def main(uv: float2, mins: FloatArray) -> float4:\n    return float4(0.0)\n",
+                      target: .computeImage(.nucleantUI(samplesContent: false, arguments: [("mins", .floatArray)])),
+                      "array argument `mins`", line: 1)
+        expectESError("""
+            class V:
+                position: float4
+
+            def vertex(vertex_index: int) -> V:
+                return V(float4(0.0))
+
+            def fragment() -> float4:
+                return float4(1.0)
+            """, target: .nucleantUIGraphics, "vertex index", line: 4)
+        expectESError("""
+            class Step:
+                level: float
+
+            def main(uv: float2, step: Step) -> float4:
+                return float4(step.level)
+            """, target: .nucleantUI, "storage buffer", line: 4)
+    }
+}

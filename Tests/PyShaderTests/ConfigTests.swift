@@ -50,6 +50,19 @@ struct ConfigTests {
         ])
     }
 
+    @Test("format = \"gles2\": an OpenGL ES 2 .glsl, by default <section>.glsl")
+    func gles2Format() throws {
+        let config = try PyShaderConfig(parsing: "[kivy]\nsource = \"k.py\"\ntarget = \"compute\"\nformat = \"gles2\"\n[vk]\nsource = \"v.py\"\nformat = \"spirv\"\n")
+        #expect(config.sections[0].format == "gles2")
+        #expect(config.sections[0].output == "kivy.glsl")
+        #expect(config.sections[1].output == "vk.spv")
+        let root = URL(fileURLWithPath: "/pkg")
+        #expect(config.compilerArguments(for: config.sections[0], root: root, output: URL(fileURLWithPath: "/out/kivy.glsl")) == [
+            "/pkg/k.py", "-o", "/out/kivy.glsl", "--target", "compute", "--format", "gles2",
+        ])
+        #expect(!config.compilerArguments(for: config.sections[1], root: root, output: URL(fileURLWithPath: "/out/vk.spv")).contains("--format"))
+    }
+
     @Test("mistakes are reported with their line")
     func errors() {
         func expectError(_ text: String, _ needle: String, line: Int, sourceLocation: SourceLocation = #_sourceLocation) {
@@ -67,6 +80,8 @@ struct ConfigTests {
         expectError("[a]\noutput = \"a.spv\"\n", "needs `source", line: 1)
         expectError("[a]\nsource = \"a.py\"\ntarget = \"vertex\"\n", "`target` is one of", line: 3)
         expectError("[a]\nsource = \"a.py\"\nsoruce = \"b.py\"\n", "unknown key `soruce`", line: 3)
+        expectError("[a]\nsource = \"a.py\"\nformat = \"glsl\"\n", "`format` is one of spirv, gles2", line: 3)
+        expectError("[a]\nsource = \"a.py\"\noptimize = [\"-O\"]\nformat = \"gles2\"\n", "does not apply", line: 3)
         expectError("output = \"x\"\n[a]\nsource = \"a.py\"\n", "only `site-packages`", line: 1)
         expectError("[a]\nsource = \"a.py\"\n[a]\nsource = \"b.py\"\n", "defined twice", line: 3)
         expectError("[a]\nsource = \"a.py\"\narguments = [\"gain\"]\n", "name:kind", line: 3)

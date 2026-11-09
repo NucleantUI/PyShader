@@ -1,0 +1,3 @@
+# Built by pyshader_builder on `uv sync` / `uv build`
+src/kivy_shaders/shaders/*.glsl
+uv.lock

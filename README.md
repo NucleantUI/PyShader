@@ -276,6 +276,8 @@ point, so `uv add pyshader-noise` is all a shader project needs. See
   gallery of `.py` shaders and `.py` effects in a NucleantUI window.
 - [Examples/liquid_glass/](Examples/liquid_glass/) — a home screen whose
   app icons are liquid glass, each its own `.shader` effect.
+- [Examples/kivy_shaders/](Examples/kivy_shaders/) — a Kivy app whose shaders
+  are PyShader modules, compiled to OpenGL ES 2 by the Python build backend.
 
 ## Editor
 
@@ -328,6 +330,33 @@ on every build into the target's resources, and
 source = "Shaders/clouds.py"
 output = "Resources/clouds.spv"
 target = "compute"
+```
+
+### OpenGL ES 2 and Python projects
+
+The same Python compiles to OpenGL ES 2 (GLSL ES 1.00), what Kivy draws with:
+`PyShader.compileGLES2(...)`, `pyshaderc --format gles2`, or `format = "gles2"`
+in a section. The result is one Kivy `.glsl` file holding both stages. What
+OpenGL ES 2 cannot express (`while`, unsigned and bitwise integers, indices
+computed at run time…) is an error at its line. See
+[OpenGL ES 2](https://nucleantui.github.io/PyShader/compiler/gles2/).
+
+A Python project compiles its shaders into its wheel with the build backend
+the `pyshader` package ships, `pyshader_builder`. It reads the same tables from
+`[tool.pyshader]` (or a `pyshader.toml`) and runs the compiler as WebAssembly,
+so no Swift toolchain is needed. See
+[Python build backend](https://nucleantui.github.io/PyShader/compiler/build-backend/).
+
+```toml
+[build-system]
+requires = ["pyshader"]
+build-backend = "pyshader_builder"
+
+[tool.pyshader.glow]
+source = "src/myapp/shaders/glow.py"
+output = "src/myapp/shaders/glow.glsl"
+target = "compute"
+format = "gles2"
 ```
 
 ## Decompiling
@@ -385,6 +414,8 @@ uv run mkdocs serve
 
 ```sh
 swift test                          # every example through spirv-val; ShaderToy GLSL through glslang and back
+uv run scripts/build_wasm.py --only swift   # src/pyshader_builder/pyshader.wasm, for the build backend
+uv run --group test pytest python-tests     # the build backend
 ./scripts/validate_examples.sh
 ```
 
@@ -396,7 +427,7 @@ by both directions, live in
 [SpirvCore](https://github.com/NucleantUI/SpirvCore), a package of its own.
 
 Compiler sources: `Frontend/` validates the module and collects definitions,
-`Codegen/` lowers statements and expressions, `Builtins/` is the function
+`Codegen/` lowers statements and expressions, `GLES2/` writes the same program as GLSL ES 1.00, `Builtins/` is the function
 table, `SPIRV/` assembles the module. Locals are `OpVariable`s with load/store at
 every use (no SSA construction); control flow is `OpSelectionMerge` /
 `OpLoopMerge`; literal conversions fold into constants; 16-bit types add the

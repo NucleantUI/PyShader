@@ -99,7 +99,7 @@ bindings, `inputs`) are public for other pipelines. See
 ## `pyshaderc`
 
 ```sh
-swift run pyshaderc <input.py> [-o output.spv] [--target fragment|compute|graphics] [--content] [--content-top-down] [--arg name:kind]... [--site-packages dir] [--optimize flag]...
+swift run pyshaderc <input.py> [-o output] [--target fragment|compute|graphics] [--format spirv|gles2] [--content] [--content-top-down] [--arg name:kind]... [--site-packages dir] [--optimize flag]...
 ```
 
 Writes `<input>.spv` next to the input unless `-o` is given and prints the
@@ -111,7 +111,7 @@ above the input. The module carries the input's file name and source lines (see
 [SPIRV-Tools](https://github.com/NucleantUI/SpirvTools) optimizer pass over the
 module, as `spirv-opt` spells it (`-O`, `-Os`, `--strip-debug`, …), in the order
 given, and validates the result; SPIRV-Tools is linked in on macOS only so far,
-elsewhere `--optimize` fails with an error that says so. Exit status 1 with the error on stderr when compilation fails,
+elsewhere `--optimize` fails with an error that says so. `--format gles2` writes [OpenGL ES 2](gles2.md) instead: a Kivy `.glsl` file, `<input>.glsl` by default. `--optimize` does not apply to it. Under an error, the line of code it points at is printed too. Exit status 1 with the error on stderr when compilation fails,
 2 for a usage error.
 
 ```sh
@@ -119,6 +119,7 @@ swift run pyshaderc Examples/plasma.py
 swift run pyshaderc Examples/compute/effect_ripple.py --target compute --content-top-down
 swift run pyshaderc Examples/compute/effect_ripple.py --target compute --content-top-down --optimize -O
 swift run pyshaderc Examples/graphics/instanced_glow.py --target graphics --arg touches:floatArray --arg glowSeconds:float
+swift run pyshaderc Examples/compute/effect_ripple.py --target compute --content --format gles2
 spirv-val --target-env vulkan1.0 Examples/plasma.spv
 ```
 

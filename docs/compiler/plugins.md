@@ -23,6 +23,7 @@ target = "compute"                   # fragment (default) | compute | graphics
 content-top-down = true              # pyshaderc --content-top-down (or content = true: --content)
 arguments = ["gain:float", "tint:float4"]   # pyshaderc --arg, in order
 optimize = ["-O"]                    # pyshaderc --optimize: spirv-opt passes, in order
+# format = "gles2"                   # pyshaderc --format: spirv (default) or gles2, OpenGL ES 2
 ```
 
 Each `[section]` is one shader. Paths are relative to the file. The keys
@@ -36,6 +37,10 @@ importable. The build plugin uses only the file name of `output`.
 `content-top-down` is the one for NucleantUI's `.shader(_:)`: it hands a
 module the view top-down, as it is stored, and `layer(uv)` then reads it
 upright; with `content` alone it reads that view upside down.
+`format = "gles2"` writes [OpenGL ES 2](gles2.md) instead of SPIR-V: a Kivy
+`.glsl` file, `<section>.glsl` by default; `optimize` does not apply to it.
+The same table, in a Python project, is read by the
+[Python build backend](build-backend.md).
 
 Only the TOML this needs is read: tables, `#` comments, and keys holding
 strings, `true` / `false` or arrays of strings.

@@ -16,6 +16,7 @@
 //      content-top-down = true              # optional: the content image, top-down
 //      arguments = ["gain:float", "tint:float4"]
 //      optimize = ["-O"]                    # optional: spirv-opt passes
+//      format = "gles2"                     # optional: spirv | gles2 (OpenGL ES 2, a Kivy .glsl)
 //
 //  Paths are relative to the folder the file is in. Only the TOML this needs
 //  is read: tables, and keys holding strings, booleans or arrays of strings.
@@ -40,11 +41,14 @@ struct PyShaderConfig: Equatable {
         /// The content image stored top-down, as NucleantUI hands a module
         /// every image; implies `content`.
         var contentIsTopDown = false
+        /// `spirv`, or `gles2`: GLSL ES 1.00 for OpenGL ES 2, as one Kivy `.glsl` file.
+        var format = "spirv"
     }
 
     /// The file's name, at the root of the package.
     static let fileName = "pyshader.toml"
     static let targets = ["fragment", "compute", "graphics"]
+    static let formats = ["spirv", "gles2"]
 
     /// The general `site-packages`, when given.
     let sitePackages: String?
@@ -155,7 +159,7 @@ struct PyShaderConfig: Equatable {
         var sections: [Section] = []
         for table in tables {
             let owner = "[\(table.name)] "
-            for (key, (_, line)) in table.keys where !["source", "output", "target", "content", "content-top-down", "arguments", "optimize"].contains(key) {
+            for (key, (_, line)) in table.keys where !["source", "output", "target", "content", "content-top-down", "arguments", "optimize", "format"].contains(key) {
                 throw ParseError(message: "\(owner)unknown key `\(key)`", line: line)
             }
             guard let source = try string(table.keys, "source", in: owner) else {
@@ -191,8 +195,15 @@ struct PyShaderConfig: Equatable {
                 }
                 optimize = flags
             }
-            let output = try string(table.keys, "output", in: owner) ?? "\(table.name).spv"
-            sections.append(Section(name: table.name, source: source, output: output, target: target, content: content || contentIsTopDown, arguments: arguments, optimize: optimize, contentIsTopDown: contentIsTopDown))
+            let format = try string(table.keys, "format", in: owner) ?? "spirv"
+            guard Self.formats.contains(format) else {
+                throw ParseError(message: "\(owner)`format` is one of \(Self.formats.joined(separator: ", ")), not `\(format)`", line: table.keys["format"]!.1)
+            }
+            if format == "gles2", !optimize.isEmpty {
+                throw ParseError(message: "\(owner)`optimize` runs spirv-opt, which does not apply to `format = \"gles2\"`", line: table.keys["optimize"]!.1)
+            }
+            let output = try string(table.keys, "output", in: owner) ?? "\(table.name).\(format == "gles2" ? "glsl" : "spv")"
+            sections.append(Section(name: table.name, source: source, output: output, target: target, content: content || contentIsTopDown, arguments: arguments, optimize: optimize, contentIsTopDown: contentIsTopDown, format: format))
         }
         guard !sections.isEmpty else {
             throw ParseError(message: "no sections: add a `[name]` table with a `source` for each shader", line: 1)
@@ -210,6 +221,7 @@ struct PyShaderConfig: Equatable {
         if section.contentIsTopDown { args.append("--content-top-down") } else if section.content { args.append("--content") }
         for argument in section.arguments { args += ["--arg", argument] }
         for flag in section.optimize { args += ["--optimize", flag] }
+        if section.format != "spirv" { args += ["--format", section.format] }
         if let sitePackages { args += ["--site-packages", root.appendingPathComponent(sitePackages).path] }
         return args
     }

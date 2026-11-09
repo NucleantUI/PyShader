@@ -4,7 +4,8 @@
   PyShaderWasm/  Swift, WASI reactor: Python source -> SPIR-V (pyshader.wasm)
   NagaWasm/      Rust: SPIR-V -> WGSL (naga.wasm)
 
-Both land in mkdocs-pyshader/mkdocs_pyshader/assets/. Needs a wasm Swift SDK
+Both land in mkdocs-pyshader/mkdocs_pyshader/assets/; pyshader.wasm also in
+src/pyshader_builder/, where the PEP 517 build backend runs it. Needs a wasm Swift SDK
 (`swift sdk list` shows one ending in `_wasm`; its toolchain is picked via
 swiftly when the default one differs) and the wasm32-unknown-unknown Rust
 target (`rustup target add wasm32-unknown-unknown`). wasm-opt is used when on
@@ -23,6 +24,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS = ROOT / "mkdocs-pyshader" / "mkdocs_pyshader" / "assets"
+# The Python build backend runs the compiler from here (pyshader_builder).
+BUILDER = ROOT / "src" / "pyshader_builder"
 
 SWIFT_PACKAGE = ROOT / "PyShaderWasm"
 SWIFT_PRODUCT = "PyShaderWasm"
@@ -149,7 +152,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.only != "rust":
-            install(build_swift(), "pyshader.wasm", not args.no_opt)
+            built = install(build_swift(), "pyshader.wasm", not args.no_opt)
+            shutil.copy2(built, BUILDER / "pyshader.wasm")
+            print(f"wrote {BUILDER / 'pyshader.wasm'}")
         if args.only != "swift":
             install(build_rust(), "naga.wasm", not args.no_opt)
     except BuildError as error:

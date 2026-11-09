@@ -1,7 +1,7 @@
 [project]
 name = "pyshader"
 version = "0.1.0"
-description = "Python-syntax shader API: typed stubs for the PyShader SPIR-V compiler"
+description = "Python-syntax shader API: typed stubs for the PyShader compiler, and a build backend that compiles shaders into wheels"
 readme = "README.md"
 requires-python = ">=3.13"
 license = { text = "MIT" }
@@ -10,10 +10,16 @@ license = { text = "MIT" }
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build]
+# The compiler the build backend runs; built by scripts/build_wasm.py, not committed.
+artifacts = ["src/pyshader_builder/pyshader.wasm"]
+exclude = ["src/pyshader_builder/plan.md"]
+
 [tool.hatch.build.targets.wheel]
-packages = ["src/pyshader"]
+packages = ["src/pyshader", "src/pyshader_builder"]
 
 [dependency-groups]
+test = ["pytest>=8", "wasmtime>=25"]
 docs = [
     "mkdocs-material>=9.5",
     "mkdocs-pyshader",

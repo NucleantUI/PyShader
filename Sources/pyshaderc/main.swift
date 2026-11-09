@@ -1,7 +1,9 @@
 //
-//  pyshaderc: compile a PyShader .py file to a SPIR-V .spv file.
+//  pyshaderc: compile a PyShader .py file to a SPIR-V .spv file, or to an
+//  OpenGL ES 2 shader (`--format gles2`).
 //
-//  usage: pyshaderc <input.py> [-o output.spv] [--target fragment|compute|graphics]
+//  usage: pyshaderc <input.py> [-o output] [--target fragment|compute|graphics]
+//                   [--format spirv|gles2]
 //                   [--content] [--content-top-down] [--arg name:float|float2|float3|float4|floatArray|float2Array|float3Array|float4Array]...
 //                   [--site-packages dir] [--optimize flag]...
 //
@@ -10,10 +12,12 @@
 //  `--content` adds the sampled content image (`layer()`), stored y-up;
 //  `--content-top-down` adds it stored top-down, as NucleantUI 0.0.3 and later
 //  hand a module every image; `--arg` a ShaderArgument.
+//  `--format gles2` writes GLSL ES 1.00 for OpenGL ES 2 instead, as one Kivy
+//  `.glsl` file holding both stages (default output `<input>.glsl`).
 //  Imports are found next to the input, then in `--site-packages` — by default
 //  the site-packages of the nearest uv `.venv` above the input.
 //  `--optimize` runs a spirv-opt pass over the module (`-O`, `-Os`,
-//  `--strip-debug`, …), in the order given, and validates the result.
+//  `--strip-debug`, …), in the order given, and validates the result; SPIR-V only.
 //
 
 import Foundation
@@ -22,7 +26,7 @@ import SpirvTools
 
 func usage() -> Never {
     FileHandle.standardError.write("""
-    usage: pyshaderc <input.py> [-o output.spv] [--target fragment|compute|graphics] [--content] [--content-top-down] [--arg name:kind]... [--site-packages dir] [--optimize flag]...
+    usage: pyshaderc <input.py> [-o output] [--target fragment|compute|graphics] [--format spirv|gles2] [--content] [--content-top-down] [--arg name:kind]... [--site-packages dir] [--optimize flag]...
 
     """.data(using: .utf8)!)
     exit(2)
@@ -31,6 +35,7 @@ func usage() -> Never {
 var args = Array(CommandLine.arguments.dropFirst())
 var output: String?
 var targetName = "fragment"
+var format = "spirv"
 var samplesContent = false
 var contentIsTopDown = false
 var arguments: [(name: String, kind: ShaderArgumentKind)] = []
@@ -47,6 +52,10 @@ while !args.isEmpty {
     case "--target":
         guard !args.isEmpty else { usage() }
         targetName = args.removeFirst()
+    case "--format":
+        guard !args.isEmpty else { usage() }
+        format = args.removeFirst()
+        guard format == "spirv" || format == "gles2" else { usage() }
     case "--content":
         samplesContent = true
     case "--content-top-down":
@@ -91,22 +100,43 @@ case "graphics": target = .graphics(.nucleantUI(samplesContent: samplesContent, 
 default: usage()
 }
 
+/// The source line an error points at, indented under the message: the code
+/// the error is about, as the build log shows it.
+func excerpt(_ line: Int) -> String {
+    guard let text = try? String(contentsOf: URL(fileURLWithPath: input), encoding: .utf8) else { return "" }
+    let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+    guard lines.indices.contains(line - 1) else { return "" }
+    let code = lines[line - 1].trimmingCharacters(in: .whitespaces)
+    return code.isEmpty ? "" : "    \(code)\n"
+}
+
 do {
-    let shader = try PyShader.compile(contentsOf: URL(fileURLWithPath: input), target: target, modules: sitePackages)
-    var words = shader.spirv
-    if !optimize.isEmpty {
-        let tools = SpirvContext()
-        words = try tools.optimize(words, flags: optimize)
-        if let invalid = tools.validate(words) {
-            throw SpirvDiagnostic(message: "the module is not valid after \(optimize.joined(separator: " ")): \(invalid)")
+    let base = (input as NSString).deletingPathExtension
+    if format == "gles2" {
+        guard optimize.isEmpty else {
+            throw SpirvDiagnostic(message: "--optimize runs spirv-opt, which only applies to --format spirv")
         }
+        let shader = try PyShader.compileGLES2(contentsOf: URL(fileURLWithPath: input), target: target, modules: sitePackages)
+        let outPath = output ?? base + ".glsl"
+        try Data(shader.kivySource.utf8).write(to: URL(fileURLWithPath: outPath))
+        print("\(outPath): OpenGL ES 2, \(shader.kivySource.split(separator: "\n").count) lines")
+    } else {
+        let shader = try PyShader.compile(contentsOf: URL(fileURLWithPath: input), target: target, modules: sitePackages)
+        var words = shader.spirv
+        if !optimize.isEmpty {
+            let tools = SpirvContext()
+            words = try tools.optimize(words, flags: optimize)
+            if let invalid = tools.validate(words) {
+                throw SpirvDiagnostic(message: "the module is not valid after \(optimize.joined(separator: " ")): \(invalid)")
+            }
+        }
+        let outPath = output ?? base + ".spv"
+        try words.withUnsafeBufferPointer { Data(buffer: $0) }.write(to: URL(fileURLWithPath: outPath))
+        print("\(outPath): \(words.count) words" + (optimize.isEmpty ? "" : " (\(shader.spirv.count) before \(optimize.joined(separator: " ")))"))
     }
-    let outPath = output ?? (input as NSString).deletingPathExtension + ".spv"
-    try words.withUnsafeBufferPointer { Data(buffer: $0) }.write(to: URL(fileURLWithPath: outPath))
-    print("\(outPath): \(words.count) words" + (optimize.isEmpty ? "" : " (\(shader.spirv.count) before \(optimize.joined(separator: " ")))"))
 } catch let error as PyShaderError where error.file == nil && error.line != nil {
     // `file:line: error:` — what editors and build logs link to the source.
-    FileHandle.standardError.write("\(input):\(error.line!): error: \(error.message)\n".data(using: .utf8)!)
+    FileHandle.standardError.write("\(input):\(error.line!): error: \(error.message)\n\(excerpt(error.line!))".data(using: .utf8)!)
     exit(1)
 } catch {
     FileHandle.standardError.write("\(input): error: \(error)\n".data(using: .utf8)!)
