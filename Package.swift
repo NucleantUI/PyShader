@@ -55,6 +55,8 @@ let package = Package(
             dependencies: [
                 .product(name: "SpirvCore", package: "SpirvCore"),
                 .product(name: "PySwiftAST", package: "PySwiftAST"),
+                // OpenGL ES 2 output: the SPIR-V written as GLSL ES 1.00.
+                "Spirv2GLSL",
             ]
         ),
         // SPIR-V (a fragment stage) back to PyShader source.

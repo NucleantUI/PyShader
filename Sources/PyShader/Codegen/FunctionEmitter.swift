@@ -112,6 +112,7 @@ final class FunctionEmitter {
     /// Emits a lambda body; the return type is whatever the expression evaluates to.
     func emitLambda(id: SpirvId, params: [(name: String, type: ShaderType)], body expr: Expression, line: Int) throws -> ShaderType {
         let paramIds = beginFunction(params)
+        if let marker = builder.line(line, in: sourceFile) { emit(marker) }
         let v = try emitExpression(expr)
         guard v.type.isStorable else {
             throw PyShaderError("lambda must produce a value, got `\(v.type)`", line: line)
@@ -143,6 +144,7 @@ final class FunctionEmitter {
                 continue
             }
             let pid = builder.allocate()
+            builder.name(pid, p.name)
             paramIds.append((pid, p.type))
             let v = declareLocal(p.name, type: p.type)
             store(v.ptr, pid)

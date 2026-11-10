@@ -167,7 +167,14 @@ extension FunctionWriter {
             let path = o.dropFirst(3).map(Int.init)
             if path.count == 1, case .vector = base.type, let (name, letters) = Self.swizzle(base.code), path[0] < letters.count {
                 let letter = letters[letters.index(letters.startIndex, offsetBy: path[0])]
-                return Expr(code: "\(name).\(letter)", type: t, reads: base.reads, isTrivial: base.isTrivial)
+                var e = Expr(code: "\(name).\(letter)", type: t, reads: base.reads, isTrivial: base.isTrivial)
+                e.swizzledSize = base.swizzledSize
+                return e
+            }
+            if path.count == 1, case .vector(_, let n) = base.type, base.isTrivial, Self.isName(base.code) {
+                var e = Expr(code: "\(base.code).\(Self.component(path[0]))", type: t, reads: base.reads, isTrivial: true)
+                e.swizzledSize = n
+                return e
             }
             var code = base.at(0)
             var at = base.type
@@ -231,6 +238,39 @@ extension FunctionWriter {
 
     func emitLine(_ s: String) { appendLine(s) }
 
+    static func isName(_ code: String) -> Bool {
+        guard let first = code.first, first == "_" || first.isLetter else { return false }
+        return code.allSatisfy { $0 == "_" || $0.isLetter || $0.isNumber }
+    }
+
+    /// Runs of components of one variable in a constructor as one swizzle,
+    /// or the variable itself: vec4(v.x, v.y, v.z, 1.0) is vec4(v, 1.0).
+    private func mergeComponents(_ es: [Expr]) -> [Expr] {
+        var out: [Expr] = []
+        var k = 0
+        while k < es.count {
+            guard let (name, letters) = Self.swizzle(es[k].code), letters.count == 1, es[k].swizzledSize > 0 else {
+                out.append(es[k]); k += 1; continue
+            }
+            var run = String(letters)
+            var reads = es[k].reads
+            var j = k + 1
+            while j < es.count, let (n2, l2) = Self.swizzle(es[j].code), n2 == name, l2.count == 1, es[j].swizzledSize == es[k].swizzledSize, run.count < 4 {
+                run += l2
+                reads.formUnion(es[j].reads)
+                j += 1
+            }
+            if run.count == 1 { out.append(es[k]); k += 1; continue }
+            let size = es[k].swizzledSize
+            let whole = run == String("xyzw".prefix(size))
+            let scalar = es[k].type
+            let type: SpirvType = .vector(scalar, run.count)
+            out.append(Expr(code: whole ? name : "\(name).\(run)", type: type, reads: reads, isTrivial: true))
+            k = j
+        }
+        return out
+    }
+
     /// `name.xyz` as its name and letters, when the code is just that.
     static func swizzle(_ code: String) -> (String, Substring)? {
         guard let dot = code.lastIndex(of: ".") else { return nil }
@@ -276,8 +316,9 @@ extension FunctionWriter {
             }
             return Expr(code: n, type: t, isTrivial: true)
         }
-        let es = try parts.map { try use($0) }
+        var es = try parts.map { try use($0) }
         let name = try stage.typeName(t)
+        if case .vector = t { es = mergeComponents(es) }
         // vec3(x, x, x) as vec3(x).
         if case .vector = t, es.count == t.componentCount, Set(es.map(\.code)).count == 1, es[0].type.isScalar, es[0].isTrivial || Set(parts).count == 1 {
             var e = call(name, [es[0]], t)
@@ -430,9 +471,16 @@ extension FunctionWriter {
         case .faceForward: return try f("faceforward")
         case .reflect: return try f("reflect")
         case .refract: return try f("refract")
-        case .round, .roundEven:
+        case .round:
+            // Halves either way, as GLSL.std.450 allows: up.
             let x = try a(0)
             return call("floor", [Expr(code: "\(x.at(3)) + 0.5", type: t, prec: 3, reads: x.reads)], t)
+        case .roundEven:
+            // Halves to even: floor(x + 0.5), one less on an exact half that lands odd.
+            let x = try s(0)
+            let f = try temporary(t)
+            emitLine("\(f) = floor(\(x.at(3)) + 0.5);")
+            return Expr(code: "\(f) - (1.0 - abs(sign(fract(\(x.code)) - 0.5))) * mod(\(f), 2.0)", type: t, prec: 3, reads: x.reads)
         case .trunc:
             let x = try s(0)
             return Expr(code: "sign(\(x.code)) * floor(abs(\(x.code)))", type: t, prec: 2, reads: x.reads)

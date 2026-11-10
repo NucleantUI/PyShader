@@ -1,10 +1,12 @@
 # OpenGL ES 2
 
 The same PyShader module that compiles to SPIR-V also compiles to OpenGL ES 2,
-in GLSL ES 1.00. It goes through the same parser and the same checks. What
-OpenGL ES 2 cannot express is a compile error at the Python line that needs
-it, so you find out when you build, not when the shader fails to compile on a
-phone.
+in GLSL ES 1.00. It *is* the SPIR-V: the module is compiled as for Vulkan,
+with OpenGL ES 2's entry points, and [Spirv2GLSL](#spirv2glsl) writes that
+SPIR-V as GLSL ES 1.00. Everything the language has reaches OpenGL ES 2 the
+moment it reaches SPIR-V. What OpenGL ES 2 cannot express is a compile error
+at the Python line that needs it, so you find out when you build, not when
+the shader fails to compile on a phone.
 
 ```sh
 swift run pyshaderc shader.py --target compute --format gles2     # -> shader.vert, shader.frag
@@ -67,9 +69,9 @@ void main(void) {
   `precision highp float` under `#ifdef GL_ES`.
 - **`dFdx`, `dFdy`, `fwidth`** turn on `GL_OES_standard_derivatives`.
 - Python names GLSL keeps for itself (`input`, `sample`, `length`, `half`…)
-  are renamed with a `py_` prefix, and so are a shader's own names that an
-  option takes. The Python entry point is `py_main` (`py_vertex`,
-  `py_fragment`), and `main()` calls it.
+  get a `_` after them (`input_`), and a shader's own name that an option or
+  another declaration takes gets a number (`v_uv_2`). The Python entry point
+  is `py_main` (`py_vertex`, `py_fragment`), and `main()` calls it.
 
 ## Options
 
@@ -161,8 +163,8 @@ rules these out. Each one is an error at its line:
 | PyShader | in OpenGL ES 2 |
 |---|---|
 | `while` | only `for` loops are guaranteed: write `for i in range(N):` with a `break` |
-| `range(n)` with `n` computed at run time | loop bounds must be constants; loop to a constant maximum and `break` |
-| assigning a loop counter, or reading it after the loop | the counter is constant in the body and exists only inside the loop |
+| `range(n)` with `n` computed at run time | loop bounds must be constants (arithmetic on constants, `RADIUS + 1`, is fine); loop to a constant maximum and `break` |
+| assigning a loop counter in the loop | the counter is constant in the body |
 | `xs[i]`, `v[i]` with `i` computed at run time | indices are constants and `for` counters, or expressions of them |
 | `uint`, `short`, `ushort` | no unsigned or 16-bit integers |
 | `&`, `\|`, `^`, `~`, `<<`, `>>` on integers | no bitwise operators (on bools they are `&&`, `\|\|`, `^^`) |
@@ -178,8 +180,10 @@ rules these out. Each one is an error at its line:
 Some things it lacks are written out instead, with the same results:
 
 - `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `trunc` and `round`
-  become small helper functions. `round` rounds half to even, as Python
-  does.
+  are written out in what GLSL ES 1.00 has. `round` rounds half to even, as
+  Python does.
+- A loop counter read after the loop holds what Python says it does: the
+  variable steps beside the `for` loop's own index.
 - `abs`, `sign`, `min`, `max`, `clamp`, `//` and `%` on integers go through
   floats, since GLSL ES 1.00 has them for floats only. They are exact for
   the integer range OpenGL ES 2 promises.
@@ -191,6 +195,44 @@ Some things it lacks are written out instead, with the same results:
 For example, a bitwise `&` stops the build at its line:
 
 ```text
-glow.py:2: error: OpenGL ES 2 has no bitwise operators (`&`)
+glow.py:2: error: a bitwise operation has no OpenGL ES 2 form
     k = int(uv.x * 8.0) & 3
 ```
+
+## Spirv2GLSL
+
+The translator is a library of its own, `Spirv2GLSL` in this package, and a
+command, `spirv2glslc`. It reads SPIR-V alone, whichever compiler wrote it
+(PyShader, glslang, a Metal or HLSL shader compiled to SPIR-V), and writes
+its vertex and fragment stages as GLSL ES 1.00:
+
+```sh
+swift run spirv2glslc shader.spv -o shader          # -> shader.vert, shader.frag
+swift run spirv2glslc shader.spv --stage fragment   # one stage, to stdout
+```
+
+```swift
+import Spirv2GLSL
+
+let translator = try GLSLESTranslator(spirv: words)
+let vertex = try translator.translate(stage: .vertex)
+// OpenGL ES 2 links varyings by name: the fragment stage takes the vertex stage's.
+let fragment = try translator.translate(stage: .fragment, varyingNames: vertex.varyingNames)
+```
+
+| SPIR-V | GLSL ES 1.00 |
+|---|---|
+| `Input` of a vertex stage | `attribute`, under its `OpName` |
+| `Input` of a fragment stage, `Output` of a vertex stage | `varying` |
+| `Output` of a fragment stage at location 0 | `gl_FragColor` |
+| built-ins `Position`, `PointSize`, `FragCoord`, `FrontFacing`, `PointCoord` | `gl_Position`, `gl_PointSize`, `gl_FragCoord`, `gl_FrontFacing`, `gl_PointCoord` |
+| a `Uniform` block, push constants | one uniform per member read, under the member's name |
+| a sampled image, or an image an `OpSampledImage` pairs with a sampler | `uniform sampler2D` / `samplerCube` |
+| `Private` variables | globals |
+| `OpImageQuerySize` | an `ivec2` uniform `<sampler>_size` the app sets |
+
+Structured control flow becomes `if` / `else if` (a switch too), phis
+variables, loops Appendix A `for` loops. `loopsFollowAppendixA = false`
+(`--any-loops`) writes any other loop as `while (true)`, for drivers that run
+them, instead of refusing it. `#version` and the float precision are options;
+with no `#version` the source also compiles as desktop GLSL.

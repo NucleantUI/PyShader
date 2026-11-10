@@ -171,11 +171,12 @@ final class SpirvModule {
         guard let c = constants[id], case .scalar(let words) = c.value, let t = types[c.type] else { return nil }
         switch t {
         case .int(let width, let signed):
+            // Int(exactly:): Int is 32 bits on wasm32, where a larger value has no Int.
             if width == 64, words.count >= 2 {
                 let v = UInt64(words[0]) | UInt64(words[1]) << 32
-                return signed ? Int(Int64(bitPattern: v)) : Int(v)
+                return signed ? Int(exactly: Int64(bitPattern: v)) : Int(exactly: v)
             }
-            return signed ? Int(Int32(bitPattern: words[0])) : Int(words[0])
+            return signed ? Int(Int32(bitPattern: words[0])) : Int(exactly: words[0])
         default:
             return nil
         }

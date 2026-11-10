@@ -132,13 +132,13 @@ struct Spirv2GLSLTests {
             return float4(q.xy, total(WEIGHTS), 1.0).wzyx + float4(counter)
         """)
         #expect(glsl.contains("struct Hit {"))
-        #expect(glsl.contains("if (t == 0 || t == 1) {"), "\(glsl)")
-        #expect(glsl.contains("} else if (t == 2) {"))
+        #expect(glsl.contains("if (k == 0 || k == 1) {"), "\(glsl)")
+        #expect(glsl.contains("} else if (k == 2) {"))
         #expect(glsl.contains("float total(float "))
         #expect(glsl.contains("#extension GL_OES_standard_derivatives : enable"))
         #expect(glsl.contains("discard;"))
         #expect(glsl.contains("? c.zyx : c;"))
-        #expect(glsl.contains("int(mod(float(j_2), 3.0))"))
+        #expect(glsl.contains("int(mod(float(j), 3.0))"))
     }
 
     @Test("another compiler's SPIR-V: glslang's vertex and fragment stages, linked by their varyings")
@@ -178,13 +178,25 @@ struct Spirv2GLSLTests {
         #expect(fragment.source.contains("varying vec2 v_uv;"), "\(fragment.source)")
         #expect(fragment.source.contains("uniform sampler2D image;"))
         #expect(fragment.source.contains("texture2D(image, "))
-        #expect(fragment.source.contains("for (int i_2 = 0; i_2 < 4; i_2++) {"), "\(fragment.source)")
+        #expect(fragment.source.contains("for (int i = 0; i < 4; i++) {"), "\(fragment.source)")
         #expect(vertex.attributes.map(\.name) == ["a_position", "a_texcoord"])
         for (source, stage) in [(vertex.source, GLSLESStage.vertex), (fragment.source, .fragment)] {
             if let complaints = try glslang(source, stage) {
                 #expect(complaints.isEmpty, "glslang:\n\(complaints)\n\(source)")
             }
         }
+    }
+
+    /// Python's round() is GLSL.std.450 RoundEven, which GLSL ES 1.00 lacks:
+    /// floor(x + 0.5), one less on an exact half that lands odd.
+    @Test("round rounds halves to even, component-wise")
+    func roundEven() throws {
+        let glsl = try fragment("""
+        def main(uv: float2) -> float4:
+            return float4(round(uv), round(uv.x * 9.0), 1.0)
+        """)
+        #expect(glsl.contains("= floor(uv + 0.5);"), "\(glsl)")
+        #expect(glsl.contains("(1.0 - abs(sign(fract(uv) - 0.5))) * mod("))
     }
 
     @Test("the problem reported is the first in the source")

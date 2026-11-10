@@ -36,8 +36,19 @@ final class ShaderCompiler {
     private(set) var variables: [String: LocalVariable] = [:]
     private(set) var globalsInit: SpirvId?
 
-    init(program: ShaderProgram, sourceFile: String? = nil) {
+    /// OpenGL ES 2's interface in place of the target's own: entry points
+    /// whose inputs are attributes, varyings and plain uniforms under these
+    /// names, for Spirv2GLSL to write as GLSL ES 1.00.
+    let gles2: GLES2Options?
+    /// The uniforms, attributes and varyings the OpenGL ES 2 entry points made, by name.
+    var glVariables: [String: (id: SpirvId, type: ShaderType, storage: SpirvStorageClass)] = [:]
+    /// Which of the generated vertex stage's varyings the fragment stage reads.
+    var glReadsUV = false
+    var glReadsColor = false
+
+    init(program: ShaderProgram, sourceFile: String? = nil, gles2: GLES2Options? = nil) {
         self.program = program
+        self.gles2 = gles2
         if let sourceFile { builder.setSourceFile(sourceFile) }
     }
 
@@ -68,6 +79,10 @@ final class ShaderCompiler {
         }
 
         try checkRecursion()
+        if let gles2 {
+            try emitGLES2EntryPoints(gles2)
+            return builder.build()
+        }
         switch program.target {
         case .fragment(let interface): try emitFragmentEntryPoint(interface)
         case .computeImage(let interface): try emitComputeEntryPoint(interface)
@@ -674,7 +689,8 @@ final class ShaderCompiler {
             throw PyShaderError("layer() needs a content image; this target does not provide one", line: line)
         }
         if contentImage == nil {
-            let v = builder.globalVariable(type: .sampledImage(.sampled2D), storage: .uniformConstant, name: "uContent")
+            // In OpenGL ES 2 the sampler is a uniform the host names.
+            let v = builder.globalVariable(type: .sampledImage(.sampled2D), storage: .uniformConstant, name: gles2?.contentSampler ?? "uContent")
             builder.decorate(v, .descriptorSet, [UInt32(binding.set)])
             builder.decorate(v, .binding, [UInt32(binding.binding)])
             contentImage = v
@@ -744,7 +760,7 @@ final class ShaderCompiler {
         let v = builder.globalVariable(
             type: .sampledImage(.sampled2D),
             storage: .uniformConstant,
-            name: "uTex_" + texture.name
+            name: gles2 == nil ? "uTex_" + texture.name : texture.name
         )
         builder.decorate(v, .descriptorSet, [UInt32(program.target.textureSet)])
         builder.decorate(v, .binding, [UInt32(texture.binding)])
@@ -780,7 +796,7 @@ final class ShaderCompiler {
             let id = builder.allocate()
             let internalName = "\(template.name == "<lambda>" ? "lambda" : template.name)_\(lambdaCounter)"
             builder.name(id, internalName)
-            let emitter = FunctionEmitter(compiler: self, name: internalName, returnType: .void)
+            let emitter = FunctionEmitter(compiler: self, name: internalName, returnType: .void, sourceFile: program.origin(of: template.name))
             let paramList = zip(params, args).map { (name: $0.arg, type: $1.type) }
             let typed = try PyShaderError.attributing(to: program.origin(of: template.name)) {
                 try emitter.emitLambda(id: id, params: paramList, body: template.lambda.body, line: template.line)

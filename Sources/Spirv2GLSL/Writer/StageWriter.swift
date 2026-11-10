@@ -36,6 +36,8 @@ final class StageWriter {
 
     let globalScope = NameScope()
     private(set) var globalRefs: [SpirvId: GlobalRef] = [:]
+    /// The GLSL names each module variable declares, by id.
+    private(set) var declaredNames: [SpirvId: [String]] = [:]
     private(set) var functionNames: [SpirvId: String] = [:]
     /// Reachable functions, each after the ones it calls; the entry point last.
     private(set) var functionOrder: [SpirvId] = []
@@ -98,10 +100,15 @@ final class StageWriter {
             out += header.split(separator: "\n", omittingEmptySubsequences: false).map { "// " + $0 }
             out.append("")
         }
-        if let version = options.version { out.append("#version \(version)") }
-        out += extensions
-        if options.version != nil || !extensions.isEmpty { out.append("") }
-        out += ["#ifdef GL_ES", "precision \(options.floatPrecision) float;", "#endif", ""]
+        if let version = options.version {
+            out.append("#version \(version)")
+            out += extensions
+            out.append("")
+            out += ["#ifdef GL_ES", "precision \(options.floatPrecision) float;", "#endif", ""]
+        } else {
+            // With no #version, desktop OpenGL compiles it too: the ES extensions only under GL_ES.
+            out += ["#ifdef GL_ES"] + extensions + ["precision \(options.floatPrecision) float;", "#endif", ""]
+        }
         for section in [structDeclarations, interfaceDeclarations + sizeUniforms.sorted(by: { $0.key < $1.key }).map { "uniform ivec2 \($0.value);" }, globalDeclarations, prototypes] where !section.isEmpty {
             out += section
             out.append("")
@@ -179,8 +186,62 @@ final class StageWriter {
         return name
     }
 
+    /// The first instruction with a source line in the stage's functions that uses `id`.
+    func firstLocated(using id: SpirvId) -> Located? {
+        for f in functionOrder {
+            for b in module.functions[f]!.blocks {
+                for i in b.body where i.line != nil && i.operands.contains(id) { return i }
+            }
+        }
+        // A wrapper reading the variable before any line: the function's first line.
+        for f in functionOrder {
+            for b in module.functions[f]!.blocks {
+                for i in b.body where i.operands.contains(id) {
+                    return b.body.first { $0.line != nil } ?? module.functions[f]!.blocks.lazy.flatMap(\.body).first { $0.line != nil }
+                }
+            }
+        }
+        return nil
+    }
+
     private func declareInterface(_ used: [SpirvId]) throws {
         for id in used {
+            do {
+                try declareGlobal(id)
+            } catch let e as Spirv2GLSLError where e.line == nil {
+                throw error(e.message, at: firstLocated(using: id))
+            }
+            switch globalRefs[id] {
+            case .variable(let name, _, _)?, .sampler(let name)?: declaredNames[id] = [name]
+            case .members(let names, _, _, _)?: declaredNames[id] = names.compactMap { $0 }
+            default: break
+            }
+        }
+    }
+
+    /// The module variables a called function may write: globals and outputs.
+    var writableGlobals: [SpirvId] {
+        globalRefs.compactMap { id, ref in
+            switch ref {
+            case .variable(_, _, true), .members(_, _, true, _): return id
+            default: return nil
+            }
+        }
+    }
+
+    /// The names of the module variables `function` never touches: its locals may take them.
+    func hideableNames(in function: SpirvFunction) -> Set<String> {
+        var touched = Set<SpirvId>()
+        for b in function.blocks { for i in b.body { for w in i.operands where declaredNames[w] != nil { touched.insert(w) } } }
+        var names = Set<String>()
+        for (id, n) in declaredNames where !touched.contains(id) { names.formUnion(n.filter { !$0.hasPrefix("gl_") }) }
+        // The texture size uniforms a function reads by its sampler's name.
+        for n in sizeUniforms.values { names.remove(n) }
+        return names
+    }
+
+    private func declareGlobal(_ id: SpirvId) throws {
+        do {
             let g = module.globals[id]!
             let t = try pointee(of: g)
             let name = module.names[id]

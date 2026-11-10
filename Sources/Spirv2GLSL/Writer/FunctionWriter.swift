@@ -35,6 +35,8 @@ struct Expr {
     var isConstantIndex = false
     /// For `vecN(x)`: x (an array, as a struct cannot hold itself).
     var splatParts: [Expr] = []
+    /// For `name.xy`, a swizzle of a variable: how many components `name` has.
+    var swizzledSize = 0
 
     /// In `reads`, a call whose result waits to be used: everything that
     /// reads or writes memory, or calls, writes it out first.
@@ -64,14 +66,17 @@ final class LoopContext {
     /// The counter a `for` loop counts in, and the name of the for loop's own index.
     let counter: SpirvId?
     let indexName: String?
+    /// The counter variable steps beside the for's index, for code after the loop.
+    let mirrors: Bool
     var breaks = 0
 
-    init(header: SpirvId, merge: SpirvId, continueTarget: SpirvId, counter: SpirvId? = nil, indexName: String? = nil) {
+    init(header: SpirvId, merge: SpirvId, continueTarget: SpirvId, counter: SpirvId? = nil, indexName: String? = nil, mirrors: Bool = false) {
         self.header = header
         self.merge = merge
         self.continueTarget = continueTarget
         self.counter = counter
         self.indexName = indexName
+        self.mirrors = mirrors
     }
 }
 
@@ -107,8 +112,12 @@ final class FunctionWriter {
     private var values: [SpirvId: Value] = [:]
     private var definitions = 0
     private var deferredError: Spirv2GLSLError?
+    /// Locals that only ever hold the parameter stored to them first: the parameter itself.
+    private var aliases: [SpirvId: SpirvId] = [:]
     /// Vectors built of one scalar repeated (`bvec3(c)`), by id: that scalar.
     var splats: [SpirvId: Expr] = [:]
+    /// Scalars computed from constants alone (`RADIUS + 1`), by id.
+    var folded: [SpirvId: Folded] = [:]
     private var places: [SpirvId: Place] = [:]
     /// Parameters passed by value, and their names.
     private var params: [SpirvId: Expr] = [:]
@@ -131,7 +140,7 @@ final class FunctionWriter {
         self.stage = stage
         self.function = function
         self.isEntry = isEntry
-        self.scope = NameScope(parent: stage.globalScope)
+        self.scope = NameScope(parent: stage.globalScope, mayHide: stage.hideableNames(in: function))
         for b in function.blocks { blocks[b.label] = b }
         countUses()
         try collectPhis()
@@ -147,7 +156,10 @@ final class FunctionWriter {
         guard case .function(let returns, _) = try module.type(function.functionType) else {
             throw error("function %\(function.id) has no function type", at: function.located)
         }
-        if case .array = returns { throw error("`\(module.names[function.id] ?? "a function")` returns an array, which OpenGL ES 2 functions cannot", at: function.located) }
+        if case .array = returns {
+            let at = function.blocks.lazy.flatMap(\.body).first { $0.line != nil }
+            throw error("`\(module.names[function.id] ?? "a function")` returns an array: OpenGL ES 2 functions cannot return arrays", at: at)
+        }
         let name = stage.functionNames[function.id]!
         var paramDecls: [String] = []
         for p in function.params {
@@ -181,6 +193,7 @@ final class FunctionWriter {
         }
         let prototype = isEntry ? "void main()" : "\(try stage.typeName(returns)) \(name)(\(paramDecls.joined(separator: ", ")))"
 
+        aliases = parameterCopies()
         try declareLocals()
         if isEntry { prologue = stage.mainPrologue + prologue }
         guard let first = function.blocks.first else { throw error("function `\(name)` has no blocks", at: function.located) }
@@ -294,9 +307,49 @@ final class FunctionWriter {
         }
     }
 
+    /// The locals the entry block sets from a parameter passed by value and
+    /// nothing writes again (a compiler's copy of its parameters, so they can
+    /// be assigned): each is the parameter, under the parameter's name.
+    private func parameterCopies() -> [SpirvId: SpirvId] {
+        guard let first = function.blocks.first else { return [:] }
+        var chainRoot: [SpirvId: SpirvId] = [:]
+        for b in function.blocks {
+            for i in b.body where i.op == .opAccessChain || i.op == .opInBoundsAccessChain {
+                chainRoot[i.operands[1]] = chainRoot[i.operands[2]] ?? i.operands[2]
+            }
+        }
+        var writes: [SpirvId: Int] = [:]
+        for b in function.blocks {
+            for i in b.body {
+                let o = i.operands
+                switch i.op {
+                case .opStore?, .opCopyMemory?:
+                    writes[chainRoot[o[0]] ?? o[0], default: 0] += 1
+                case .opFunctionCall?:
+                    for a in o.dropFirst(3) { writes[chainRoot[a] ?? a, default: 0] += 1 }
+                default:
+                    break
+                }
+            }
+        }
+        var out: [SpirvId: SpirvId] = [:]
+        for i in first.body where i.op == .opStore {
+            let variable = i.operands[0], value = i.operands[1]
+            if params[value] != nil, writes[variable] == 1, isLocal(variable), out.values.contains(value) == false {
+                out[variable] = value
+            }
+        }
+        return out
+    }
+
     private func declareLocal(_ i: Located) throws {
         let o = i.operands
         guard case .pointer(_, let t) = try module.type(o[0]) else { return }
+        if let param = aliases[o[1]], let p = params[param] {
+            // Never written: nothing it reads has to be pinned first.
+            places[o[1]] = Place(code: p.code, type: t, root: nil)
+            return
+        }
         let n = scope.unique(module.names[o[1]] ?? "v\(o[1])")
         places[o[1]] = Place(code: n, type: t, root: o[1])
         if o.count > 3 {
@@ -600,7 +653,10 @@ final class FunctionWriter {
                     throw error("a switch with no selection merge")
                 }
                 let merge = m.operands[0]
-                let selector = try stable(term.operands[0])
+                // Each else-if's test runs only when no arm before it did, so a
+                // variable's value holds across the chain; anything more is pinned.
+                let read = try use(term.operands[0])
+                let selector = read.isTrivial ? read : try stable(read)
                 try materializeAll()
                 constantStores.removeAll()
                 let flow = try emitSwitch(selector, term.operands, from: cur, merge: merge)
@@ -721,7 +777,7 @@ final class FunctionWriter {
             arms.append((cond, a.lines, a.flow))
         }
         let d = try capture { try arm(defaultLabel, from: cur, merge: merge) }
-        if !d.lines.isEmpty || defaultLabel != merge || groups.isEmpty {
+        if !d.lines.isEmpty || groups.isEmpty {
             arms.append((nil, d.lines, d.flow))
         }
         var first = true
@@ -759,7 +815,8 @@ final class FunctionWriter {
         case .continueLoop(let loop):
             if loop.continueTarget != loop.header {
                 try phiCopies(from: cur, to: loop.continueTarget)
-                _ = try emitContinueConstruct(loop)
+                // A for loop's step is its own, unless the variable keeps stepping beside it.
+                if loop.counter == nil || loop.mirrors { _ = try emitContinueConstruct(loop) }
             } else {
                 try phiCopies(from: cur, to: loop.header)
             }
@@ -778,23 +835,25 @@ final class FunctionWriter {
         let m = header.merge!
         current = m
         let merge = m.operands[0], cont = m.operands[1]
-        if let counting = try countingLoop(header) {
-            let base = module.names[counting.counter] ?? "i"
-            let index = scope.unique(base)
+        let recognized = try countingLoop(header)
+        if case .success(let counting) = recognized {
+            // Read after the loop, the variable keeps stepping beside the
+            // for's own index; otherwise the index takes the variable's name.
+            let index = counting.readAfter ? scope.unique(module.names[counting.counter] ?? "i") : places[counting.counter]!.code
             let typeName = counting.isFloat ? "float" : "int"
             line("for (\(typeName) \(index) = \(counting.start); \(index) \(counting.comparison) \(counting.bound); \(counting.step(index))) {")
-            let loop = LoopContext(header: header.label, merge: merge, continueTarget: cont, counter: counting.counter, indexName: index)
+            let loop = LoopContext(header: header.label, merge: merge, continueTarget: cont, counter: counting.counter, indexName: index, mirrors: counting.readAfter)
             loops.append(loop)
             indent += 1
             let flow = try emitSequence(from: counting.bodyStart, pred: counting.testBlock, stop: cont)
-            if flow == .falls && cont != header.label { _ = try emitContinueConstruct(loop) }
+            if flow == .falls && cont != header.label && loop.mirrors { _ = try emitContinueConstruct(loop) }
             indent -= 1
             loops.removeLast()
             line("}")
             return true
         }
-        if stage.options.loopsFollowAppendixA {
-            throw error("this loop has no OpenGL ES 2 form: GLSL ES 1.00 promises only loops that count an int or float from a constant, against a constant bound, by a constant step (its Appendix A)")
+        if stage.options.loopsFollowAppendixA, case .failure(let why) = recognized {
+            throw error("this loop has no OpenGL ES 2 form: \(why.value.reason); GLSL ES 1.00 promises only loops that count an int or float from a constant to a constant bound by a constant step (its Appendix A)", at: why.value.at?.line != nil ? why.value.at : m)
         }
         line("while (true) {")
         let loop = LoopContext(header: header.label, merge: merge, continueTarget: cont)
@@ -856,14 +915,16 @@ final class FunctionWriter {
             }
             try define(o[1], Expr(code: p.code, type: t, reads: p.root.map { [$0] } ?? [], isTrivial: true))
         case .opStore:
+            // The copy of a parameter into the local that is the parameter.
+            if aliases[o[0]] == o[1] { return }
             let p = try place(o[0])
             guard p.members == nil else { throw error("writing a whole block has no OpenGL ES 2 form") }
             let v = try use(o[1])
             if let root = p.root { try flush(reading: root) }
             try writeAssignment(to: p.code, v.code, type: p.type)
             if let root = p.root {
-                if p.code == places[root]?.code, module.constants[o[1]] != nil, p.type.isScalar, !p.type.isBool {
-                    constantStores[root] = v.code
+                if p.code == places[root]?.code, let f = foldedValue(o[1]), p.type.isScalar, !p.type.isBool {
+                    constantStores[root] = try literal(f)
                 } else {
                     constantStores[root] = nil
                 }
@@ -893,6 +954,12 @@ final class FunctionWriter {
                 throw error("\(i.op.map { "\($0)" } ?? "opcode \(i.inst.opcode)") has no OpenGL ES 2 form")
             }
             let t = try module.type(o[0])
+            if let f = fold(i) {
+                folded[o[1]] = f
+                let code = try literal(f)
+                try define(o[1], Expr(code: code, type: t, prec: code.hasPrefix("-") ? 1 : 0, isTrivial: true, isConstantIndex: true))
+                return
+            }
             let e = try operation(i, type: t)
             try define(o[1], e)
         }
@@ -914,8 +981,11 @@ final class FunctionWriter {
                 args.append(try use(a).code)
             }
         }
-        // The callee may write through its `inout` parameters and the globals.
-        try flush(reading: nil)
+        // The callee may write through its `inout` parameters and the module's globals, nothing else.
+        var changed = Set(stage.writableGlobals)
+        for a in o.dropFirst(3) { if let root = places[a]?.root { changed.insert(root) } }
+        for root in changed { try flush(reading: root) }
+        try flushCalls()
         constantStores.removeAll()
         let t = try module.type(o[0])
         let code = "\(name)(\(args.joined(separator: ", ")))"

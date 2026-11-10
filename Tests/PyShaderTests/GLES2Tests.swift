@@ -79,7 +79,7 @@ struct GLES2Tests {
 
     @Test("the examples it cannot express fail at the line that needs more", arguments: [
         ("builtins.py", 13, "isnan"),
-        ("control_flow.py", 40, "`while`"),
+        ("control_flow.py", 40, "no counter steps by a constant"),
         ("lambdas_and_types.py", 8, "unsigned"),
         ("module_style.py", 20, "computed at run time"),
     ])
@@ -189,7 +189,7 @@ struct GLES2Tests {
         #expect(try glslang(shader) ?? "" == "")
         for line in ["attribute vec2 vPosition;", "attribute vec2 vTexCoords0;", "attribute vec4 vColor;",
                      "uniform mat4 projection_mat;", "uniform mat4 modelview_mat;", "uniform float time;",
-                     "gl_Position = projection_mat * modelview_mat * pyt0.position;", "varying vec2 v_st;"] {
+                     "gl_Position = projection_mat * modelview_mat * t.position;", "varying vec2 v_st;"] {
             #expect(shader.vertex.contains(line), "\(line)")
         }
         #expect(shader.vertex.contains("py_vertex(vPosition, vTexCoords0, vColor, time)"))
@@ -218,7 +218,7 @@ struct GLES2Tests {
         #expect(try glslang(shader) ?? "" == "")
         for line in ["attribute vec3 v_pos;", "attribute vec3 v_normal;", "attribute float size;",
                      "py_vertex(v_pos, v_normal, size, time)",
-                     "gl_Position = projection_mat * modelview_mat * pyt0.position;"] {
+                     "gl_Position = projection_mat * modelview_mat * t.position;"] {
             #expect(shader.vertex.contains(line), "\(line)")
         }
         // The generated vertex stage of the other targets takes the position's size too.
@@ -322,7 +322,7 @@ struct GLES2Tests {
                 return float4(v_uv(uv.x), 0.0, 0.0, 1.0)
             """)
         #expect(shader.fragment.contains("varying vec2 v_uv;"))
-        #expect(shader.fragment.contains("float py_v_uv(float x)"))
+        #expect(shader.fragment.contains("float v_uv_2(float x)"))
     }
 
     @Test("a compute target is one fragment per pixel, its inputs uniforms")
@@ -356,7 +356,7 @@ struct GLES2Tests {
             def fragment(shade: float, uv: float2) -> float4:
                 return float4(shade, uv, 1.0)
             """, target: target)
-        #expect(shader.vertex.contains("gl_Position = pyt0.position;"))
+        #expect(shader.vertex.contains("gl_Position = t.position;"))
         #expect(shader.vertex.contains("varying float v_shade;"))
         #expect(shader.vertex.contains("uniform float size;"))
         #expect(!shader.vertex.contains("resolution"))
@@ -467,7 +467,7 @@ struct GLES2Tests {
                 texture = float3(length, output, 0.0)
                 return float4(texture, 1.0)
             """)
-        #expect(shader.fragment.contains("float py_sample(vec2 py_input)"))
+        #expect(shader.fragment.contains("float sample_(vec2 input_)"))
         #expect(!shader.fragment.contains(" output ="))
     }
 
@@ -487,17 +487,25 @@ struct GLES2Tests {
 
     @Test("what OpenGL ES 2 cannot express is an error at its line")
     func errors() {
-        expectESError("def main(uv: float2) -> float4:\n    i = 0\n    while i < 3:\n        i += 1\n    return float4(0.0)\n", "`while`", line: 3)
+        expectESError("def main(uv: float2) -> float4:\n    i = 0\n    while i < 3:\n        i += 1\n    return float4(0.0)\n", "no counter steps by a constant", line: 3)
         expectESError("def main(uv: float2) -> float4:\n    k = int(uv.x) & 3\n    return float4(0.0)\n", "bitwise", line: 2)
         expectESError("def main(uv: float2) -> float4:\n    k = ~int(uv.x)\n    return float4(0.0)\n", "bitwise", line: 2)
         expectESError("def main(uv: float2) -> float4:\n    u = uint(3)\n    return float4(0.0)\n", "unsigned", line: 2)
         expectESError("def main(uv: float2, time: float) -> float4:\n    s = 0.0\n    for i in range(int(time)):\n        s += 1.0\n    return float4(s)\n", "constant bounds", line: 3)
         expectESError("def main(uv: float2) -> float4:\n    xs = [1.0, 2.0]\n    k = int(uv.x)\n    return float4(xs[k])\n", "computed at run time", line: 4)
         expectESError("def main(uv: float2) -> float4:\n    for i in range(3):\n        i = 2\n    return float4(0.0)\n", "counter", line: 3)
-        expectESError("def main(uv: float2) -> float4:\n    for i in range(3):\n        pass\n    return float4(float(i))\n", "counter of a loop above", line: 4)
         expectESError("def main(uv: float2) -> float4:\n    m = float2x3(1.0)\n    return float4(0.0)\n", "square", line: 2)
         expectESError("def main(uv: float2) -> float4:\n    return float4(float(isnan(uv.x)))\n", "isnan", line: 2)
         expectESError("pair = lambda x: [x, x]\n\ndef main(uv: float2) -> float4:\n    return float4(pair(uv.x)[0])\n", "functions cannot return arrays", line: 1)
+    }
+
+    /// The for loop's own index counts; the variable steps beside it, so it
+    /// holds what Python says after the loop.
+    @Test("a loop's counter read after the loop")
+    func counterAfterLoop() throws {
+        let shader = try compileES("def main(uv: float2) -> float4:\n    for i in range(3):\n        pass\n    return float4(float(i))\n")
+        #expect(shader.fragment.contains("for (int i_2 = 0; i_2 < 3; i_2++) {"), "\(shader.fragment)")
+        #expect(shader.fragment.contains("i = i_2 + 1;"))
     }
 
     @Test("target inputs OpenGL ES 2 has no counterpart for")

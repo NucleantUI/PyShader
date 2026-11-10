@@ -153,6 +153,12 @@ public final class GLSLESTranslator {
         try self.init(spirv: reader.words, options: options)
     }
 
+    /// Whether GLSL ES 1.00 lets a shader declare `name`: an identifier that
+    /// is no keyword, reserved word or built-in, without `gl_` or `__`.
+    public static func isDeclarableName(_ name: String) -> Bool {
+        NameScope().isDeclarable(name)
+    }
+
     /// The names of the module's entry points of `stage`.
     public func entryPoints(of stage: GLSLESStage) -> [String] {
         module.entryPoints.filter { $0.model == stage.model.rawValue }.map(\.name)

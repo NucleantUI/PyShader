@@ -50,10 +50,14 @@ let glslReservedNames: Set<String> = [
 final class NameScope {
     private var used: Set<String>
     private let parent: NameScope?
+    /// Names of the scope around that this one may still declare: those of
+    /// module variables its function never reads, which GLSL lets a local hide.
+    private let mayHide: Set<String>
 
-    init(parent: NameScope? = nil, reserving: Set<String> = []) {
+    init(parent: NameScope? = nil, reserving: Set<String> = [], mayHide: Set<String> = []) {
         self.parent = parent
         self.used = reserving
+        self.mayHide = mayHide
     }
 
     /// Whether GLSL lets a shader declare `name` as it is.
@@ -84,7 +88,7 @@ final class NameScope {
     }
 
     func isFree(_ name: String) -> Bool {
-        !used.contains(name) && (parent?.isFree(name) ?? true)
+        !used.contains(name) && (mayHide.contains(name) || (parent?.isFree(name) ?? true))
     }
 
     /// Takes `name` exactly; false when it is not free.
