@@ -335,9 +335,13 @@ struct ListInputTests {
         def main(uv: float2, steps: list[Step]) -> float4:
             return steps[0.5].color
         """, "list index must be an integer")
+    }
 
-        // A lambda takes its parameters by value; the list has none to pass.
-        refuses("""
+    /// Any type an entry point takes, a lambda takes too: the list input is
+    /// a handle the lambda's instance reads through, as a `def` does.
+    @Test("a lambda takes the list input")
+    func lambdaListInput() throws {
+        let words = try compile("""
         class Step:
             color: float4
 
@@ -345,23 +349,19 @@ struct ListInputTests {
 
         def main(uv: float2, steps: list[Step]) -> float4:
             return first(steps)
-        """, "a lambda cannot take a `list[Step]`")
+        """, target: .computeImage(.nucleantUI(samplesContent: false, arguments: [])))
+        #expect(words.count(.opTypeRuntimeArray) == 1)
     }
 
-    @Test("a lambda refuses an array argument the same way")
-    func lambdaArrayArgument() {
-        do {
-            _ = try PyShader.compile("""
-            first = lambda a: a[0]
+    @Test("a lambda takes array arguments, one instance per array")
+    func lambdaArrayArgument() throws {
+        let words = try compile("""
+        first = lambda a: a[0]
 
-            def main(uv: float2, mins: FloatArray) -> float4:
-                return float4(first(mins))
-            """, target: .computeImage(.nucleantUI(samplesContent: false, arguments: [("mins", .floatArray)])))
-            Issue.record("expected the lambda to be refused")
-        } catch let error as PyShaderError {
-            #expect(error.message.contains("a lambda cannot take a `FloatArray`"), "got: \(error)")
-        } catch {
-            Issue.record("unexpected error type: \(error)")
-        }
+        def main(uv: float2, mins: FloatArray, maxs: FloatArray) -> float4:
+            return float4(first(mins), first(maxs), 0.0, 1.0)
+        """, target: .computeImage(.nucleantUI(samplesContent: false, arguments: [("mins", .floatArray), ("maxs", .floatArray)])))
+        // `first` for `mins` and `first` for `maxs`, besides main and the wrapper.
+        #expect(words.count(.opFunction) == 4)
     }
 }

@@ -87,6 +87,6 @@ extension PyShader {
             throw PyShaderError("attribute `\(name)`: only a graphics target's vertex stage takes attributes")
         }
         let program = try ShaderProgram(module: module, target: target, origins: linker.origins)
-        return try GLES2Compiler(program: program, sourceFile: sourceFile, options: options).compile()
+        return try GLES2Build(program: program, sourceFile: sourceFile, options: options).compile()
     }
 }

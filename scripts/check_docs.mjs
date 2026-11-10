@@ -1,8 +1,14 @@
 #!/usr/bin/env node
 // Compiles every pyshader fence in docs/ through the same wasm modules the
-// site uses (pyshader.wasm -> naga.wasm), so a snippet that fails in the
+// site uses (pyshader.wasm -> naga.wasm), with the modules the site hands
+// it: the installed libraries (pyshader-stdlib, as the docs environment has
+// it) and a fence's own `modules="…"` folder. A snippet that fails in the
 // browser fails here first. Run after scripts/build_wasm.py.
+//
+//   node scripts/check_docs.mjs
+//   PYSHADER_STDLIB=../pyshader-stdlib node scripts/check_docs.mjs   # a stdlib checkout instead
 import { WASI } from 'node:wasi';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -18,7 +24,41 @@ const enc = new TextEncoder(), dec = new TextDecoder();
 
 function put(exports, alloc, bytes) { const p = exports[alloc](bytes.length); new Uint8Array(exports.memory.buffer, p, bytes.length).set(bytes); return p; }
 
-function compile(source, options) {
+/** Every `.py` file under `folder` by dotted name, as the plugin's folder_modules has them. */
+function folderModules(folder, prefix = '') {
+  const out = {};
+  for (const file of fs.readdirSync(folder, { recursive: true }).filter((f) => f.endsWith('.py')).sort()) {
+    const parts = file.slice(0, -3).split(path.sep);
+    if (parts.includes('__pycache__')) continue;
+    if (parts[parts.length - 1] === '__init__') parts.pop();
+    const name = [...(prefix ? [prefix] : []), ...parts].join('.');
+    if (name) out[name] = fs.readFileSync(path.join(folder, file), 'utf8');
+  }
+  return out;
+}
+
+/** The libraries the site ships as modules.json: the plugin's own list, from the docs environment. */
+function installedModules() {
+  if (process.env.PYSHADER_STDLIB) {
+    return folderModules(path.join(path.resolve(process.env.PYSHADER_STDLIB), 'src', 'pyshader', 'stdlib'), 'pyshader.stdlib');
+  }
+  const script = 'import json; from mkdocs_pyshader.plugin import installed_modules; print(json.dumps(installed_modules()))';
+  return JSON.parse(execFileSync('uv', ['run', '--group', 'docs', 'python', '-c', script], { cwd: root, encoding: 'utf8' }));
+}
+
+const libraries = installedModules();
+console.log(`${Object.keys(libraries).length} library modules${process.env.PYSHADER_STDLIB ? ` from ${process.env.PYSHADER_STDLIB}` : ''}`);
+
+function registerModules(local) {
+  sw.pyshader_clear_modules();
+  for (const [name, source] of Object.entries({ ...libraries, ...local })) {
+    const n = enc.encode(name), s = enc.encode(source);
+    sw.pyshader_add_module(put(sw, 'pyshader_alloc', n), n.length, put(sw, 'pyshader_alloc', s), s.length);
+  }
+}
+
+function compile(source, options, local = {}) {
+  registerModules(local);
   const src = enc.encode(source), opt = enc.encode(options);
   const rc = sw.pyshader_compile(put(sw, 'pyshader_alloc', src), src.length, put(sw, 'pyshader_alloc', opt), opt.length);
   const out = new Uint8Array(sw.memory.buffer, sw.pyshader_result_ptr(), sw.pyshader_result_len()).slice();
@@ -55,7 +95,8 @@ for (const file of files) {
       .map((a) => ({ name: a[1], kind: a[2] }));
     for (const arg of declared.length ? declared : detectArguments(source)) parts.push(`arg=${arg.name}:${arg.kind}`);
     const line = text.slice(0, m.index).split('\n').length;
-    const result = compile(source, parts.join(' '));
+    const local = options.modules ? folderModules(path.join(root, options.modules)) : {};
+    const result = compile(source, parts.join(' '), local);
     count++;
     if (result.error) {
       failures++;

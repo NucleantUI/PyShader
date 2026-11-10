@@ -143,9 +143,25 @@ def main(uv: float2, blend: float, a: Texture, b: Texture) -> float4:
 
 `a(p)` samples at `p` in `uv` space with explicit LOD 0, as `layer(p)` does:
 a compute stage has no derivatives to choose a level from. `a_size` is the
-image's size in pixels. A texture is a handle, not a value: it cannot be
-stored, returned or passed to a helper, and reading `a` without calling it is
-an error that says how to sample it.
+image's size in pixels.
+
+A texture is passed to other functions like any other parameter: a `def` or
+lambda taking a `Texture` samples and measures whichever texture it is handed,
+under its own name, and can pass it on again. Each function is compiled once
+per texture it is called with.
+
+```py
+def blur(t: Texture, p: float2) -> float4:
+    d = float2(1.0) / float2(t_size)
+    return (t(p - d) + t(p + d)) * 0.5
+
+def main(uv: float2, a: Texture, b: Texture) -> float4:
+    return blur(a, uv) * blur(b, uv)
+```
+
+A texture is a handle, not a value: it cannot be stored or returned, and
+reading `a` without calling it or passing it is an error that says how to
+sample it.
 
 The `Texture` parameters are the textures: nothing else declares them. Each
 gets the next binding from 4, in the order `main` declares them, so `a` above

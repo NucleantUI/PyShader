@@ -369,13 +369,13 @@ struct EntrySignature {
 
     /// A texture parameter is a handle, not a value: the image is a
     /// module-level uniform the wrapper never passes, exactly as an array
-    /// argument is.
+    /// argument is. The handle is the texture's place in `textures`.
     private static func addTextures(_ textures: [ShaderTexture], to types: inout [String: ShaderType]) throws {
-        for texture in textures {
+        for (index, texture) in textures.enumerated() {
             if types[texture.name] != nil {
                 throw PyShaderError("texture `\(texture.name)` clashes with a built-in input or argument name")
             }
-            types[texture.name] = .sampledImage(.sampled2D)
+            types[texture.name] = .texture(index: index)
         }
     }
 

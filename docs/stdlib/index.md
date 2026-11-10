@@ -2,7 +2,7 @@
 
 [pyshader-stdlib](https://github.com/NucleantUI/pyshader-stdlib) is a library
 of shader functions written in PyShader: curves, colours, shapes, distance
-fields, patterns, noise, and helpers for the vertex stage. It installs under
+fields, patterns, noise, light, materials, and helpers for the vertex stage. It installs under
 `pyshader` as `pyshader.stdlib` and imports like any other module (see the
 [imports tutorial](../tutorials/imports.md)). Only the functions a shader uses
 are compiled into it.
@@ -48,6 +48,7 @@ packages the usual way, not editable: two editable packages under one
 | [`pyshader.stdlib.fragment.color`, `.blend`](color.md) | HSB, YUV, palettes, sRGB; layer blend modes |
 | [`pyshader.stdlib.fragment.shapes`, `.sdf`](shapes.md) | shapes as masks, and 2D signed distance functions |
 | [`pyshader.stdlib.fragment.light`](light.md) | glows from any shape, neon, LEDs and LED rings, shading, soft shadows, tone mapping |
+| [`pyshader.stdlib.fragment.surface`, `.material`](materials.md) | physically based shading; plastic, rubber, metals, stone, wood, leather, fabric, glass, water, ice |
 | [`pyshader.stdlib.fragment.coords`, `.matrix`, `.pattern`](patterns.md) | centering and polar coordinates, 2D rotation, tiling |
 | [`pyshader.stdlib.fragment.random`, `.noise`, `.cellular`](noise.md) | hashes, value / gradient / simplex noise, fBm, Voronoi |
 | [`pyshader.stdlib.vertex.*`](vertex.md) | 4x4 transforms, quads from `vertex_index`, deformations |

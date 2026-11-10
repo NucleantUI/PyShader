@@ -321,7 +321,8 @@ final class ShaderProgram {
                 }
                 if let ann = arg.annotation {
                     let declared = try resolveType(ann, line: def.lineno)
-                    guard declared == type || Self.sameArgumentArray(declared, type) || Self.isInputList(declared, type) else {
+                    guard declared == type || Self.sameArgumentArray(declared, type) || Self.isInputList(declared, type)
+                            || Self.isTexture(declared, type) else {
                         throw PyShaderError("`\(arg.arg)` is a `\(type)` input, not `\(declared)`", line: def.lineno)
                     }
                 }
@@ -425,12 +426,14 @@ final class ShaderProgram {
         try Self.resolveType(expr, line: line, classes: structs)
     }
 
-    /// A parameter type whose length (or array) comes from the argument:
-    /// `list[T]`, at any depth, and the array argument types (`Float2Array`).
+    /// A parameter type whose length (or array, or texture) comes from the
+    /// argument: `list[T]`, at any depth, the array argument types
+    /// (`Float2Array`) and `Texture`.
     static func isOpen(_ type: ShaderType) -> Bool {
         switch type {
         case .array(let e, let n): return n < 0 || isOpen(e)
         case .floatArray(let argument, _): return argument < 0
+        case .texture(let index): return index < 0
         case .tuple(let members): return members.contains(where: isOpen)
         default: return false
         }
@@ -440,8 +443,9 @@ final class ShaderProgram {
     /// `actual`; nil when the argument does not fit. A `list[T]` takes the
     /// length of the list handed to it, or is that array argument when handed
     /// one of `T`s, or the list input when handed that; an array argument type
-    /// is the argument handed to it, or takes a list of its elements. A closed
-    /// type stays as declared; the argument is converted to it at the call.
+    /// is the argument handed to it, or takes a list of its elements; a
+    /// `Texture` is the texture handed to it. A closed type stays as declared;
+    /// the argument is converted to it at the call.
     static func bind(_ declared: ShaderType, to actual: ShaderType) -> ShaderType? {
         guard isOpen(declared) else { return declared }
         switch (declared, actual) {
@@ -455,6 +459,8 @@ final class ShaderProgram {
             return actual
         case (.floatArray(_, let e), .array(let a, let m)) where bind(e, to: a) != nil:
             return .array(e, m)
+        case (.texture, .texture(let index)) where index >= 0:
+            return actual
         case (.tuple(let ds), .tuple(let as_)) where ds.count == as_.count:
             var bound: [ShaderType] = []
             for (d, a) in zip(ds, as_) {
@@ -471,6 +477,12 @@ final class ShaderProgram {
     /// (bound to one): the same when their elements match.
     private static func sameArgumentArray(_ declared: ShaderType, _ input: ShaderType) -> Bool {
         if case .floatArray(_, let a) = declared, case .floatArray(_, let b) = input { return a == b }
+        return false
+    }
+
+    /// An annotation's `Texture` (bound to none) against the input's (bound to one).
+    private static func isTexture(_ declared: ShaderType, _ input: ShaderType) -> Bool {
+        if case .texture = declared, case .texture = input { return true }
         return false
     }
 

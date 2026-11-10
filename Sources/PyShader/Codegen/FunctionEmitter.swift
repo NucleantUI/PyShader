@@ -112,6 +112,7 @@ final class FunctionEmitter {
     /// Emits a lambda body; the return type is whatever the expression evaluates to.
     func emitLambda(id: SpirvId, params: [(name: String, type: ShaderType)], body expr: Expression, line: Int) throws -> ShaderType {
         let paramIds = beginFunction(params)
+        if let marker = builder.line(line, in: sourceFile) { emit(marker) }
         let v = try emitExpression(expr)
         guard v.type.isStorable else {
             throw PyShaderError("lambda must produce a value, got `\(v.type)`", line: line)
@@ -135,13 +136,15 @@ final class FunctionEmitter {
                 handles[p.name] = p.type
                 continue
             }
-            // A texture parameter names a module-level sampler; there is no
-            // value to copy in, and SPIR-V cannot pass one as a parameter.
-            if case .sampledImage = p.type {
+            // A texture parameter names one of the module-level samplers;
+            // each call binds it to the texture handed to it, so there is
+            // no value to copy in.
+            if case .texture = p.type {
                 handles[p.name] = p.type
                 continue
             }
             let pid = builder.allocate()
+            builder.name(pid, p.name)
             paramIds.append((pid, p.type))
             let v = declareLocal(p.name, type: p.type)
             store(v.ptr, pid)

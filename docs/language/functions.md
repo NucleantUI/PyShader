@@ -57,6 +57,25 @@ sq(uv)      # float2
 
 Immediately-invoked lambdas (`(lambda x: x + 1.0)(t)`) work too.
 
+## Parameters the entry point takes
+
+Every type an entry point can take, any function takes too: a `Texture`, an
+array argument (`FloatArray`, `Float2Array`…), the class input and the list
+input (`list[Step]`), in `def`s and lambdas alike. A function is compiled once
+per texture or array it is handed, so `blur(a, uv)` and `blur(b, uv)` each
+read their own image:
+
+```py
+def blur(t: Texture, p: float2) -> float4:
+    d = float2(1.0) / float2(t_size)
+    return (t(p - d) + t(p + d)) * 0.5
+
+total = lambda w: w[0] + w[1]
+
+def main(uv: float2, a: Texture, b: Texture, weights: FloatArray) -> float4:
+    return blur(a, uv) * total(weights) + blur(b, uv)
+```
+
 ## Module constants
 
 Assignments at module level are constants, inlined where used. They may be

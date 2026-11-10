@@ -9,6 +9,8 @@
 //  attribute.
 //
 
+import Spirv2GLSL
+
 /// The names OpenGL ES 2 output uses for its attributes, varyings and the
 /// content sampler, and how the generated vertex stage transforms and colors
 /// its vertices.
@@ -127,7 +129,7 @@ public struct GLES2Options: Sendable, Hashable {
         for (option, name) in names {
             let isIdentifier = name.first.map { $0 == "_" || ($0.isASCII && $0.isLetter) } == true
                 && name.allSatisfy { $0 == "_" || ($0.isASCII && ($0.isLetter || $0.isNumber)) }
-            guard isIdentifier, GLES2Names.usable(name) else {
+            guard isIdentifier, GLSLESTranslator.isDeclarableName(name) else {
                 throw PyShaderError("`\(option)` `\(name)` is not a name a GLSL ES 1.00 shader can declare")
             }
             if let other = seen[name] {

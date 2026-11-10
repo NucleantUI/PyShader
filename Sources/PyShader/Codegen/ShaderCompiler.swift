@@ -15,7 +15,7 @@ final class ShaderCompiler {
     let program: ShaderProgram
     private var callGraph: [String: Swift.Set<String>] = [:]
     private var inlining: [String] = []
-    private var lambdaInstances: [String: (id: SpirvId, returnType: ShaderType)] = [:]
+    private var lambdaInstances: [LambdaKey: (id: SpirvId, returnType: ShaderType)] = [:]
     private var lambdaCounter = 0
     /// Instances of the functions taking lists of any length or array
     /// arguments, by name and parameter types; and how many each has.
@@ -36,8 +36,19 @@ final class ShaderCompiler {
     private(set) var variables: [String: LocalVariable] = [:]
     private(set) var globalsInit: SpirvId?
 
-    init(program: ShaderProgram, sourceFile: String? = nil) {
+    /// OpenGL ES 2's interface in place of the target's own: entry points
+    /// whose inputs are attributes, varyings and plain uniforms under these
+    /// names, for Spirv2GLSL to write as GLSL ES 1.00.
+    let gles2: GLES2Options?
+    /// The uniforms, attributes and varyings the OpenGL ES 2 entry points made, by name.
+    var glVariables: [String: (id: SpirvId, type: ShaderType, storage: SpirvStorageClass)] = [:]
+    /// Which of the generated vertex stage's varyings the fragment stage reads.
+    var glReadsUV = false
+    var glReadsColor = false
+
+    init(program: ShaderProgram, sourceFile: String? = nil, gles2: GLES2Options? = nil) {
         self.program = program
+        self.gles2 = gles2
         if let sourceFile { builder.setSourceFile(sourceFile) }
     }
 
@@ -68,6 +79,10 @@ final class ShaderCompiler {
         }
 
         try checkRecursion()
+        if let gles2 {
+            try emitGLES2EntryPoints(gles2)
+            return builder.build()
+        }
         switch program.target {
         case .fragment(let interface): try emitFragmentEntryPoint(interface)
         case .computeImage(let interface): try emitComputeEntryPoint(interface)
@@ -674,7 +689,8 @@ final class ShaderCompiler {
             throw PyShaderError("layer() needs a content image; this target does not provide one", line: line)
         }
         if contentImage == nil {
-            let v = builder.globalVariable(type: .sampledImage(.sampled2D), storage: .uniformConstant, name: "uContent")
+            // In OpenGL ES 2 the sampler is a uniform the host names.
+            let v = builder.globalVariable(type: .sampledImage(.sampled2D), storage: .uniformConstant, name: gles2?.contentSampler ?? "uContent")
             builder.decorate(v, .descriptorSet, [UInt32(binding.set)])
             builder.decorate(v, .binding, [UInt32(binding.binding)])
             contentImage = v
@@ -744,7 +760,7 @@ final class ShaderCompiler {
         let v = builder.globalVariable(
             type: .sampledImage(.sampled2D),
             storage: .uniformConstant,
-            name: "uTex_" + texture.name
+            name: gles2 == nil ? "uTex_" + texture.name : texture.name
         )
         builder.decorate(v, .descriptorSet, [UInt32(program.target.textureSet)])
         builder.decorate(v, .binding, [UInt32(texture.binding)])
@@ -769,17 +785,9 @@ final class ShaderCompiler {
         guard params.count == args.count else {
             throw PyShaderError("`\(template.name)` takes \(params.count) argument(s), got \(args.count)", line: line)
         }
-        // An array argument or the list input is a handle with no value to
-        // pass, and a lambda takes its parameters by value.
-        for arg in args {
-            switch arg.type {
-            case .floatArray, .inputList:
-                throw PyShaderError("a lambda cannot take a `\(arg.type)`; write it as a `def`", line: line)
-            default:
-                break
-            }
-        }
-        let key = template.name + "(" + args.map { "\($0.type)" }.joined(separator: ",") + ")@\(template.line)"
+        // By the types themselves: two array arguments or two textures print
+        // alike but are different handles, each its own instance.
+        let key = LambdaKey(name: template.name, line: template.line, types: args.map(\.type))
         let instance: (id: SpirvId, returnType: ShaderType)
         if let existing = lambdaInstances[key] {
             instance = existing
@@ -788,7 +796,7 @@ final class ShaderCompiler {
             let id = builder.allocate()
             let internalName = "\(template.name == "<lambda>" ? "lambda" : template.name)_\(lambdaCounter)"
             builder.name(id, internalName)
-            let emitter = FunctionEmitter(compiler: self, name: internalName, returnType: .void)
+            let emitter = FunctionEmitter(compiler: self, name: internalName, returnType: .void, sourceFile: program.origin(of: template.name))
             let paramList = zip(params, args).map { (name: $0.arg, type: $1.type) }
             let typed = try PyShaderError.attributing(to: program.origin(of: template.name)) {
                 try emitter.emitLambda(id: id, params: paramList, body: template.lambda.body, line: template.line)
@@ -796,7 +804,9 @@ final class ShaderCompiler {
             instance = (id, typed)
             lambdaInstances[key] = instance
         }
-        let ids = args.map(\.id)
+        // A handle (array argument, list input, texture) is bound by the
+        // instance; nothing is passed.
+        let ids = args.filter { !$0.type.isHandle }.map(\.id)
         return caller.emit(.opFunctionCall, type: instance.returnType, [instance.id] + ids)
     }
 
@@ -825,6 +835,12 @@ final class ShaderCompiler {
 
     private struct GenericKey: Hashable {
         let name: String
+        let types: [ShaderType]
+    }
+
+    private struct LambdaKey: Hashable {
+        let name: String
+        let line: Int
         let types: [ShaderType]
     }
 

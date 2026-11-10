@@ -85,6 +85,12 @@ public indirect enum ShaderType: Hashable, Sendable, CustomStringConvertible {
     /// elements of the input buffer, as many as the host binds. A handle, not
     /// a storable value: indexed with `a[i]`, measured with `len(a)`.
     case inputList(ShaderType)
+    /// A handle to one named texture of the target (`index` into its
+    /// `textures`), as a `Texture` parameter holds it; -1 for the annotation
+    /// itself, bound to no texture yet, which each call binds to the texture
+    /// handed to it. Not a storable value: sampled with `t(p)`, measured
+    /// with `t_size`, passed on to other functions.
+    case texture(index: Int)
 
     public static let bool: ShaderType = .scalar(.bool)
     public static let float: ShaderType = .scalar(.float(bits: 32))
@@ -178,6 +184,16 @@ public indirect enum ShaderType: Hashable, Sendable, CustomStringConvertible {
         return false
     }
 
+    /// A handle to a host resource the module names rather than a value it
+    /// holds: an array argument, the list input, a texture. A function
+    /// taking one is compiled once per resource handed to it.
+    public var isHandle: Bool {
+        switch self {
+        case .floatArray, .inputList, .texture: return true
+        default: return false
+        }
+    }
+
     /// The Python-facing names of the argument array types, `FloatArray` and
     /// `Float2Array`…`Float4Array`, by element type.
     static let argumentArrayNames: [(name: String, element: ShaderType)] = [
@@ -194,7 +210,7 @@ public indirect enum ShaderType: Hashable, Sendable, CustomStringConvertible {
     /// `FloatArray` names an array argument's. Both are host resources the
     /// module names rather than values it is handed.
     public static func texture(named name: String) -> ShaderType? {
-        name == "Texture" ? .sampledImage(.sampled2D) : nil
+        name == "Texture" ? .texture(index: -1) : nil
     }
 
     public var isFloat: Bool { scalarKind?.isFloat ?? false }
@@ -229,6 +245,7 @@ public indirect enum ShaderType: Hashable, Sendable, CustomStringConvertible {
         case .runtimeArray(let t): return "\(t)[]"
         case .floatArray(_, let element): return Self.argumentArrayNames.first { $0.element == element }?.name ?? "\(element)Array"
         case .inputList(let element): return "list[\(element)]"
+        case .texture: return "Texture"
         }
     }
 
@@ -277,6 +294,7 @@ public indirect enum ShaderType: Hashable, Sendable, CustomStringConvertible {
         case (.runtimeArray(let a), .runtimeArray(let b)): return a == b
         case (.floatArray(let a, let ae), .floatArray(let b, let be)): return a == b && ae == be
         case (.inputList(let a), .inputList(let b)): return a == b
+        case (.texture(let a), .texture(let b)): return a == b
         default: return false
         }
     }
@@ -299,6 +317,7 @@ public indirect enum ShaderType: Hashable, Sendable, CustomStringConvertible {
         case .runtimeArray(let t): hasher.combine(8); hasher.combine(t)
         case .floatArray(let i, let element): hasher.combine(9); hasher.combine(i); hasher.combine(element)
         case .inputList(let element): hasher.combine(13); hasher.combine(element)
+        case .texture(let index): hasher.combine(14); hasher.combine(index)
         }
     }
 }

@@ -17,6 +17,10 @@ let package = Package(
             name: "Spirv2PyShader",
             targets: ["Spirv2PyShader"]
         ),
+        .library(
+            name: "Spirv2GLSL",
+            targets: ["Spirv2GLSL"]
+        ),
         .executable(
             name: "pyshaderc",
             targets: ["pyshaderc"]
@@ -24,6 +28,10 @@ let package = Package(
         .executable(
             name: "spirv2py",
             targets: ["spirv2py"]
+        ),
+        .executable(
+            name: "spirv2glslc",
+            targets: ["spirv2glslc"]
         ),
         // Compile the shaders a package's pyshader.toml lists: on every build...
         .plugin(
@@ -47,6 +55,8 @@ let package = Package(
             dependencies: [
                 .product(name: "SpirvCore", package: "SpirvCore"),
                 .product(name: "PySwiftAST", package: "PySwiftAST"),
+                // OpenGL ES 2 output: the SPIR-V written as GLSL ES 1.00.
+                "Spirv2GLSL",
             ]
         ),
         // SPIR-V (a fragment stage) back to PyShader source.
@@ -55,6 +65,13 @@ let package = Package(
             dependencies: [
                 .product(name: "SpirvCore", package: "SpirvCore"),
                 "PyShader",
+            ]
+        ),
+        // SPIR-V (a vertex or fragment stage, from any compiler) to GLSL ES 1.00.
+        .target(
+            name: "Spirv2GLSL",
+            dependencies: [
+                .product(name: "SpirvCore", package: "SpirvCore"),
             ]
         ),
         // SpirvTools for --optimize (pyshader.toml's `optimize`).
@@ -68,6 +85,10 @@ let package = Package(
         .executableTarget(
             name: "spirv2py",
             dependencies: ["Spirv2PyShader"]
+        ),
+        .executableTarget(
+            name: "spirv2glslc",
+            dependencies: ["Spirv2GLSL"]
         ),
         // pyshader.toml; its one file is also linked into both plugins.
         .target(name: "PyShaderConfig"),
@@ -91,6 +112,10 @@ let package = Package(
         .testTarget(
             name: "Spirv2PyShaderTests",
             dependencies: ["Spirv2PyShader", "PyShader"]
+        ),
+        .testTarget(
+            name: "Spirv2GLSLTests",
+            dependencies: ["Spirv2GLSL", "PyShader"]
         ),
     ],
     swiftLanguageModes: [.v6]

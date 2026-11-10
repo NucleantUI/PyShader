@@ -175,7 +175,7 @@ def test_what_opengl_es_2_cannot_do_stops_the_build_at_its_line(tmp_path, monkey
     with pytest.raises(backend.ShaderBuildError) as raised:
         backend.build_wheel(str(tmp_path))
     message = str(raised.value)
-    assert message.startswith("src/glow_app/shaders/glow.py:2: error: OpenGL ES 2 has no bitwise operators (`&`)\n")
+    assert message.startswith("src/glow_app/shaders/glow.py:2: error: a bitwise operation has no OpenGL ES 2 form\n")
     assert "\n    k = int(uv.x * 8.0) & 3\n" in message
     assert 'in [glow] of pyproject.toml [tool.pyshader], target = "compute", format = "gles2"' in message
 
