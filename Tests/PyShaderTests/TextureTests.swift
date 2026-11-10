@@ -275,6 +275,149 @@ struct TextureTests {
         #expect(bindings(words) == [0, 1, 9])
     }
 
+    // MARK: Textures passed to functions
+
+    /// For each texture binding, the functions that load its sampler.
+    private func readers(_ words: SpirvWords) -> [UInt32: Swift.Set<UInt32>] {
+        let instructions = words.instructions
+        var bindingOf: [UInt32: UInt32] = [:]   // variable id -> binding
+        for i in instructions where i.opcode == SpirvOp.opDecorate.rawValue && i.operands[1] == SpirvDecoration.binding.rawValue {
+            bindingOf[i.operands[0]] = i.operands[2]
+        }
+        var out: [UInt32: Swift.Set<UInt32>] = [:]
+        var function: UInt32?
+        for i in instructions {
+            switch i.opcode {
+            case SpirvOp.opFunction.rawValue: function = i.operands[1]
+            case SpirvOp.opFunctionEnd.rawValue: function = nil
+            case SpirvOp.opLoad.rawValue:
+                if let function, let binding = bindingOf[i.operands[2]], binding >= 4 {
+                    out[binding, default: []].insert(function)
+                }
+            default: break
+            }
+        }
+        return out
+    }
+
+    @Test("a function takes a texture under its own name and samples the one handed to it")
+    func helperOwnName() throws {
+        let words = try compileValid("""
+        def darken(t: Texture, p: float2) -> float4:
+            return t(p) * 0.5
+
+        def main(uv: float2, background: Texture) -> float4:
+            return darken(background, uv)
+        """, target: Self.interface(textures: []))
+        #expect(words.count(.opImageSampleExplicitLod) == 1)
+        #expect(bindings(words) == [0, 1, 4])
+    }
+
+    @Test("a function called with two textures is compiled once for each, reading its own")
+    func helperPerTexture() throws {
+        let words = try compileValid("""
+        def get(t: Texture, p: float2) -> float4:
+            return t(p)
+
+        def main(uv: float2, a: Texture, b: Texture) -> float4:
+            return get(a, uv) + get(b, uv) + get(a, uv * 0.5)
+        """, target: Self.interface(textures: []))
+        #expect(words.count(.opImageSampleExplicitLod) == 2)
+        let r = readers(words)
+        #expect(r[4]?.count == 1 && r[5]?.count == 1, "got \(r)")
+        #expect(r[4] != r[5], "each instance reads its own texture")
+    }
+
+    @Test("a texture is passed on through nested functions, with t_size")
+    func helperNested() throws {
+        let words = try compileValid("""
+        def sample(u: Texture, p: float2) -> float4:
+            return u(p)
+
+        def blur(t: Texture, p: float2) -> float4:
+            d = float2(1.0) / float2(t_size)
+            return (sample(t, p - d) + sample(t, p + d)) * 0.5
+
+        def main(uv: float2, a: Texture, b: Texture) -> float4:
+            return blur(a, uv) * blur(b, uv)
+        """, target: Self.interface(textures: []))
+        #expect(words.count(.opImageQuerySizeLod) == 2)
+        let r = readers(words)
+        #expect(r[4]?.count == 2 && r[5]?.count == 2, "got \(r)")
+        #expect(r[4]!.isDisjoint(with: r[5]!))
+    }
+
+    @Test("a lambda takes textures and array arguments, one instance each")
+    func lambdaHandles() throws {
+        let words = try compileValid("""
+        pick = lambda t, p: t(p)
+        first = lambda arr: arr[0]
+
+        def main(uv: float2, a: Texture, b: Texture, w: FloatArray, v: FloatArray) -> float4:
+            return pick(a, uv) + pick(b, uv) * (first(w) + first(v))
+        """, target: Self.interface(textures: [], arguments: [("w", .floatArray), ("v", .floatArray)]))
+        #expect(words.count(.opImageSampleExplicitLod) == 2)
+        let r = readers(words)
+        #expect(r[4]?.count == 1 && r[5]?.count == 1 && r[4] != r[5], "got \(r)")
+    }
+
+    @Test("a texture parameter shadows a module function of its name")
+    func helperShadows() throws {
+        let words = try compileValid("""
+        def blur(p: float2) -> float4:
+            return float4(p, 0.0, 1.0)
+
+        def apply(blur: Texture, p: float2) -> float4:
+            return blur(p)
+
+        def main(uv: float2, image: Texture) -> float4:
+            return apply(image, uv)
+        """, target: Self.interface(textures: []))
+        #expect(words.count(.opImageSampleExplicitLod) == 1)
+    }
+
+    @Test("functions take textures in both stages of a graphics module")
+    func helperGraphics() throws {
+        let words = try compileValid("""
+        class Varyings:
+            position: float4
+            uv: float2
+
+        def lift(h: Texture, p: float2) -> float:
+            return h(p).x
+
+        def tint(t: Texture, p: float2) -> float4:
+            return t(p) * 0.5
+
+        def vertex(vertex_index: int, height: Texture) -> Varyings:
+            p = float2(float(vertex_index % 2), float(vertex_index // 2))
+            return Varyings(float4(p, lift(height, p), 1.0), p)
+
+        def fragment(v: Varyings, image: Texture) -> float4:
+            return tint(image, v.uv)
+        """, target: .graphics(.nucleantUI(arguments: [], textures: [])))
+        #expect(words.count(.opImageSampleExplicitLod) == 2)
+        #expect(bindings(words).filter { $0 >= 4 } == [4, 5])
+    }
+
+    @Test("a function's Texture parameter takes only a texture")
+    func helperWrongArgument() {
+        do {
+            _ = try PyShader.compile("""
+            def get(t: Texture, p: float2) -> float4:
+                return t(p)
+
+            def main(uv: float2, a: Texture) -> float4:
+                return get(uv, uv)
+            """, target: Self.interface(textures: []))
+            Issue.record("expected an error")
+        } catch let error as PyShaderError {
+            #expect(error.message.contains("parameter `t` takes a `Texture`, got `float2`"), "got: \(error)")
+        } catch {
+            Issue.record("unexpected error type: \(error)")
+        }
+    }
+
     @Test("a class of the module's own called Texture is a class, not a texture")
     func classNamedTexture() throws {
         let words = try compileValid("""

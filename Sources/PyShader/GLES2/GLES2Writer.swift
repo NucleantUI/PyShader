@@ -57,7 +57,7 @@ final class GLES2Writer {
         }
         var paramDecls: [String] = []
         for p in params {
-            if case .sampledImage = p.type {
+            if case .texture = p.type {
                 handles[p.name] = p.type
                 continue
             }

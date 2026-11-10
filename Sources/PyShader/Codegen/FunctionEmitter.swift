@@ -135,9 +135,10 @@ final class FunctionEmitter {
                 handles[p.name] = p.type
                 continue
             }
-            // A texture parameter names a module-level sampler; there is no
-            // value to copy in, and SPIR-V cannot pass one as a parameter.
-            if case .sampledImage = p.type {
+            // A texture parameter names one of the module-level samplers;
+            // each call binds it to the texture handed to it, so there is
+            // no value to copy in.
+            if case .texture = p.type {
                 handles[p.name] = p.type
                 continue
             }

@@ -211,6 +211,10 @@ the images are stored top-down. In NucleantUI,
 `Shader(fn, textures: [.init("a", renderTexture)])` and `.shader(fn, textures: …)`
 bind them in that order. The fragment target has no textures.
 
+Any function takes a texture as a parameter, as it takes the other inputs:
+`def blur(t: Texture, p: float2) -> float4` samples `t(p)` and reads `t_size`
+for whichever texture it is handed, and is compiled once per texture.
+
 ### Vertex + fragment
 
 The graphics target compiles one module with two entry points. `vertex`

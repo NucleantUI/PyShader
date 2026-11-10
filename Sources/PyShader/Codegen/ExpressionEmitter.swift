@@ -95,11 +95,18 @@ extension FunctionEmitter {
         if let local = lookupLocal(n.id) {
             return load(local.ptr, type: local.type)
         }
+        // A handle (an array argument, the list input) has no value; it is
+        // passed on as its type, which binds the callee to it. A texture is
+        // only sampled or passed on (`emitArgument`), never read.
         if let handle = lookupHandle(n.id) {
-            if case .sampledImage = handle {
+            if case .texture = handle {
                 throw PyShaderError("`\(n.id)` is a texture; sample it as `\(n.id)(uv)`", line: n.lineno)
             }
             return Value(id: 0, type: handle)
+        }
+        // `t_size` — the pixel size of the texture parameter `t`.
+        if n.id.hasSuffix("_size"), case .texture(let index)? = lookupHandle(String(n.id.dropLast(5))) {
+            return try compiler.textureSize(program.target.textures[index], from: self, line: n.lineno)
         }
         if let v = try lookupVariable(n.id, line: n.lineno) {
             return load(v.ptr, type: v.type)
@@ -848,6 +855,18 @@ extension FunctionEmitter {
 
     // MARK: Calls
 
+    /// A call's argument: any value, or a texture parameter or module
+    /// texture by name, handed on as its handle so the callee is compiled
+    /// for that texture.
+    private func emitArgument(_ e: Expression) throws -> Value {
+        if case .name(let n) = e, lookupLocal(n.id) == nil {
+            if case .texture? = lookupHandle(n.id) {
+                return Value(id: 0, type: lookupHandle(n.id)!)
+            }
+        }
+        return try emitExpression(e)
+    }
+
     private func emitCall(_ c: Call) throws -> Value {
         if case .name(let n) = c.fun, let type = program.structs[n.id] {
             return try constructStruct(type, c, line: c.lineno)
@@ -857,7 +876,7 @@ extension FunctionEmitter {
         }
         // (lambda x: ...)(3)
         if case .lambda(let l) = c.fun {
-            let args = try c.args.map { try emitExpression($0) }
+            let args = try c.args.map { try emitArgument($0) }
             return try compiler.callLambda(LambdaTemplate(name: "<lambda>", lambda: l, line: l.lineno), args: args, from: self, line: c.lineno)
         }
         let name: String
@@ -874,8 +893,17 @@ extension FunctionEmitter {
             throw PyShaderError("unsupported call target", line: c.lineno)
         }
 
-        let args = try c.args.map { try emitExpression($0) }
+        let args = try c.args.map { try emitArgument($0) }
 
+        // `t(p)` — sampling the texture parameter `t`, which shadows any
+        // module-level name.
+        if case .texture(let index)? = lookupHandle(name) {
+            guard args.count == 1 else {
+                throw PyShaderError("`\(name)` is a texture: sample it with one `float2`, got \(args.count) argument(s)", line: c.lineno)
+            }
+            let p = try coerce(args[0], to: .float(2), line: c.lineno)
+            return try compiler.sampleTexture(program.target.textures[index], at: p, from: self, line: c.lineno)
+        }
         if let type = ShaderType.named(name) {
             return try construct(type, args, line: c.lineno)
         }
@@ -948,9 +976,9 @@ extension FunctionEmitter {
         }
         var ids: [UInt32] = []
         for (arg, param) in zip(args, params) {
-            // An array argument is a handle the function reads through; nothing is passed.
-            if case .floatArray = param.type { continue }
-            if case .inputList = param.type { continue }
+            // A handle (array argument, list input, texture) is bound by the
+            // instance the function is compiled as; nothing is passed.
+            if param.type.isHandle { continue }
             let v = try coerce(arg, to: param.type, line: line)
             ids.append(v.id)
         }

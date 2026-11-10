@@ -176,6 +176,8 @@ final class SpirvModuleBuilder {
             preconditionFailure("argument array handles have no SPIR-V type")
         case .inputList:
             preconditionFailure("the list input is a handle and has no SPIR-V type")
+        case .texture:
+            preconditionFailure("a texture handle has no SPIR-V type; its sampler is a module global")
         }
         typeIds[t] = id
         return id

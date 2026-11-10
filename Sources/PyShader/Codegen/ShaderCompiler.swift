@@ -15,7 +15,7 @@ final class ShaderCompiler {
     let program: ShaderProgram
     private var callGraph: [String: Swift.Set<String>] = [:]
     private var inlining: [String] = []
-    private var lambdaInstances: [String: (id: SpirvId, returnType: ShaderType)] = [:]
+    private var lambdaInstances: [LambdaKey: (id: SpirvId, returnType: ShaderType)] = [:]
     private var lambdaCounter = 0
     /// Instances of the functions taking lists of any length or array
     /// arguments, by name and parameter types; and how many each has.
@@ -769,17 +769,9 @@ final class ShaderCompiler {
         guard params.count == args.count else {
             throw PyShaderError("`\(template.name)` takes \(params.count) argument(s), got \(args.count)", line: line)
         }
-        // An array argument or the list input is a handle with no value to
-        // pass, and a lambda takes its parameters by value.
-        for arg in args {
-            switch arg.type {
-            case .floatArray, .inputList:
-                throw PyShaderError("a lambda cannot take a `\(arg.type)`; write it as a `def`", line: line)
-            default:
-                break
-            }
-        }
-        let key = template.name + "(" + args.map { "\($0.type)" }.joined(separator: ",") + ")@\(template.line)"
+        // By the types themselves: two array arguments or two textures print
+        // alike but are different handles, each its own instance.
+        let key = LambdaKey(name: template.name, line: template.line, types: args.map(\.type))
         let instance: (id: SpirvId, returnType: ShaderType)
         if let existing = lambdaInstances[key] {
             instance = existing
@@ -796,7 +788,9 @@ final class ShaderCompiler {
             instance = (id, typed)
             lambdaInstances[key] = instance
         }
-        let ids = args.map(\.id)
+        // A handle (array argument, list input, texture) is bound by the
+        // instance; nothing is passed.
+        let ids = args.filter { !$0.type.isHandle }.map(\.id)
         return caller.emit(.opFunctionCall, type: instance.returnType, [instance.id] + ids)
     }
 
@@ -825,6 +819,12 @@ final class ShaderCompiler {
 
     private struct GenericKey: Hashable {
         let name: String
+        let types: [ShaderType]
+    }
+
+    private struct LambdaKey: Hashable {
+        let name: String
+        let line: Int
         let types: [ShaderType]
     }
 

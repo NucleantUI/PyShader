@@ -117,7 +117,7 @@ extension GLES2Writer {
         if let local = lookupLocal(n.id) {
             return GLValue(code: local.name, type: local.type)
         }
-        if let handle = lookupHandle(n.id), case .sampledImage = handle {
+        if let handle = lookupHandle(n.id), case .texture = handle {
             throw PyShaderError("`\(n.id)` is a texture; sample it as `\(n.id)(uv)`", line: n.lineno)
         }
         if let v = try lookupVariable(n.id, line: n.lineno) {
@@ -772,7 +772,7 @@ extension GLES2Writer {
         }
         var codes: [String] = []
         for (arg, param) in zip(args, params) {
-            if case .sampledImage = param.type { continue }
+            if case .texture = param.type { continue }
             codes.append(try coerce(arg, to: param.type, line: line).code)
         }
         compiler.recordCall(from: functionName, to: fn.name)
