@@ -81,6 +81,7 @@ nav:
       - Color & blend: stdlib/color.md
       - Shapes & SDF: stdlib/shapes.md
       - Light, glow & shadow: stdlib/light.md
+      - Surfaces & materials: stdlib/materials.md
       - Coordinates & patterns: stdlib/patterns.md
       - Random, noise & cellular: stdlib/noise.md
       - Vertex helpers: stdlib/vertex.md
