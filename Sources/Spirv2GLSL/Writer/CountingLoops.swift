@@ -51,7 +51,7 @@ struct NotCounting {
 }
 
 /// A scalar computed from constants alone.
-enum Folded: Equatable {
+enum Folded: Hashable {
     case int(Int)
     case float(Float)
 }
@@ -100,6 +100,10 @@ extension FunctionWriter {
         case (.opConvertSToF, .int(let a)?, _): return .float(Float(a))
         case (.opConvertFToS, .float(let a)?, _) where a.isFinite && abs(a) < 2e9: return .int(Int(a))
         case (.opCopyObject, let a?, _): return a
+        case (.opLoad, _, _):
+            // A local that only holds a parameter folded to a constant.
+            if let param = aliasOf(o[2]), let c = folded[param] { return c }
+            return nil
         default: return nil
         }
     }

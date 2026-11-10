@@ -114,6 +114,8 @@ final class FunctionWriter {
     private var deferredError: Spirv2GLSLError?
     /// Locals that only ever hold the parameter stored to them first: the parameter itself.
     private var aliases: [SpirvId: SpirvId] = [:]
+
+    func aliasOf(_ variable: SpirvId) -> SpirvId? { aliases[variable] }
     /// Vectors built of one scalar repeated (`bvec3(c)`), by id: that scalar.
     var splats: [SpirvId: Expr] = [:]
     /// Scalars computed from constants alone (`RADIUS + 1`), by id.
@@ -136,10 +138,17 @@ final class FunctionWriter {
     /// The located instruction being written, for errors.
     private(set) var current: Located?
 
-    init(stage: StageWriter, function: SpirvFunction, isEntry: Bool) throws {
+    /// The function's name in GLSL, its own or a specialization's.
+    let name: String
+    /// Parameters (by position) folded to constants: a specialization.
+    let constants: [Int: Folded]
+
+    init(stage: StageWriter, function: SpirvFunction, isEntry: Bool, name: String? = nil, constants: [Int: Folded] = [:]) throws {
         self.stage = stage
         self.function = function
         self.isEntry = isEntry
+        self.name = name ?? stage.functionNames[function.id]!
+        self.constants = constants
         self.scope = NameScope(parent: stage.globalScope, mayHide: stage.hideableNames(in: function))
         for b in function.blocks { blocks[b.label] = b }
         countUses()
@@ -160,9 +169,8 @@ final class FunctionWriter {
             let at = function.blocks.lazy.flatMap(\.body).first { $0.line != nil }
             throw error("`\(module.names[function.id] ?? "a function")` returns an array: OpenGL ES 2 functions cannot return arrays", at: at)
         }
-        let name = stage.functionNames[function.id]!
         var paramDecls: [String] = []
-        for p in function.params {
+        for (position, p) in function.params.enumerated() {
             let t = try module.type(p.type)
             let n = scope.unique(module.names[p.id] ?? "p\(p.id)")
             switch t {
@@ -188,10 +196,17 @@ final class FunctionWriter {
                 params[p.id] = Expr(code: n, type: t, isTrivial: true)
             default:
                 paramDecls.append(try stage.declaration(n, t))
-                params[p.id] = Expr(code: n, type: t, isTrivial: true)
+                if let c = constants[position] {
+                    // A specialization: the parameter is this constant everywhere.
+                    folded[p.id] = c
+                    let code = try literal(c)
+                    params[p.id] = Expr(code: code, type: t, prec: code.hasPrefix("-") ? 1 : 0, isTrivial: true, isConstantIndex: true)
+                } else {
+                    params[p.id] = Expr(code: n, type: t, isTrivial: true)
+                }
             }
         }
-        let prototype = isEntry ? "void main()" : "\(try stage.typeName(returns)) \(name)(\(paramDecls.joined(separator: ", ")))"
+        let prototype = isEntry ? "void main()" : "\(try stage.typeName(returns)) \(self.name)(\(paramDecls.joined(separator: ", ")))"
 
         aliases = parameterCopies()
         try declareLocals()
@@ -909,6 +924,9 @@ final class FunctionWriter {
                 return
             }
             if p.members != nil { throw error("reading a whole \(p.members!.what) block has no OpenGL ES 2 form; read its members") }
+            if let param = aliases[o[2]], let c = folded[param] {
+                folded[o[1]] = c
+            }
             if let root = p.root, let loop = loops.last(where: { $0.counter == root }), p.code == places[root]?.code, let index = loop.indexName {
                 try define(o[1], Expr(code: index, type: t, isTrivial: true, isConstantIndex: true))
                 return
@@ -967,8 +985,20 @@ final class FunctionWriter {
 
     private func call(_ i: Located) throws {
         let o = i.operands
-        guard let callee = module.functions[o[2]], let name = stage.functionNames[o[2]] else {
+        guard let callee = module.functions[o[2]], var name = stage.functionNames[o[2]] else {
             throw error("call of %\(o[2]), which is not a function of the module")
+        }
+        if let counted = stage.countedParams[o[2]] {
+            // Its loops count to these parameters: the copy written for their constants.
+            var values: [Int: Folded] = [:]
+            for k in counted.sorted() {
+                guard let c = foldedValue(o[3 + k]) else {
+                    let param = module.names[callee.params[k].id].map { "`\($0)`" } ?? "\(k + 1)"
+                    throw error("`\(module.names[o[2]] ?? name)`'s parameter \(param) must be a constant here: a loop counts with it, and OpenGL ES 2 runs only loops with constant bounds (GLSL ES 1.00's Appendix A)")
+                }
+                values[k] = c
+            }
+            name = stage.specialization(of: o[2], constants: values)
         }
         var args: [String] = []
         for (k, a) in o.dropFirst(3).enumerated() {

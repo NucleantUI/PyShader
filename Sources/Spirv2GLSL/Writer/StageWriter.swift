@@ -55,6 +55,33 @@ final class StageWriter {
     private var attributes: [(location: Int, name: String)] = []
     private var varyingNamesOut: [Int: String] = [:]
     private var sizeUniforms: [String: String] = [:]
+    /// The parameters each function's loops count with (see CountedParameters.swift).
+    private(set) var countedParams: [SpirvId: Set<Int>] = [:]
+    private var specializations: [SpecializationKey: String] = [:]
+    private var pendingSpecializations: [(function: SpirvId, constants: [Int: Folded], name: String)] = []
+
+    private struct SpecializationKey: Hashable {
+        let function: SpirvId
+        let constants: [Int: Folded]
+    }
+
+    /// The name of `function` written with these parameters folded to
+    /// constants, writing it once the functions written now are done.
+    func specialization(of function: SpirvId, constants: [Int: Folded]) -> String {
+        let key = SpecializationKey(function: function, constants: constants)
+        if let name = specializations[key] { return name }
+        let suffix = constants.sorted { $0.key < $1.key }.map { c -> String in
+            switch c.value {
+            case .int(let k): return k < 0 ? "m\(-k)" : "\(k)"
+            case .float(let x): return "\(Int((x * 100).rounded()))"
+            }
+        }.joined(separator: "_")
+        let name = globalScope.unique("\(functionNames[function]!)_\(suffix)")
+        specializations[key] = name
+        pendingSpecializations.append((function, constants, name))
+        return name
+    }
+
     /// The members of each uniform block the stage reads, so it declares only those.
     private var usedMembers: [SpirvId: Set<Int>] = [:]
 
@@ -86,13 +113,23 @@ final class StageWriter {
             functionNames[id] = id == entry.function ? "main" : globalScope.unique(module.names[id] ?? "f\(id)")
         }
 
+        // Under Appendix A a function counting to a parameter is written per
+        // set of constants it is called with, as its calls ask for them.
+        if options.loopsFollowAppendixA { countedParams = countedParameters() }
         var prototypes: [String] = []
         var bodies: [String] = []
-        for id in functionOrder {
+        for id in functionOrder where countedParams[id] == nil || id == entry.function {
             let writer = try FunctionWriter(stage: self, function: module.functions[id]!, isEntry: id == entry.function)
             let text = try writer.write()
             bodies.append(text.body)
             if id != entry.function { prototypes.append(text.prototype + ";") }
+        }
+        while let next = pendingSpecializations.popLast() {
+            let writer = try FunctionWriter(stage: self, function: module.functions[next.function]!, isEntry: false,
+                                            name: next.name, constants: next.constants)
+            let text = try writer.write()
+            bodies.append(text.body)
+            prototypes.append(text.prototype + ";")
         }
 
         var out: [String] = []
@@ -271,7 +308,7 @@ final class StageWriter {
                 } else if case .structure(let sid) = t, module.decoration(sid, .block) != nil {
                     // gl_PerVertex: its members are the built-ins.
                     let types = try module.members(of: sid)
-                    let names = try types.indices.map { k -> String? in
+                    let names = types.indices.map { k -> String? in
                         guard let b = module.memberDecoration(sid, k, .builtIn)?.first else { return nil }
                         return try? builtInName(b, input: false)
                     }

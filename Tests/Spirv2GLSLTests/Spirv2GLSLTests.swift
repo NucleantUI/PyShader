@@ -199,6 +199,42 @@ struct Spirv2GLSLTests {
         #expect(glsl.contains("(1.0 - abs(sign(fract(uv) - 0.5))) * mod("))
     }
 
+    /// fBm-style: the loop counts to a parameter, which each call fixes.
+    @Test("a function counting to a parameter is written once per constant it is called with")
+    func specialization() throws {
+        let source = """
+        def layers(p: float2, octaves: int) -> float:
+            s = 0.0
+            for i in range(octaves):
+                s += sin(p.x * float(i + 1))
+            return s
+
+        def twice(p: float2, n: int) -> float:
+            return layers(p, n) * 2.0
+
+        def main(uv: float2, time: float) -> float4:
+            return float4(layers(uv, 3), layers(uv, 5), twice(uv, 3), 1.0)
+        """
+        let glsl = try fragment(source)
+        #expect(glsl.contains("float layers_3(vec2 p, int octaves)"), "\(glsl)")
+        #expect(glsl.contains("float layers_5(vec2 p, int octaves)"))
+        #expect(glsl.contains("for (int i = 0; i < 3; i++) {"))
+        #expect(glsl.contains("for (int i = 0; i < 5; i++) {"))
+        // Passed on through `twice`, which is specialized in turn and calls layers_3 again.
+        #expect(glsl.contains("float twice_3(vec2 p, int n)"))
+        #expect(!glsl.contains("float layers(vec2"))
+        expectError("""
+        def layers(p: float2, octaves: int) -> float:
+            s = 0.0
+            for i in range(octaves):
+                s += p.x
+            return s
+
+        def main(uv: float2, time: float) -> float4:
+            return float4(layers(uv, int(time)))
+        """, "parameter `octaves` must be a constant here", line: 8)
+    }
+
     @Test("the problem reported is the first in the source")
     func firstError() {
         expectError("""
