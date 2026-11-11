@@ -53,6 +53,10 @@ packages the usual way, not editable: two editable packages under one
 | [`pyshader.stdlib.fragment.random`, `.noise`, `.cellular`](noise.md) | hashes, value / gradient / simplex noise, fBm, Voronoi |
 | [`pyshader.stdlib.vertex.*`](vertex.md) | 4x4 transforms, quads from `vertex_index`, deformations |
 
+[Knobs, encoders & sliders](encoders-sliders.md) puts the shapes, materials
+and lights together: value rings, textured knobs, and flat encoders and
+sliders lit with neon.
+
 Functions take their arguments in shader space: `uv` runs 0..1 with y up,
 and the shapes and distance functions work around the origin (move the point
 to place them: `sd_circle(p - center, r)`).
