@@ -18,7 +18,7 @@ requires = ["pyshader"]
 build-backend = "pyshader_builder"
 
 [tool.uv.sources]
-pyshader = { url = "https://github.com/NucleantUI/PyShader/releases/download/0.0.7/pyshader-0.0.7-py3-none-any.whl" }
+pyshader = { url = "https://github.com/NucleantUI/PyShader/releases/download/0.0.8/pyshader-0.0.8-py3-none-any.whl" }
 
 [tool.pyshader.glow]
 source = "src/myapp/shaders/glow.py"
@@ -31,7 +31,7 @@ The backend's compiler comes in the `pyshader` wheel attached to each
 [release](https://github.com/NucleantUI/PyShader/releases), which
 `[tool.uv.sources]` points at. A `pyshader` installed from git has the stubs
 only, not the compiler. Without uv, name the wheel in the requirement itself:
-`requires = ["pyshader @ https://github.com/NucleantUI/PyShader/releases/download/0.0.7/pyshader-0.0.7-py3-none-any.whl"]`.
+`requires = ["pyshader @ https://github.com/NucleantUI/PyShader/releases/download/0.0.8/pyshader-0.0.8-py3-none-any.whl"]`.
 
 | command | what happens to the shaders |
 |---|---|
@@ -106,7 +106,7 @@ build-backend = "pyshader_builder"
 dev = ["pyshader", "pyshader-stdlib"]
 
 [tool.uv.sources]
-pyshader = { url = "https://github.com/NucleantUI/PyShader/releases/download/0.0.7/pyshader-0.0.7-py3-none-any.whl" }
+pyshader = { url = "https://github.com/NucleantUI/PyShader/releases/download/0.0.8/pyshader-0.0.8-py3-none-any.whl" }
 pyshader-stdlib = { git = "https://github.com/NucleantUI/pyshader-stdlib" }
 ```
 
