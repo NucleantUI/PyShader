@@ -85,6 +85,7 @@ nav:
       - Coordinates & patterns: stdlib/patterns.md
       - Random, noise & cellular: stdlib/noise.md
       - Vertex helpers: stdlib/vertex.md
+      - Knobs, encoders & sliders: stdlib/encoders-sliders.md
   - Targets:
       - Overview: targets/index.md
       - Fragment: targets/fragment.md
